@@ -1,4 +1,4 @@
-"""The sim-lit preview without the sim (docs/plan.md, decision 19): a build's paint and spec rendered at the
+"""The sim-lit preview without the sim (docs/architecture.md, Previews): a build's paint and spec rendered at the
 kit's preview views from its calibration capture (`livery.calibrate`).
 
 Each car pixel of a view samples the paint and spec at its texel from mips, filtered along its footprint

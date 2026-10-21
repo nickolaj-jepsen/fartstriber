@@ -1,4 +1,4 @@
-"""`livery kit capture`: one calibration capture per car, at its preview views (docs/plan.md, decision 26).
+"""`livery kit capture`: one calibration capture per car, at its preview views (docs/architecture.md, Kits).
 
 It shoots the Gray-code geometry (`livery.graycode`) under a matte spec and a grey ladder under each of the
 kit's spec presets. Each paint is a sim run of its own (install, reload, shoot every view, put the paint

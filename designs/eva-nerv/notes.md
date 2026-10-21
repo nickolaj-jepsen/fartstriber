@@ -1,6 +1,6 @@
 # eva-nerv: notes
 
-The design Nickolaj accepted on 19 Oct, ported onto the v2 kit (refitted from the calibration capture) and the v2 library (plan step 5.8). Each round's verdict is in `verdicts.jsonl`; what changed and why is in git.
+The design Nickolaj accepted on 19 Oct, ported onto the v2 kit (refitted from the calibration capture) and the v2 library. Each round's verdict is in `verdicts.jsonl`; what changed and why is in git.
 
 ## The design
 

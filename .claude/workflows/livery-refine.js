@@ -14,7 +14,7 @@ export const meta = {
 // judges the checked build as it stands, for a build whose last fixes are already answered}. Ship is livery critic
 // status's call, never the workflow's. The workflow ends where the owner decides: it never runs livery review.
 // Once the kit's capture passed livery bake check, middle rounds are judged on baked renders, without the
-// sim (docs/plan.md, decision 19). A baked round never ships, so the budget's last round, and the round
+// sim (docs/architecture.md, Design sessions). A baked round never ships, so the budget's last round, and the round
 // after a baked one that only its being baked kept from shipping, are judged on sim shots.
 
 const VARIANTS = 3
