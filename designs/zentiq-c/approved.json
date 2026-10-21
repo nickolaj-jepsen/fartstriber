@@ -1,0 +1,42 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "",
+ "design_hash": "149f1bb1aba1928141a2f2a229a11ca9e06c917c42356fdc1bfc355e1522f9a0",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "4cffc943a02627b7751fca4daf81183ce42674a9629d0ef3a676129a8aad520a",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "2596e5a8644a5fda0454c0d2ab77fb7fd4332fb8fd780de0457d9a0ae00d5d37",
+  "car_spec.tga": "2d98f5ee689302d567a4a04104ff02ced04a17486a602202dadc5bcca2bbb288",
+  "layers.svg": "5efb6c8e8d16e3cf5d6229da0f6e5d2cb1e5b5e7a39789afbe7551034e54ab19",
+  "paint.png": "9918a5124412b4c04c32a46976a370f46dece58816054af8de7815e08e2f490e",
+  "spec.png": "7015ee033df8d65179b2a817aae9e50bfb5d21ca85495694b0c1a28083b04006",
+  "spec.svg": "dc8ec500d116783097810899ae4322070280416853c24854ead6c5e38b9ed1c4"
+ },
+ "waivers": [],
+ "sponsors": [
+  "altmere/wordmark",
+  "avelor/mark",
+  "drexa/mark",
+  "grivant/wordmark",
+  "hexmoor/mark",
+  "huilec/wordmark",
+  "norvane/mark",
+  "ostrand/mark",
+  "rigmount/mark",
+  "telvio/mark",
+  "zentiq/lockup",
+  "zentiq/wordmark"
+ ],
+ "marks": [
+  "extinguisher/mark",
+  "tow/left",
+  "tow/right"
+ ]
+}
