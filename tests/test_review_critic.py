@@ -4,7 +4,7 @@ import pytest
 
 from livery import critic
 from livery.config import Workspace
-from tests.conftest import checked, sim_run
+from tests.conftest import TASTE_IDS, checked, sim_run
 
 FIX = "the orange band stops short of the tail light"
 
@@ -13,7 +13,7 @@ def verdict(**change) -> dict:
     """A well-formed round verdict on a first round: every taste row passes, one fix that matters."""
     return {
         "previous": [],
-        "taste": [{"id": i, "pass": True, "where": ""} for i in critic.taste_ids()],
+        "taste": [{"id": i, "pass": True, "where": ""} for i in TASTE_IDS],
         "scores": dict.fromkeys(critic.RUBRIC, 4),
         "overall": 7,
         "verdict": "iterate",
@@ -24,11 +24,11 @@ def verdict(**change) -> dict:
 
 
 def test_a_well_formed_verdict_passes():
-    assert critic.validate(verdict()) == verdict()
+    assert critic.validate(verdict(), taste=TASTE_IDS) == verdict()
 
 
 def _taste(fail: str, where: str = "") -> list[dict]:
-    return [{"id": i, "pass": i != fail, "where": where} for i in critic.taste_ids()]
+    return [{"id": i, "pass": i != fail, "where": where} for i in TASTE_IDS]
 
 
 @pytest.mark.parametrize(
@@ -47,11 +47,13 @@ def _taste(fail: str, where: str = "") -> list[dict]:
 )
 def test_malformed_verdicts_are_refused(change):
     with pytest.raises(critic.BadVerdict):
-        critic.validate(verdict(**change))
+        critic.validate(verdict(**change), taste=TASTE_IDS)
 
 
 def test_a_failing_taste_row_says_where():
-    critic.validate(verdict(taste=_taste("boring", where="front34: the bumper is one plain field")))
+    critic.validate(
+        verdict(taste=_taste("boring", where="front34: the bumper is one plain field")), taste=TASTE_IDS
+    )
 
 
 @pytest.mark.parametrize(
@@ -66,8 +68,10 @@ def test_a_failing_taste_row_says_where():
 def test_the_last_rounds_fixes_are_each_marked_with_evidence(previous):
     last = verdict()
     with pytest.raises(critic.BadVerdict):
-        critic.validate(verdict(previous=previous), last, images={"side_l.png"})
-    marked = critic.validate(verdict(previous=[{"status": "partly", "evidence": "x/side_l.png"}]), last)
+        critic.validate(verdict(previous=previous), last, TASTE_IDS, images={"side_l.png"})
+    marked = critic.validate(
+        verdict(previous=[{"status": "partly", "evidence": "x/side_l.png"}]), last, TASTE_IDS
+    )
     assert marked["previous"][0]["fix"] == FIX
 
 
@@ -104,7 +108,7 @@ def test_a_verdict_records_what_it_judged(ws):
     assert recorded["shots"] == ".cache/designs/d/sim/20260101-000000"
     assert recorded["design_hash"] == json.loads((ws.out("d") / "check.json").read_text())["design_hash"]
     assert recorded["round"] == 1
-    assert recorded["rubric"] == critic.rubric_version()
+    assert recorded["rubric"] == critic.rubric_version(ws)
     assert recorded["model"] == critic.critic_model()
     assert critic.history(ws, "d")[-1]["fixes"] == verdict()["fixes"]
     assert not (ws.design_dir("d") / "notes.md").exists()  # verdicts.jsonl is the one store

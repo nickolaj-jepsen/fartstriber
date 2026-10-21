@@ -8,6 +8,7 @@ folders, the preview replay) are not; `livery.example.toml` documents every key.
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -149,6 +150,13 @@ def owner() -> str:
         return NO_OWNER
 
 
+def person(name: str | None = None) -> str:
+    """A person's folder name under prefs/: their name (the owner's by default) in lower case, other
+    characters as dashes."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or owner()).lower()).strip("-")
+    return "owner" if name is None and owner() == NO_OWNER else slug or "owner"
+
+
 def load(path: Path | None = None) -> Config:
     """The user's settings. The first run writes them from a checkout's old livery.toml, if there is one."""
     path = path or user_file()
@@ -278,7 +286,8 @@ class Workspace:
 
     @property
     def prefs(self) -> Path:
-        return self.root / "prefs"
+        """The owner's records; each person who reviews has a folder of their own (livery.prefs)."""
+        return self.root / "prefs" / person()
 
     @property
     def policy(self) -> Policy:

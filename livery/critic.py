@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from livery import config, hashing, references, stamps
+from livery import config, hashing, references, stamps, taste
 from livery import kit as kits
 from livery.config import Workspace
 from livery.designs import kit_name, script
@@ -123,21 +123,15 @@ def owner_note(ws: Workspace, name: str) -> dict | None:
     return {k: line.get(k) for k in ("note", "decision", "at")} if line else None
 
 
-def _judged_by(ws: Workspace | None) -> tuple[Path, Path, Path]:
-    """The rubric, the taste table (which designers read too) and the critic's own definition."""
+def _judged_by(ws: Workspace | None) -> tuple[Path, Path]:
+    """The rubric (which designers read too) and the critic's own definition."""
     agents = (ws or Workspace()).agents
-    skill = agents / "skills" / "livery-design"
-    return skill / "rubric.md", skill / "taste.md", agents / "agents" / "livery-critic.md"
+    return agents / "skills" / "livery-design" / "rubric.md", agents / "agents" / "livery-critic.md"
 
 
 def taste_ids(ws: Workspace | None = None) -> list[str]:
-    """The id in the first cell of each row of the taste table."""
-    ids = []
-    for line in _judged_by(ws)[1].read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^\|\s*`?([a-z0-9][a-z0-9-]*)`?\s*\|", line)
-        if m and m[1] != "id":
-            ids.append(m[1])
-    return ids
+    """The live rows of the owner's taste table."""
+    return taste.ids(ws or Workspace())
 
 
 def rubric_version(ws: Workspace | None = None) -> str:
@@ -145,12 +139,13 @@ def rubric_version(ws: Workspace | None = None) -> str:
     h = hashlib.sha256()
     for p in _judged_by(ws):
         h.update(p.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    h.update(taste.markdown(ws or Workspace()).encode())
     return h.hexdigest()[:16]
 
 
 def critic_model(ws: Workspace | None = None) -> str | None:
     """The model the critic's definition pins, so verdicts from different judges are told apart."""
-    text = _judged_by(ws)[2].read_text(encoding="utf-8")
+    text = _judged_by(ws)[1].read_text(encoding="utf-8")
     m = re.search(r"^model:\s*(\S+)\s*$", text.split("---")[1], re.M)
     return m[1] if m else None
 
@@ -319,10 +314,11 @@ def _common(ws: Workspace, folder: Path, mode: str) -> dict:
     """The rubric, the taste table, the references and the owner's preference log, copied in, and the
     owner's name: a manifest points only at files inside its pack."""
     manifest: dict = {"mode": mode, "owner": config.owner()}
-    rubric, taste, _ = _judged_by(ws)
+    rubric, _ = _judged_by(ws)
+    (folder / "taste.md").write_text(taste.markdown(ws), encoding="utf-8", newline="\n")
+    manifest["taste"] = "taste.md"
     for key, src, dest in (
         ("rubric", rubric, "rubric.md"),
-        ("taste", taste, "taste.md"),
         ("references", ws.references, "references.md"),
         ("prefs", ws.prefs / "log.md", "prefs-log.md"),
     ):
@@ -639,7 +635,7 @@ def record(ws: Workspace, name: str, verdict: dict) -> dict:
     key = _recall(ws, name, "round")
     images = set(key["images"]) if key else None
     note = key.get("owner_note") if key else owner_note(ws, name)
-    validate(verdict, rounds[-1] if rounds else None, key["taste"] if key else None, images, note)
+    validate(verdict, rounds[-1] if rounds else None, key["taste"] if key else taste_ids(ws), images, note)
     runs = _runs(ws, name)
     prov = {k: key.get(k) for k in PROVENANCE} if key else _provenance(ws, name, runs[-1] if runs else None)
     entry = {

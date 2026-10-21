@@ -2,8 +2,12 @@
 
 The branch and uncommitted paths, who holds the sim lock and this checkout's reviews on the shared review page
 (both machine-wide, in the state dir), and approved designs the last `livery build --all` found changed.
+
+It also puts the session's id and transcript in the environment of the session's commands, so what an agent
+records through livery says which session wrote it (livery.prefs).
 """
 
+import contextlib
 import ctypes
 import json
 import os
@@ -100,6 +104,18 @@ def _changed(root: Path) -> str | None:
     return f"approved but changed in the build --all of {_ago(path.stat().st_mtime)}: {', '.join(changed)}"
 
 
+def _remember_session(event: dict) -> None:
+    """Exports the session for the commands that follow, through the file Claude Code reads them from."""
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file or not event.get("session_id"):
+        return
+    lines = [f"export FARTSTRIBER_SESSION={event['session_id']}"]
+    if event.get("transcript_path"):
+        lines.append(f"export FARTSTRIBER_TRANSCRIPT='{event['transcript_path']}'")
+    with open(env_file, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def _safe(label: str, part: Callable[[], str | None]) -> list[str]:
     """One unreadable file costs its own line, not the whole status."""
     try:
@@ -111,6 +127,8 @@ def _safe(label: str, part: Callable[[], str | None]) -> list[str]:
 
 def main() -> None:
     event = json.load(sys.stdin)
+    with contextlib.suppress(OSError):
+        _remember_session(event)
     cwd = Path(event.get("cwd") or ".")
     top, common = _git(
         cwd, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"

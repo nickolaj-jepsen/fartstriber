@@ -13,6 +13,7 @@ from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 
 from livery import kit as kits
+from livery import taste
 from livery.config import REPO, Workspace
 from livery.kit import Profile, View
 from livery.model import Element
@@ -40,6 +41,7 @@ def private_metrics(private_state, tmp_path, monkeypatch):
 
 REPLAY = 4242  # the fixture settings' preview replay, which the tiny kit's profile frames
 OWNER = "Ingrid"  # the fixture settings' owner: a name no message has of its own
+TASTE_IDS = ["boring", "front-as-back", "nothing-cut"]  # the rows of the test workspaces' taste table
 SETTINGS = """
 owner = "{owner}"
 customer_id = 111
@@ -92,7 +94,15 @@ def ws(tmp_path) -> Workspace:
     preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
     kits.write_profile(kit, Profile(REPLAY, 100, preview, {}))
     kits.approve(kit, "Tester", "")
+    write_taste(ws)
     return ws
+
+
+def write_taste(ws: Workspace, ids: list[str] = TASTE_IDS) -> None:
+    for i in ids:
+        taste.put(
+            ws, {"id": i, "words": [{"quote": f"not {i}"}], "look_for": f"no {i}", "where": "every shot"}
+        )
 
 
 def write_policy(path: Path, window: tuple[int, int]) -> None:

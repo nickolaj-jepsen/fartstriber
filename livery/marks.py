@@ -72,7 +72,6 @@ def review_items(root: Path | None = None, out: Path = CACHE / "marks") -> list[
                 "title": f"Race marking: {mark.id}",
                 "body": f"{about}\n\nTo approve: {', '.join(pending)}. Reject leaves it unapproved.",
                 "images": [_rel(sheet)],
-                "mix": False,
             }
         )
     return items

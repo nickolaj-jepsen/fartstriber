@@ -55,6 +55,8 @@ bake_app = typer.Typer(
 app.add_typer(bake_app, name="bake")
 config_app = typer.Typer(no_args_is_help=True, help="Your settings: config.toml in the state dir.")
 app.add_typer(config_app, name="config")
+taste_app = typer.Typer(no_args_is_help=True, help="The owner's taste table: prefs/<person>/taste.json.")
+app.add_typer(taste_app, name="taste")
 
 Design = Annotated[str, typer.Argument(help="Design name under designs/.")]
 Sets = Annotated[list[str] | None, typer.Option("--set", help="Try a param value without saving it: k=v.")]
@@ -521,6 +523,10 @@ def review(
             help="Designs: several are concepts, one is a final. With --cancel, review ids from --list."
         ),
     ] = None,
+    sketch: Annotated[
+        list[str] | None,
+        typer.Option(help="With concepts: a sketch that didn't make the top three, shown small to revive."),
+    ] = None,
     kit: Annotated[str | None, typer.Option(help="Review a kit's overlay and calibration shots.")] = None,
     roster: Annotated[bool, typer.Option(help="Accept or reject proposed brands in roster.md.")] = False,
     sponsors: Annotated[bool, typer.Option(help="Review drawn brands not yet approved.")] = False,
@@ -546,13 +552,13 @@ def review(
     port: int = 8765,
     as_json: AsJson = False,
 ) -> None:
-    """Queue a review on the page every session shares, block until the owner presses Apply on it, print the
-    decisions as JSON.
+    """Queue a screen on the page every session shares, block until the owner sends it, print the decisions
+    as JSON.
 
     A final shows the checked build: its flat preview is rendered again when it shows another build, and
-    sim shots of another build are marked. Apply writes what review owns in this checkout, appends every
-    decision to prefs/decisions.jsonl and commits what it wrote with each decided design's folder. The JSON
-    lists the proposals the owner accepted, for the agent to make.
+    sim shots of another build are marked. Send writes what review owns in this checkout, appends every
+    decision to the owner's prefs/<person>/decisions.jsonl and commits what it wrote with each decided
+    design's folder. The JSON lists the proposals the owner accepted, for the agent to make.
     """
     from livery import marks as race_marks
     from livery.review import items as ri
@@ -585,6 +591,10 @@ def review(
         queue += race_marks.review_items()
     if designs:
         queue += ri.design_items(ws, designs)
+    if sketch:
+        if not designs or len(designs) < 2:
+            raise typer.BadParameter("--sketch goes with concepts: name two or more designs")
+        queue += ri.sketch_items(ws, sketch)
     if references:
         queue += ri.reference_items(ws.references)
     if proposals:
@@ -596,6 +606,39 @@ def review(
         )
     result = serve(ws, queue, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
     _emit(as_json, result)
+
+
+@taste_app.command("show")
+def taste_show(as_json: AsJson = False) -> None:
+    """The live rows as the table builders and the critic read (--json: every row, retired ones too)."""
+    from livery import taste
+
+    ws = Workspace()
+    _emit(as_json, {"rows": taste.rows(ws, retired=True)}, taste.markdown(ws).rstrip())
+
+
+@taste_app.command("put")
+def taste_put(row: Json, as_json: AsJson = False) -> None:
+    """Add a row, or replace the one with its id, from a JSON file: {id, words: [{quote, of?, design?, at?}],
+    look_for, where, source?}. `of` is the uid of the ledger decision a quote comes from. Recorded as this
+    agent's, with its session."""
+    from livery import taste
+
+    out = taste.put(Workspace(), json.loads(row.read_text(encoding="utf-8")))
+    _emit(as_json, out, f"taste row {out['id']}: live")
+
+
+@taste_app.command("retire")
+def taste_retire(
+    row_id: Annotated[str, typer.Argument(help="The row's id.")],
+    why: Annotated[str, typer.Option(help="Why it no longer gates designs.")],
+    as_json: AsJson = False,
+) -> None:
+    """Retire a row: it stops gating designs, and comes back only with new evidence."""
+    from livery import taste
+
+    out = taste.retire(Workspace(), row_id, why)
+    _emit(as_json, out, f"taste row {row_id}: retired")
 
 
 @app.command()

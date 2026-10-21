@@ -131,19 +131,22 @@ def groups(prune: bool = False) -> list[dict]:
 
 
 def enqueue(root: Path, items: list[dict]) -> str:
-    """Queues a review from the checkout at `root`. A stale or failed one from the same checkout is taken
-    over: its decisions on items still in the review are kept. One that is still waiting is refused, since
-    two Applies in one checkout would commit over each other."""
+    """Queues a review from the checkout at `root`, as a screen of its own: a checkout may have several
+    waiting (their Applies take turns). A stale or failed one from the same checkout with any of the same
+    items is taken over: its decisions on items still in the review are kept. One still waiting with any of
+    the same items is refused, since the owner would answer the same thing twice."""
     here = _checkout(root)
     ids = {i["id"] for i in items}
     kept: dict[str, dict] = {}
     for g in groups():
         if _checkout(Path(g["root"])) != here or g["status"] == "applied":
             continue
+        if not ids & {i["id"] for i in g["items"]}:
+            continue
         if g["alive"] and g["status"] != "failed":
             raise ReviewOpen(
-                f"a review from this checkout is still waiting ({g['id']}: "
-                f"{', '.join(i['title'] for i in g['items'])}): apply it, or take it off the page with "
+                f"a review from this checkout is still waiting on the same items ({g['id']}: "
+                f"{', '.join(i['title'] for i in g['items'])}): send it, or take it off the page with "
                 "livery review --cancel"
             )
         kept |= {k: v for k, v in g["decisions"].items() if k in ids}
@@ -169,6 +172,14 @@ def decide(gid: str, item_id: str, decision: dict) -> None:
     d = _dir(gid)
     decided = _read(d / DECISIONS) or {"decisions": {}, "apply": None}
     decided["decisions"][item_id] = decision
+    _write(d / DECISIONS, decided)
+
+
+def undecide(gid: str, item_id: str) -> None:
+    """Takes back an answer, as the page does when the owner unpicks a concept."""
+    d = _dir(gid)
+    decided = _read(d / DECISIONS) or {"decisions": {}, "apply": None}
+    decided["decisions"].pop(item_id, None)
     _write(d / DECISIONS, decided)
 
 

@@ -1,5 +1,6 @@
-"""What goes into a review: designs, a kit, roster.md brands, drawn sponsors, references.md entries, and
-the edits a retro proposes."""
+"""What goes into a review: designs, a kit, roster.md brands, drawn sponsors, race markings, references.md
+entries, and the edits a retro proposes. Each item says what the owner may answer (`ANSWERS`) and the page
+lays a review out by its items' kinds (`layout`)."""
 
 import json
 import re
@@ -13,8 +14,29 @@ from livery.config import Workspace
 from livery.designs import kit_name, script
 from livery.errors import LiveryError, UsageError
 
-# The owner's optional rating of a concept or final, stored with their decision.
-RATINGS = {1: "done with it", 2: "fine", 3: "would race", 4: "love it"}
+# What the owner may answer per kind of item; edit always needs a note. On a final: race it (accept, maybe
+# as a favourite), change it, park it (not done, worth coming back to) or stop it (not worth more work). A
+# concept is picked (accept) or not (reject); a sketch outside the top three is revived by picking it.
+ANSWERS = {
+    "final": ("accept", "edit", "park", "stop"),
+    "concept": ("accept", "reject"),
+    "kit": ("accept", "edit"),
+    "sponsor": ("accept", "edit", "reject"),
+    "mark": ("accept", "edit", "reject"),
+    "roster": ("accept", "edit", "reject"),
+    "reference": ("accept", "reject"),
+    "proposal": ("accept", "edit", "reject"),
+}
+STRATEGIES = ("quick", "full")  # how the agents work on a change: one round on the note, or a refinement
+HIDDEN = ("critic",)  # item fields the page gets only once the owner has answered the item
+
+
+def layout(items: list[dict]) -> str:
+    """Focus for a final or a kit, compare for concepts, else a grid of small decisions."""
+    kinds = {i["kind"] for i in items}
+    if kinds & {"final", "kit"}:
+        return "focus"
+    return "compare" if "concept" in kinds else "grid"
 
 
 class BadProposals(UsageError):
@@ -44,6 +66,111 @@ def _baked(ws: Workspace, name: str, built: dict[str, str] | None) -> Path | Non
         return None if bake.run_usable(cfg, ws, kit, run) else run
     except LiveryError:
         return None
+
+
+def _views(ws: Workspace, run: Path | None) -> dict[str, str]:
+    """A run's shots by view, in policy.toml's order."""
+    if run is None or not run.is_dir():
+        return {}
+    order = ws.policy.preview
+    shots = sorted(
+        run.glob("*.png"), key=lambda p: (order.index(p.stem) if p.stem in order else len(order), p.stem)
+    )
+    return {p.stem: _rel(ws, p) for p in shots}
+
+
+def _kept(line: dict) -> dict[str, str]:
+    """The shots a decision kept in the state dir, by view, as `state:` paths the page fetches."""
+    from livery import state
+
+    if not line.get("shots"):
+        return {}
+    folder = state.root() / line["shots"]
+    return {p.stem: f"state:{line['shots']}/{p.name}" for p in sorted(folder.glob("*.jpg"))}
+
+
+def _shown(ws: Workspace, name: str, line: dict) -> dict[str, str]:
+    """What the owner saw at a decision: the kept shots, else its sim or baked run while .cache has it."""
+    if kept := _kept(line):
+        return kept
+    for run in line.get("runs") or []:
+        if views := _views(ws, ws.out(name) / "sim" / run):
+            return views
+    return _views(ws, ws.out(name) / "baked-runs" / line["baked_run"]) if line.get("baked_run") else {}
+
+
+def _sentence(text: str) -> tuple[str, str]:
+    """A suggestion as a short title (its first sentence, cut at a word) and the rest."""
+    first, _, rest = text.strip().partition(". ")
+    title = first if len(first) <= 90 else first[:90].rsplit(" ", 1)[0] + "…"
+    return title.rstrip("."), (rest if title == first.rstrip(".") else text).strip()
+
+
+def _verdict(r: dict) -> dict:
+    """A critic round as the page shows it once the owner has answered: its call and every open suggestion."""
+    fixes = []
+    for f in r.get("fixes", []):
+        if f.get("title"):
+            title, detail = f["title"], f.get("detail") or f.get("text", "")
+        else:
+            title, detail = _sentence(f.get("text", ""))
+        fixes.append(
+            {"title": title, "detail": detail, "optional": bool(f.get("optional")), "where": f.get("where")}
+        )
+    return {
+        "round": r.get("round"),
+        "at": r.get("at"),
+        "verdict": r.get("verdict"),
+        "overall": r.get("overall"),
+        "baked": bool(r.get("baked")),
+        "suggestions": fixes,
+        "blocked": [b if isinstance(b, str) else json.dumps(b) for b in r.get("blocked") or []],
+    }
+
+
+LABELS = {"accept": "picked", "reject": "not picked", "edit": "change", "park": "parked", "stop": "stopped"}
+
+
+def _timeline(ws: Workspace, name: str, now_run: Path | None) -> list[dict]:
+    """The design so far, oldest first: each decision the owner made on it (with what they saw) and each
+    critic round between (the agents' work). The critic's call on each is under `critic`, hidden until the
+    owner answers."""
+    from livery import critic
+    from livery.review.apply import decisions_on
+
+    points = []
+    for line in decisions_on(ws, name):
+        kind = line["id"].partition(":")[0]
+        what = (
+            "raced"
+            if kind == "final" and line["decision"] == "accept"
+            else LABELS.get(line["decision"], line["decision"])
+        )
+        points.append(
+            {
+                "at": line["at"],
+                "who": "you",
+                "label": f"{'Concept' if kind == 'concept' else 'Final'} · {what}",
+                "note": line.get("note", ""),
+                "views": _shown(ws, name, line),
+                "uid": line.get("uid") or f"{line.get('review')}/{line['id']}",
+            }
+        )
+    for r in critic.history(ws, name):
+        shots = ws.root / r["shots"] if r.get("shots") else None
+        if shots is not None and now_run is not None and shots.resolve() == now_run.resolve():
+            continue
+        points.append(
+            {
+                "at": str(r.get("at", "")).replace(" ", "T"),
+                "who": "agents",
+                "label": f"Round {r.get('round')}" + (" · baked" if r.get("baked") else ""),
+                "note": "",
+                "views": _views(ws, shots),
+                "critic": _verdict(r),
+            }
+        )
+    return sorted(points, key=lambda x: str(x["at"]))
 
 
 def _previews(
@@ -154,7 +281,9 @@ def _last_time(
     said = f", with the note:\n{last['note']}" if last.get("note", "").strip() else ", with no note"
     text = f"{config.owner()}'s last decision, {_when(last['at'])}: {last['decision']}{said}\n\n"
     fields: dict = {
-        "last_decision": {k: last.get(k) for k in ("at", "decision", "note", "runs", "baked_run")}
+        "last_decision": {
+            k: last.get(k) for k in ("at", "decision", "note", "runs", "baked_run", "shots", "uid")
+        }
     }
     if note:
         if note["at"] != last["at"]:
@@ -191,7 +320,7 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
     by --sponsors or --marks in this review or an earlier one. Every item carries the sim runs it shows,
     for the ledger, and opens with the owner's last decision on the design, if there is one (`_last_time`).
     """
-    from livery import approvals
+    from livery import approvals, critic
 
     kind = "concept" if len(names) > 1 else "final"
     items = []
@@ -236,16 +365,27 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
         if picture:
             pictures = {picture: "then | now"} | pictures
         captions = {_rel(ws, p): c for p, c in pictures.items() if p.exists()}
+        last = fields.get("last_decision") or {}
+        rounds = critic.history(ws, name)
+        same = [r for r in rounds if r.get("design_hash") == design_hash] or rounds[-1:]
+        flat = stamps.flat_dir(ws, name)
         item = {
             "id": f"{kind}:{name}",
             "kind": kind,
             "title": name,
             "body": since + body,
+            "brief": brief.read_text(encoding="utf-8") if brief.exists() else "",
             "images": list(captions),
             "captions": captions,
-            "mix": kind == "concept",
-            "park": True,
-            "rate": True,
+            "views": _views(ws, run or baked),
+            "baked": run is None and baked is not None,
+            "flat": [
+                _rel(ws, flat / f) for f in ("car.png", "views.png", "squint.png") if (flat / f).exists()
+            ],
+            "then": _shown(ws, name, last) if last else {},
+            "then_at": last.get("at"),
+            "timeline": _timeline(ws, name, run or baked),
+            "critic": _verdict(same[-1]) if same else None,
             "runs": [run.name] if run else [],
             "baked_run": baked.name if baked else None,
             **fields,
@@ -253,6 +393,33 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
         if shown:
             item["pin"] = shown
         items.append(item)
+    return items
+
+
+def sketch_items(ws: Workspace, names: list[str]) -> list[dict]:
+    """Concepts that didn't make the top three, as flat sketches under a concept pick: picking one revives
+    it, to be refined as if it had been shown."""
+    from livery import preview_flat
+
+    items = []
+    for name in names:
+        folder = stamps.flat_dir(ws, name)
+        if not (folder / "car.png").exists():
+            preview_flat.flat(ws, name)
+        brief = ws.design_dir(name) / "brief.md"
+        items.append(
+            {
+                "id": f"concept:{name}",
+                "kind": "concept",
+                "sketch": True,
+                "title": name,
+                "body": "",
+                "brief": brief.read_text(encoding="utf-8") if brief.exists() else "",
+                "images": [],
+                "views": {},
+                "flat": [_rel(ws, folder / f) for f in ("car.png", "views.png") if (folder / f).exists()],
+            }
+        )
     return items
 
 
@@ -307,7 +474,6 @@ def kit_items(ws: Workspace, car: str) -> list[dict]:
             "title": f"Kit: {car}",
             "body": text + _body_text(ws.kits / car),
             "images": list(dict.fromkeys(_rel(ws, p) for p in images if p.exists())),
-            "mix": False,
             "kit_hash": kit_hash(ws.kits / car),
         }
     ]
@@ -330,8 +496,6 @@ def roster_items(path: Path | None = None) -> list[dict]:
             "title": row["name"],
             "body": _brand_text(row) + "\n\nAccept = draw it. Reject = drop it. Edit = rework the row first.",
             "images": [],
-            "mix": False,
-            "bulk": True,  # one key accepts every undecided item of its kind
         }
         for row in rows
         if row["status"] not in ("yes", "no")
@@ -367,8 +531,6 @@ def sponsor_items(ws: Workspace, root: Path | None = None, only: list[str] | Non
                 "body": (_brand_text(row) + "\n\n" if row else "")
                 + f"To approve: {', '.join(pending)}. Accept approves every variant; reject drops the brand.",
                 "images": [_rel(ws, sheet)],
-                "mix": False,
-                "bulk": True,
             }
         )
     if items and (ws.design_dir(ROSTER_CAR) / "design.py").exists():
@@ -402,8 +564,6 @@ def reference_items(path: Path) -> list[dict]:
             "title": f"{n}. {name}",
             "body": f"{car}\n\n{why}\n\nAccept = yes, a taste anchor. Reject = no.",
             "images": [],
-            "mix": False,
-            "bulk": True,
             "current": mark,
         }
         for n, name, car, why, mark in reference_rows(path)
@@ -439,7 +599,6 @@ def proposal_items(path: Path) -> list[dict]:
                 "title": p["title"],
                 "body": p["body"],
                 "images": [i for i in p.get("images", []) if isinstance(i, str)],
-                "mix": False,
             }
         )
     return items
