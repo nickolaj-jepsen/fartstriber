@@ -39,7 +39,14 @@ def preview_sim(cfg: Config, ws: Workspace, name: str, log=print, drift: bool = 
     groups = {s.group for s in shots.values()}
     what = f"preview {name}"
     with SimSession(
-        cfg, what, paint_folder=kit.paint_folder, groups=groups, replay=replay, log=log, checkout=ws.root
+        cfg,
+        what,
+        paint_folder=kit.paint_folder,
+        groups=groups,
+        replay=replay,
+        window=ws.policy.window,
+        log=log,
+        checkout=ws.root,
     ) as s:
         # Named once the sim is ours, so runs sort in shooting order.
         stamp = fresh_name(built / "sim", built / "sim-partial")

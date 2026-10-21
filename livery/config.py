@@ -1,9 +1,9 @@
 """Settings, from two files, and where everything lives.
 
-The project's policy (`policy.toml` in the checkout: lint thresholds, the views a preview shoots) is
-committed; its `[lint]` table is part of every check's hash. The user's settings (`config.toml` in the
-machine state dir, shared by every worktree: the owner's name, IDs, the iRacing folders, the preview
-replay) are not; `livery.example.toml` documents every key.
+The project's policy (`policy.toml` in the checkout: lint thresholds, the views a preview shoots and the
+sim window's size) is committed; its `[lint]` table is part of every check's hash. The user's settings
+(`config.toml` in the machine state dir, shared by every worktree: the owner's name, IDs, the iRacing
+folders, the preview replay) are not; `livery.example.toml` documents every key.
 """
 
 import hashlib
@@ -40,6 +40,7 @@ class Shot:
 class Policy:
     lint: dict  # the output lint's thresholds by name; `lint.run.thresholds` checks and types them
     preview: tuple[str, ...]  # the views `livery preview sim` shoots, in order; the kit's profile frames each
+    window: tuple[int, int]  # the sim window's client size every sim run shoots at
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,12 @@ def sha256(path: Path) -> str:
 @lru_cache(maxsize=4)
 def _policy(path: Path, _mtime: int) -> Policy:
     raw = _read(path)
-    return Policy(lint=dict(_get(raw, "lint", path)), preview=tuple(_get(raw, "preview.views", path)))
+    w, h = _get(raw, "preview.window", path)
+    return Policy(
+        lint=dict(_get(raw, "lint", path)),
+        preview=tuple(_get(raw, "preview.views", path)),
+        window=(int(w), int(h)),
+    )
 
 
 def policy(path: Path) -> Policy:

@@ -60,7 +60,7 @@ def capture(ws: Workspace, check: dict | None = None) -> Path:
         arrays |= {m: _response(i, levels.astype(np.float64), n) for i, m in enumerate(SPEC)}
         np.savez_compressed(run / view / "ladder.npz", **arrays)
         Image.fromarray(np.full((H, W, 3), (10, 90, 30), np.uint8)).save(run / view / "background.png")
-    ident = calibrate.identity(config.load(), kit, kits.profile(kit))
+    ident = calibrate.identity(config.load(), ws, kit, kits.profile(kit))
     manifest = {"identity": ident, "complete": True, "window": [W, H]} | ({"check": check} if check else {})
     state.write_json(run / "manifest.json", manifest)
     (run.parent / "current").write_text(run.name, encoding="utf-8")
@@ -230,11 +230,11 @@ def test_a_capture_shot_before_the_sims_build_was_recorded_holds_against_its_bak
     then = {k: manifest["identity"].pop(k) for k in calibrate.VOUCHED}
     state.write_json(run / "manifest.json", manifest | {"check": PASSED | {"identity": then}})
     kit = kits.load(ws, "tiny")
-    assert bake.stale(config.load(), kit, run) == []
+    assert bake.stale(config.load(), ws, kit, run) == []
 
     _sim_update(ws)
 
-    assert bake.stale(config.load(), kit, run)
+    assert bake.stale(config.load(), ws, kit, run)
 
 
 def test_a_refit_keeps_the_capture(ws):

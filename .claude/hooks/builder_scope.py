@@ -1,7 +1,9 @@
 """The livery-builder's scope, run by the hooks in its definition (.claude/agents/livery-builder.md).
 
 A builder owns one design: its prompt has the line `design: <name>` before any other, read from its own
-transcript. `edit` (PreToolUse on Edit|Write) denies a path outside designs/<name>/ and the scratchpad.
+transcript. The prompt is the transcript's first message or, in a workflow, the script's computed task; the
+user request a workflow's harness relays before it is the user's text and never names the design.
+`edit` (PreToolUse on Edit|Write) denies a path outside designs/<name>/ and the scratchpad.
 `shell` (PreToolUse on Bash|PowerShell) denies commands that write files other than through the livery
 CLI, uv run and git, and the livery steps that belong to the session or the critic. A script run with
 `uv run python` can still write anywhere, so `stop` (the agent's Stop) sends the builder back once when
@@ -30,7 +32,9 @@ def checkout(start: Path) -> Path:
 
 
 SCRATCH = Path(tempfile.gettempdir()).resolve() / "claude"  # the session scratchpads live below this
-DESIGN_LINE = re.compile(r"^\s*design:\s*([A-Za-z0-9][\w-]*)\s*$", re.M)
+DESIGN_LINE = re.compile(r"design:\s*([A-Za-z0-9][\w-]*)")
+# Heads each of a workflow agent's first messages at column zero; the text it carries is indented below.
+FRAME = re.compile(r"\[Workflow harness\W+([a-z ]+)\]")
 CLI_WRITES = ("runs/metrics.jsonl",)  # outside designs/, written by livery commands a builder runs
 RECORDS = {
     "approved.json": "approved.json records the owner's accept of one build; only `livery review` writes it",
@@ -119,16 +123,28 @@ def _transcript(event: dict, agent: str) -> Path | None:
     return None
 
 
+def _prompt(path: Path) -> list[str]:
+    """The builder's prompt, as lines: the computed task's text if the harness's messages come first, else the
+    first message. Nothing else counts, above all not the relayed user request."""
+    with open(path, encoding="utf-8") as f:
+        for n, line in enumerate(f):
+            content = json.loads(line).get("message", {}).get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
+            frame = FRAME.match(content)
+            if frame is None:
+                return content.splitlines() if n == 0 else []
+            if frame[1] == "computed task":
+                return [t for t in content.splitlines() if t[:1].isspace()]  # the text, not the header
+    return []
+
+
 def _prompt_design(event: dict, agent: str) -> str | None:
     path = _transcript(event, agent)
     if path is None:
         return None
-    with open(path, encoding="utf-8") as f:
-        first = json.loads(f.readline())
-    content = first.get("message", {}).get("content", "")
-    if isinstance(content, list):
-        content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
-    m = DESIGN_LINE.search(content)
+    first = next((t.strip() for t in _prompt(path) if t.strip()), "")
+    m = DESIGN_LINE.fullmatch(first)
     return m[1] if m else None
 
 
@@ -188,7 +204,10 @@ def _inside(path: Path, folder: Path) -> bool:
 def edit(event: dict) -> None:
     design = _builder(event).get("design")
     if not design:
-        _deny("This builder doesn't know its design: its prompt starts with the line `design: <name>`.")
+        _deny(
+            "This builder doesn't know its design: its prompt starts with the line `design: <name>`. Write "
+            "nothing another way; stop and report it."
+        )
         return
     raw = Path(event.get("tool_input", {}).get("file_path", ""))
     path = (raw if raw.is_absolute() else Path(event.get("cwd") or ROOT) / raw).resolve()

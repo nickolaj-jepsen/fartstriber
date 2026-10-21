@@ -22,7 +22,7 @@ flowchart LR
 - A build comes only from its script, kit and assets, and `livery check` proves it repeats byte for byte. Nothing under `.cache/` is committed.
 - Hashes decide what is stale. Checks, previews, approvals and installs record the build they belong to, and a mismatch is rebuilt or refused, never trusted.
 - The owner decides and agents propose: two checkpoints per design (concept pick and final) on the review page. Accepting pins one exact build, and only that build installs.
-- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front.
+- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front. A run may resize a normal window behind other windows, and puts its size back.
 - The critic sees renders, never scripts, and compares rather than scores.
 
 ## Layout
@@ -33,7 +33,7 @@ flowchart LR
 | `kits/<kit>/` | a car's kit, written only by `livery kit` | yes |
 | `assets/` | fonts, roster brands (`sponsors/`), race markings (`marks/`) | yes |
 | `prefs/`, `references.md` | the owner's decisions, words and favourite liveries | yes |
-| `policy.toml` | lint thresholds and the views a preview shoots | yes |
+| `policy.toml` | lint thresholds, the views a preview shoots and the sim window's size | yes |
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
 | `.cache/` | build output, previews, critic packs, reference pictures | no |
@@ -132,7 +132,7 @@ Outputs go to `.cache/designs/<name>/`: `layers.svg`, `spec.svg`, `paint.png`, `
 
 - Every preview records the build it shows: TGA digests, design and toolchain hashes, and the `--set` values. A final review, an approval or a critic pack takes only previews of the checked build: a stale `flat/` is rendered again, but stale sim shots can't be.
 - A baked pixel (`livery/bake_render.py`) samples paint and spec at its texel from mips box-filtered in the paint's sRGB values, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder and mixed in linear light, and the sim's number shows from the background frame.
-- A capture bakes only while everything its shots depend on holds (the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options, car model, the sim's executable and the track's files), and only after `livery bake check <kit> [designs]` has passed with this renderer. A capture shot before the sim's build was recorded is held against the build its last bake check recorded.
+- A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options, car model, the sim's executable and the track's files), and only after `livery bake check <kit> [designs]` has passed with this renderer. A capture shot before the sim's build was recorded is held against the build its last bake check recorded.
 - Bake check compares baked renders with one real sim run per design, per view in a band within 1.5 px of paint edges and in the rest, overall and per finish. It gates on the p95 per channel, looser along edges; the limits live in `livery.bake`. It covers the finishes of the designs that passed in every view; a design that fails covers none of its finishes, since a metal's glare spreads over its neighbours whatever their finish. A check of other designs adds to the last one's while the renderer and the sim's build are the same. It takes the sim, so it is the session's step, not a builder's.
 - Baked views stand in for a design's sim shots where the capture is checked and fresh and the check covered every finish the build uses: rounds judged on them ship, and the review shows them. `livery bake status --design <name>` says whether they do.
 - Every `preview sim` of a build they stand in for renders it baked, records the error per view in the run's manifest and telemetry, and warns when it fails the gate.
@@ -203,10 +203,10 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 |---|---|
 | Lock | holds the named mutex `Local\fartstriber-sim`, so every worktree queues for the one sim; the kernel frees it if its holder dies |
 | Recover | replays the paint journal of any run that died |
-| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups and its window open, behind other windows |
-| Run | notes the camera, UI, frame and speed, and uses one capture session. Before every broadcast and frame it checks that the sim is still behind other windows and not minimised, and stops if not |
+| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups and its window open, behind other windows. A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
+| Run | notes the camera, UI, frame and speed, and uses one capture session. Before every broadcast and frame it checks that the sim is still behind other windows and not minimised, and stops if not, or if a frame isn't at the run's size |
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
-| Leave | puts back the paint files, camera, UI and replay, on errors too, and leaves a sim in front alone; writes `manifest.json` |
+| Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
 
 - `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken, then measures the bake against the shots (Previews).
 - A shot with the replay UI over the car (drawn while the cursor is over the sim) is taken again once, then refused.
@@ -344,7 +344,7 @@ flowchart TD
 
 | File | Scope | Holds |
 |---|---|---|
-| `policy.toml` | the checkout, hashed | lint thresholds, preview views |
+| `policy.toml` | the checkout, hashed | lint thresholds, preview views, the sim window's size |
 | `config.toml` in the state dir | the machine, shared by every worktree | the owner's name, customer and team IDs, the archive folder, the iRacing folders, the sim's process, the preview replay (file, sha256, SubSessionID, track, `camera.ini`) |
 | `kits/<kit>/profile.toml` | the kit | how the sim shows its car |
 

@@ -138,8 +138,8 @@ VOUCHED = ("sim", "track_files")
 
 
 def shot_identity(manifest: dict) -> dict:
-    """What a capture was shot against, VOUCHED keys it lacks taken from its bake check."""
-    ident = dict(manifest.get("identity", {}))
+    """What a capture was shot against (`shot_with`), VOUCHED keys it lacks taken from its bake check."""
+    ident = dict(shot_with(manifest))
     vouched = (manifest.get("check") or {}).get("identity") or {}
     for key in VOUCHED:
         if key not in ident and key in vouched:
@@ -147,10 +147,11 @@ def shot_identity(manifest: dict) -> dict:
     return ident
 
 
-def identity(cfg: Config, kit: Kit, prof: kits.Profile) -> dict:
-    """Everything the shots depend on, apart from the window's size, which the first paint records."""
+def identity(cfg: Config, ws: Workspace, kit: Kit, prof: kits.Profile) -> dict:
+    """Everything the shots depend on."""
     r = cfg.replay
     return {
+        "window": list(ws.policy.window),
         "kit": kit.name,
         "kit_hash": kit_hash(kit.dir),
         "canvas": kit.canvas,
@@ -172,6 +173,13 @@ def identity(cfg: Config, kit: Kit, prof: kits.Profile) -> dict:
         "scheme": [[list(slot) for slot in p] for p in graycode.SCHEME],
         "jobs": [[j.name, j.grey, list(j.spec)] for j in jobs(kit)],
     }
+
+
+def shot_with(manifest: dict) -> dict:
+    """A capture's identity. Captures from before the window was part of it recorded the size their first
+    paint was shot at beside it."""
+    ident = manifest.get("identity", {})
+    return ident if "window" in ident else {**ident, "window": manifest.get("window")}
 
 
 # Runs.
@@ -211,7 +219,7 @@ def _resumable(ws: Workspace, kit_name: str, ident: dict) -> Path:
             f"no unfinished capture of {kit_name} to resume; run livery kit capture {kit_name}"
         )
     run = runs[-1]
-    old = _manifest(run).get("identity", {})
+    old = shot_with(_manifest(run))
     moved = sorted(k for k in ident.keys() | old.keys() if ident.get(k) != old.get(k))
     if moved:
         raise CaptureFailed(
@@ -236,7 +244,7 @@ def capture(
     if not prof.preview:
         raise kits.KitError(f"{kit.name}'s profile has no preview views")
     views = prof.shots(prof.preview)
-    ident = identity(cfg, kit, prof)
+    ident = identity(cfg, ws, kit, prof)
     if resume:
         run = _resumable(ws, kit.name, ident)
     else:
@@ -285,30 +293,24 @@ def _shoot(
     out = run / "jobs" / job.name
     groups = {s.group for s in views.values()}
     what = f"kit capture {kit.name}: {job.name}"
-    with SimSession(cfg, what, paint_folder=kit.paint_folder, groups=groups, log=log, checkout=ws.root) as s:
+    with SimSession(
+        cfg,
+        what,
+        paint_folder=kit.paint_folder,
+        groups=groups,
+        window=ws.policy.window,
+        log=log,
+        checkout=ws.root,
+    ) as s:
         out.mkdir(parents=True, exist_ok=True)
         s.out = out
         s.manifest["job"] = {"name": job.name, "grey": job.grey, "spec": list(job.spec)}
         paint_name, spec_name = s.paint_names
         s.put({paint_name: data, spec_name: spec})
         reload = s.reload(next(iter(views.values())))
-        _same_window(run, s.manifest.get("window"))
         for view, shot in views.items():
             Image.fromarray(s.shoot(view, shot, check_ui=True)).save(out / f"{view}.png", compress_level=1)
     return float(reload["total_s"] or 0.0)
-
-
-def _same_window(run: Path, window: list[int] | None) -> None:
-    """The first paint records the window's size; every later one must be shot at it."""
-    manifest = _manifest(run)
-    if manifest.get("window") is None:
-        manifest["window"] = window
-        state.write_json(run / "manifest.json", manifest)
-    elif window != manifest["window"]:
-        raise CaptureFailed(
-            f"the sim window is {window} now, but this capture was shot at {manifest['window']}: put it back "
-            "and run with --resume, or start a fresh capture"
-        )
 
 
 # Decoding and the summary.
@@ -467,7 +469,7 @@ def reshoot(cfg: Config, ws: Workspace, kit: Kit, materials: list[Material], log
         )
     prof = kits.profile(kit)
     views = prof.shots(prof.preview)
-    ident = identity(cfg, kit, prof)
+    ident = identity(cfg, ws, kit, prof)
     old = shot_identity(manifest)
     moved = sorted(
         k

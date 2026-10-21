@@ -158,7 +158,7 @@ def _captured(ws: Workspace, kit: Kit, views) -> None:
     run = calibrate.root(ws, kit.name) / "run"
     for v, vm in views.items():
         vm.save(run / v / "geometry.npz")
-    ident = calibrate.identity(config.load(), kit, kits.profile(kit))
+    ident = calibrate.identity(config.load(), ws, kit, kits.profile(kit))
     state.write_json(run / "manifest.json", {"identity": ident, "complete": True})
     calibrate._point_at(run)
 

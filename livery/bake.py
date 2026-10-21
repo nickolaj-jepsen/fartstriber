@@ -41,6 +41,7 @@ COVER_PX = 2000  # a check covers a finish its passing designs show on at least 
 # ladder for each of the kit's spec presets. Not the kit's maps: a refit changes where car space lands in the
 # texture, not which texel the sim shows where.
 WATCHED = {
+    "window": "the sim window's size (policy.toml)",
     "scheme": "the Gray-code scheme",
     "canvas": "the kit's canvas",
     "paint_folder": "the kit's paint folder",
@@ -76,11 +77,11 @@ class BakeCheckFailed(LiveryError):
 # The capture, and whether it still holds.
 
 
-def stale(cfg: Config, kit: Kit, run: Path) -> list[str]:
+def stale(cfg: Config, ws: Workspace, kit: Kit, run: Path) -> list[str]:
     """What moved since the capture was shot, as WATCHED names it; empty while it holds."""
     manifest = state.read_json(run / "manifest.json") or {}
     shot = calibrate.shot_identity(manifest)
-    now = calibrate.identity(cfg, kit, kits.profile(kit))
+    now = calibrate.identity(cfg, ws, kit, kits.profile(kit))
     moved = [
         what
         for key, what in WATCHED.items()
@@ -97,7 +98,7 @@ def capture(cfg: Config, ws: Workspace, kit: Kit) -> Path:
     run = calibrate.current(ws, kit.name)
     if run is None or not (run / "manifest.json").exists():
         raise NoCapture(f"{kit.name} has no calibration capture; run livery kit capture {kit.name}")
-    if moved := stale(cfg, kit, run):
+    if moved := stale(cfg, ws, kit, run):
         raise StaleCapture(
             f"{kit.name}'s capture {run.name} was shot before a change to {', '.join(moved)}; "
             f"run livery kit capture {kit.name} again"
@@ -504,8 +505,7 @@ def check(
 
     run = capture(cfg, ws, kit)
     bake = Bake.load(run, kit, list(ws.policy.preview))
-    window = (state.read_json(run / "manifest.json") or {}).get("window")
-    now = calibrate.identity(cfg, kit, kits.profile(kit))
+    now = calibrate.identity(cfg, ws, kit, kits.profile(kit))
     vouched = {k: now.get(k) for k in calibrate.VOUCHED}
     before = check_of(run) or {}
     same = before.get("renderer") == renderer_hash() and before.get("identity") == vouched
@@ -520,13 +520,7 @@ def check(
         baked = bake.render_tgas(outputs, aniso)
         render_s = time.perf_counter() - t
         log(f"{name}: baked {len(baked)} views in {render_s:.1f} s; shooting it in the sim")
-        shots = preview_sim(cfg, ws, name, log=log, drift=False)
-        shot_window = (state.read_json(shots / "manifest.json") or {}).get("window")
-        if window and shot_window and list(shot_window) != list(window):
-            raise BakeCheckFailed(
-                f"the sim window was {shot_window} for {shots}, but the capture was shot at {window}: "
-                "put the window back to that size and run bake check again"
-            )
+        shots = preview_sim(cfg, ws, name, log=log, drift=False)  # at the policy's window, as the capture
         dest = run / "check" / name
         if dest.exists():
             shutil.rmtree(dest)
@@ -603,7 +597,7 @@ def status(cfg: Config, ws: Workspace, kit: Kit) -> dict:
     run = calibrate.current(ws, kit.name)
     if run is None:
         return {"kit": kit.name, "capture": None, "stale": [], "check": None, "checked": False, "covered": []}
-    moved = stale(cfg, kit, run)
+    moved = stale(cfg, ws, kit, run)
     report = check_of(run)
     try:
         checked(cfg, ws, kit)
