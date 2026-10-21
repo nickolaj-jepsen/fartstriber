@@ -36,6 +36,7 @@ GRID = 0.004  # every block edge on this grid, as seen, so no sliver between two
 HEAD_LEN = 3.3266  # the zentiq wordmark's length in its heights
 SUB = "ENERGY RACING"  # the headline's small line
 TELVIO_ASPECT = 4.986  # the Telvio wordmark's length in its heights (assets/sponsors/telvio/brand.toml)
+DREXA_ASPECT = 4.64  # and Drexa's (assets/sponsors/drexa/brand.toml)
 NUM_U = (0.392, 0.488)  # the side number's block in u: the partner plate on it shares its edges
 
 # Parts painted whole.
@@ -51,14 +52,13 @@ LOWER = (
     "grille_side_r",
     "intake_edge_l",
     "intake_edge_r",
-    "rear_valance",
     "rear_deck_lip",
     "swan_neck_l",
     "swan_neck_r",
     "number_panels",
 )
 # Parts no view maps whole, painted as their ground cut with texture-rectangle blocks.
-UNMAPPED = ("rear_face", "wing_endplates", "front_bumper_corner_l", "front_bumper_corner_r")
+UNMAPPED = ("rear_face", "rear_valance", "wing_endplates", "front_bumper_corner_l", "front_bumper_corner_r")
 # Everything painted on its own, which the mosaic leaves.
 WHOLE = (*LOWER, "splitter_top", "splitter_lip", "mirrors", "bonnet_vent", *UNMAPPED)
 
@@ -76,7 +76,11 @@ class Params(DesignParams):
     # Top transitions in u (bonnet to roof, roof to engine cover), on the middle of the car.
     t1_top: float = param(0.24, 0.15, 0.35)
     t2_top: float = param(0.64, 0.55, 0.75)
-    flank_w: float = param(0.5, 0.3, 0.8)  # outside |w| this the top follows the sides' transitions
+    flank_w: float = param(0.38, 0.3, 0.8)  # outside |w| this the top follows the sides' transitions
+    # but the haunch tops break into black later than the sides, so the shoulder crease behind the door
+    # window meets green blocks on green, not black on green along one clean line.
+    flank_t2: float = param(0.76, 0.68, 0.85)
+    shoulder_v: float = param(0.872, 0.84, 0.9)  # the green shoulder's foot behind the door window (v)
     stray: float = param(0.25, 0.0, 0.6)  # share of zone-body small blocks in a foreign colour
     tone: float = param(0.6, 0.0, 1.0)  # share of zone-body blocks in the zone's tone
     black_tone: float = param(1.8, 1.0, 3.0)  # the black zone's body carries this many more blocks
@@ -99,12 +103,8 @@ class Params(DesignParams):
     sub_em: float = param(0.017, 0.012, 0.025)
     sub_gap: float = param(0.03, 0.0, 0.1)
     sub_drop: float = param(0.08, 0.0, 0.2)
-    # The sill rows' centre line (v), under the side number's zone.
-    sill_v: float = param(0.24, 0.2, 0.3)
-    sill_h: float = param(0.05, 0.03, 0.06)  # the sill rows' largest height, car lengths
-    # The front row's length in u (the rear's is 135/115 of it) and its start, behind the front arch.
-    sill_len: float = param(0.09, 0.08, 0.12)
-    sill_u: float = param(0.435, 0.4, 0.46)
+    drexa_h: float = param(0.0135, 0.012, 0.016)  # the rear row, ending on the headline's tail edge
+    drexa_v: float = param(0.247, 0.2, 0.3)
 
 
 def _snap(x: float) -> float:
@@ -213,7 +213,7 @@ def build(kit, p: Params):
         return max(0.0, 1.0 - d)
 
     def t_top(w):
-        return (p.t1_top, p.t2_top) if abs(w) < p.flank_w else (p.t1, p.t2)
+        return (p.t1_top, p.t2_top) if abs(w) < p.flank_w else (p.t1, p.flank_t2)
 
     def zone_top(u, w, r1, r2, r3):
         a, b = t_top(w)
@@ -267,7 +267,6 @@ def build(kit, p: Params):
         k = carspace.aspect(kit, view)
         m = mosaic(view, zone_side, near_side, -0.1, 1.15)
         # The number in a black block at the front of the door, a charcoal block stepping out under it.
-        m.add(0.384, 0.215, 0.5, 0.235, CHAR)
         m.add(0.392, 0.235, 0.488, 0.575, BLACK)
         # The headline's green block, and the sill rows' black blocks.
         hl, hv = p.head_h * HEAD_LEN, p.head_h / k  # the wordmark's length in u, height in v
@@ -290,10 +289,20 @@ def build(kit, p: Params):
         m.add(0.392, 0.575, 0.488, np_v1, GREY)
         # The front fender's partner block behind the front wheel, from the arch to the door's front edge.
         m.add(0.29, 0.22, 0.372, 0.5, BLACK)
+        # The shoulder from the door window's rear corner back to the first step is green, as the pillar
+        # above it is on top, so no block meets the green along the crease there: a black stray on the
+        # fold read as one clean raked line in the sim.
+        m.add(0.5, p.shoulder_v, 0.622, 1.02, GREEN)
+        # Two green blocks stepping up over the shoulder crease behind the door window, so the black there
+        # meets the green side in steps, not along the crease in one raked line.
+        m.add(0.622, 0.885, 0.662, 0.975, GREEN)
+        m.add(0.672, 0.925, 0.706, 1.02, GREEN_T)
         # The tech labels' charcoal block on the haunch over the rear arch.
         m.add(0.78, 0.785, 0.95, 1.05, CHAR)
-        m.add(0.40, 0.2, 0.525, 0.31, BLACK)
-        m.add(0.632, 0.2, 0.776, 0.31, BLACK)
+        # The sill rows' black blocks: the front one under the number's block, edge to edge with it; the rear
+        # one from the intake crease to the headline's tail edge.
+        m.add(NUM_U[0], 0.18, NUM_U[1], 0.31, BLACK)
+        m.add(0.62, 0.18, _snap(p.head_u + hl / 2 + 0.012), 0.31, BLACK)
         # The plate stack behind the rear wheel.
         for (v0, v1), c in zip(((0.62, 0.75), (0.47, 0.6), (0.32, 0.45)), (GREEN, GREY, CHAR), strict=True):
             m.add(0.952, v0, 1.01, v1, c)
@@ -306,6 +315,14 @@ def build(kit, p: Params):
     m.add(0.095, 0.235, 0.182, 0.45, BLACK)  # the top number's block
     m.add(0.095, -0.49, 0.182, -0.235, BLACK)  # and its twin across the green vent, for a partner
     m.add(0.01, -0.2, 0.09, 0.2, GREY)  # the bonnet lockup's block
+    # The shoulder tops behind the door windows (the pillar and the haunch top beside the side intake) carry
+    # the sides' two steps over the fold: green to the first step's tail edge, then its darker green, so each
+    # step reads as one block wrapping the shoulder and the black comes in behind them.
+    for s in (1, -1):
+        w0, w1 = sorted((s * p.flank_w, s * 0.9))
+        m.add(0.53, w0, 0.662, w1, GREEN)
+        w0, w1 = sorted((s * (p.flank_w + 0.08), s * 0.9))
+        m.add(0.662, w0, 0.706, w1, GREEN_T)
     # The roof wordmark's green block, as on the doors, so no black block runs into its letters.
     rl = 0.05 * HEAD_LEN / carspace.aspect(kit, "top") / 2 + 0.03
     m.add(_snap(0.45 - 0.05 * 0.8), -rl, _snap(0.45 + 0.05 * 0.8), rl, GREEN)
@@ -321,6 +338,7 @@ def build(kit, p: Params):
     # Parts no view maps: their ground, cut with blocks drawn as texture rectangles.
     for part, ground, palette, n in (
         ("rear_face", BLACK, {CHAR: 3.0, GREEN: 1.0}, 60),
+        ("rear_valance", BLACK, {CHAR: 3.0, GREEN: 1.2}, 50),
         ("wing_endplates", GREY, {GREEN: 2.0, GREY_T: 1.0}, 50),
         ("front_bumper_corner_l", GREY, {GREY_T: 2.0, BLACK: 1.0, GREEN: 0.6}, 40),
         ("front_bumper_corner_r", GREY, {GREY_T: 2.0, BLACK: 1.0, GREEN: 0.6}, 40),
@@ -370,26 +388,20 @@ def build(kit, p: Params):
             z=6,
         )
     )
+    # The sill row (DREXA) ends on the headline's tail edge, where zentiq and ENERGY RACING end. The number
+    # block's black foot carries nothing: the room there (u 0.455-0.488 under the number zone) only takes
+    # marks at sill size, which read as two dots from the side camera.
+    head_end = p.head_u + p.head_h * HEAD_LEN / 2
+    drexa_len = p.drexa_h * DREXA_ASPECT
     els += mirror_sides(
-        sponsor_group,
-        kit,
-        "sill-f",
-        [("huilec", "wordmark"), ("hexmoor", "mark")],
-        start=(p.sill_u, p.sill_v),
-        end=(p.sill_u + p.sill_len, p.sill_v),
-        height=p.sill_h,
-        color=GREY,
-        z=6,
-    )
-    els += mirror_sides(
-        sponsor_group,
+        sponsor,
         kit,
         "sill-r",
-        [("drexa", "wordmark"), ("brandvik", "mark")],
-        start=(0.637, p.sill_v),
-        end=(0.637 + p.sill_len * 135 / 115, p.sill_v),
-        height=p.sill_h,
+        "drexa",
+        at=(head_end - drexa_len / 2, p.drexa_v),
         color=GREY,
+        height=p.drexa_h,
+        variant="wordmark",
         z=6,
     )
     els += mirror_sides(
@@ -429,7 +441,7 @@ def build(kit, p: Params):
         sponsor_group,
         kit,
         "fender",
-        [("grivant", "mark"), ("avelor", "mark")],
+        [("grivant", "mark"), ("brandvik", "mark")],
         start=(0.331, 0.475),
         end=(0.331, 0.245),
         height=0.018,

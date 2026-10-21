@@ -1,0 +1,43 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "The side pod \"sponser square\" looks very rectangular/boxy when seen directly from the side, otherwise the livery looks good",
+ "design_hash": "4705391bceffe52b88ba30eea93fefc36dcdece4479b50ca7d2f44743a4c5a4e",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "e8427ef5155b5492b7505be3bed10dc65ea9b53b1455eb42ffbabfc05296514b",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "14d320850ec47117652036a2388d8b9d7c7d07bf53093f2d7cd1db44868003c1",
+  "car_spec.tga": "4011b98e49251230e34c7498345ebedfd16b68c18eff7b21d624c5e7b40be12a",
+  "layers.svg": "54b45938a9ebfe4c54333216eed5a5263e446cde2d368c3285ebf327db6498d0",
+  "paint.png": "d24f2731f15989f56af89be5c05199e92d2c4dfde5039e1f9136ae5f9b7fc790",
+  "spec.png": "0fac79fc21a103968d2602fe1d76593a63861eafd912d5ebdbba3a2b04e486b8",
+  "spec.svg": "f433cbc13fb38e4f93637336ccc4ba3179f55e9c3a8a730c02f172cd720611f1"
+ },
+ "waivers": [],
+ "sponsors": [
+  "altmere/mark",
+  "avelor/mark",
+  "bellcrest/wordmark",
+  "brandvik/mark",
+  "drexa/mark",
+  "drexa/wordmark",
+  "grivant/mark",
+  "huilec/mark",
+  "norvane/wordmark",
+  "ostrand/mark",
+  "rigmount/mark",
+  "telvio/mark",
+  "telvio/wordmark",
+  "zentiq/lockup",
+  "zentiq/wordmark"
+ ],
+ "marks": [
+  "extinguisher/mark"
+ ]
+}
