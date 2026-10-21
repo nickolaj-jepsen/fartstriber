@@ -12,6 +12,7 @@ front reads black-left / white-right and the tail white-left / black-right, as e
 
 from dataclasses import dataclass
 
+import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 
@@ -31,7 +32,7 @@ FRONT_TOP = ("bonnet_skin", "bonnet_vent", "windscreen_frame", "roof", "roof_fin
 # Behind the seam: the left half white (the left tail's colour), the right black.
 REAR_TOP = ("engine_cover", "engine_cover_scoop", "rear_deck", "rear_deck_lip", "buttress_l", "buttress_r")
 # The front's own parts, white on the right: kept out of the top view's right-half black.
-NOSE_R = ("front_bumper_r", "splitter", "grille_header", "crash_opening")
+NOSE_R = ("front_bumper_r", "splitter", "grille_header", "crash_opening", "front_panel_r")
 SEAM_U = 0.605  # the roof / engine cover seam (`roof_cover_seam`)
 # The Zentiq mark (assets/sponsors/zentiq/mark.svg), its outline points in the file's units (x right, y
 # down, 65.57 x 100): drawn here as geometry because the roof carries it outlined and counter-filled,
@@ -53,24 +54,28 @@ MARK = (
     (65.57, -17.0),
 )
 # The sponsor rows, nose to tail, one colour per field.
-SILL = (("huilec", "wordmark"), ("grivant", "wordmark"))  # under the number
-DUCT = (("telvio", "mark"), ("ostrand", "mark"))  # behind the side intake
+SILL = (("huilec", "wordmark"),)  # under the number, ahead of the door's front edge
+DOOR = (("ostrand", "mark"),)  # and behind it
+DUCT = (
+    ("grivant", "wordmark"),
+)  # behind the side intake, by the rear wheel: one wordmark is all 0.115 u holds
 ARCH = (("drexa", "mark"), ("hexmoor", "mark"))
 REAR = (("rigmount", "mark"), ("avelor", "mark"))
-NOSE = (("brandvik", "mark"), ("altmere", "mark"))
+HAUNCH = (("altmere", "wordmark"),)  # over the rear arch: one wordmark is what the haunch's curve holds
+SPLITTER = "hexmoor"  # its mark on each splitter corner
 
 
 @dataclass(frozen=True)
 class Params(DesignParams):
     lean: float = param(20.0, 5.0, 35.0)  # the bolt's diagonal, degrees from upright, top to the tail
-    shoulder_v: float = param(0.72, 0.55, 0.75)  # the Z's top bar
+    shoulder_v: float = param(0.75, 0.55, 0.77)  # the Z's top bar
     sill_v: float = param(0.26, 0.12, 0.32)  # the Z's bottom bar, above the side intake
     diag_u: float = param(0.515, 0.47, 0.56)  # the upper diagonal's u at jog_v
     jog_v: float = param(0.44, 0.3, 0.55)
     jog: float = param(0.04, 0.0, 0.06)  # the lower diagonal starts this far towards the tail
     pin: float = param(18.0, 14.0, 30.0)  # the green pinline, texture px
     # Hairlines: parallel to the diagonal, the first `hair_g0` from it, each gap `hair_r` times the last.
-    hair: float = param(9.0, 6.0, 14.0)
+    hair: float = param(11.0, 6.0, 14.0)
     hair_g0: float = param(0.012, 0.006, 0.03)
     hair_r: float = param(1.15, 1.0, 1.6)
     hair_n: int = param(16, 4, 24)
@@ -92,21 +97,61 @@ class Params(DesignParams):
     head_v: float = param(0.66, 0.45, 0.8)
     head_h: float = param(0.038, 0.02, 0.05)
     sill_row_v: float = param(0.15, 0.08, 0.22)
-    sill_h: float = param(0.02, 0.014, 0.03)
+    sill_h: float = param(0.023, 0.014, 0.03)
     sill_gap: float = param(0.01, 0.004, 0.03)  # u the fender's sill wordmark stays off the door's front edge
     # u the door's stays behind it: the panel ahead stands proud of the door and hides its start from front34.
-    sill_back: float = param(0.015, 0.004, 0.03)
+    sill_back: float = param(0.03, 0.004, 0.05)
+    door_end: float = param(0.49, 0.47, 0.515)  # the door's marks end ahead of the crease above the blade
     roof_h: float = param(0.18, 0.1, 0.26)  # the roof mark's height along the car
     roof_u: float = param(0.495, 0.42, 0.55)
     cover_u: float = param(0.8, 0.7, 0.85)
+    arch_u: float = param(0.322, 0.31, 0.335)  # the left's mark above the chevrons
+    arch_v: float = param(0.5, 0.44, 0.56)
+    mirror_u: float = param(0.374, 0.36, 0.39)
+    mirror_h: float = param(0.012, 0.008, 0.018)
+    wing_u: float = param(1.04, 0.98, 1.1)  # zentiq across the wing's top, reading from behind
+    wing_h: float = param(0.05, 0.03, 0.08)
+    edge_over: float = param(
+        5.0, 0.0, 12.0
+    )  # px the pin up the fender's rear edge reaches over the shut line
+    # The row over the left rear arch, between the haunch's crease (lint `crease`) and the arch.
+    over_u0: float = param(0.745, 0.72, 0.83)
+    over_u1: float = param(0.845, 0.82, 0.95)
+    over_v: float = param(0.81, 0.76, 0.88)
+    over_h: float = param(0.019, 0.012, 0.025)
+    tow_v: float = param(0.33, 0.25, 0.4)
+    splitter_u: float = param(0.0125, 0.005, 0.02)
+    splitter_h: float = param(0.011, 0.008, 0.014)
+    arch_gap: float = param(0.02, 0.005, 0.04)  # u the sill wordmark stays behind the front arch
+    haunch_u: float = param(0.6, 0.55, 0.64)  # behind here the window pin follows the side map's top
+    haunch_px: float = param(8.0, 0.0, 20.0)  # how far under it, texture px
+    haunch_k: float = param(1.2, 1.0, 1.8)  # the pin's height there, times its height on the door
+    pinch_u: float = param(0.555, 0.5, 0.6)  # where that starts, at the B-pillar's foot
+    # Hairlines on each front fender's top, as the top view maps it: raked like the door's, densest at
+    # the fender's rear edge and opening out towards the headlight.
+    fh_g0: float = param(0.014, 0.008, 0.03)  # u from the rear edge to the first line, at the crest
+    fh_n: int = param(10, 3, 14)
+    fh_px: float = param(14.0, 8.0, 20.0)  # their width, texture px: the fender top is foreshortened
+    fh_lean: float = param(-30.0, -60.0, 0.0)  # degrees as seen from above; negative: the outer end forward
 
 
 # --- the bolt -----------------------------------------------------------------------------------------
 
 
-def _bolt(kit, p: Params) -> Polygon:
-    """The field ahead of and below the Z on a side, in car space."""
+def _fender_edge(kit, view: str):
+    """u of the front fender's rear edge (the shut line to the door) at v, the feature's line extended."""
+    (u0, v0), (u1, v1) = list(kit.feature(f"fender_rear_edge_{view[-1]}").geometry().coords)[:2]
+    return lambda v: u0 + (u1 - u0) * (v - v0) / (v1 - v0)
+
+
+def _bolt(kit, p: Params, view: str = "side_l") -> Polygon:
+    """The field ahead of and below the Z on a side, in car space. The whole front fender is in it: the Z's
+    top bar starts at the fender's rear edge, half a pin behind the shut line, so the centred pin there
+    runs from the shut line back onto the door. On the fender crest the side and top views share the
+    texels in a stepped boundary, and a field edge or pin there tore (sim runs 20261021-200211 to -212041)."""
     k = geom.rake(kit, p.lean)
+    edge = _fender_edge(kit, view)
+    half = p.pin / 2 / carspace.px_per_unit(kit, view, (0.29, p.shoulder_v))[0]
 
     def up(v):
         return p.diag_u + k * (v - p.jog_v)
@@ -117,7 +162,9 @@ def _bolt(kit, p: Params) -> Polygon:
     return Polygon(
         [
             (-0.3, -0.3),
-            (-0.3, p.shoulder_v),
+            (-0.3, 1.3),
+            (edge(1.3) + half, 1.3),
+            (edge(p.shoulder_v) + half, p.shoulder_v),
             (up(p.shoulder_v), p.shoulder_v),
             (up(p.jog_v), p.jog_v),
             (lo(p.jog_v), p.jog_v),
@@ -175,17 +222,81 @@ def _hairlines(kit, view: str, front: Polygon, number, p: Params) -> list[Elemen
     return [geom.fill(kit, f"hair.{view}", view, layers, edges=edges, z=2)]
 
 
-def _window_pin(kit, view: str, p: Params) -> Element:
-    """A green strip `pin` px tall under the side window's lower edge, nose to tail."""
+def _side_top(kit, view: str, us) -> list[float | None]:
+    """At each u, the highest v the side's own map paints on the door / haunch skin: above it the top
+    view owns the texels."""
+    isl = body.part(kit, f"door_{view[-1]}").islands
+    pcs = [pc for pc in carspace.pieces(kit, view) if pc.island in isl]
+
+    def painted(u: float, v: float) -> bool:
+        return any(
+            pc.covers_car((u, v)) and pc.area.contains(Point(*pc.to_px(np.array([[u, v]]))[0])) for pc in pcs
+        )
+
+    return [next((float(v) for v in np.arange(1.05, 0.7, -0.0025) if painted(u, v)), None) for u in us]
+
+
+def _lower_hull(us: list[float], vs: list[float]) -> list[float]:
+    """The lower convex hull of the points, sampled at `us`: a curve under every point with no dips."""
+    hull: list[int] = []
+    for i in range(len(us)):
+        while len(hull) >= 2:
+            a, b = hull[-2], hull[-1]
+            cross = (us[b] - us[a]) * (vs[i] - vs[a]) - (vs[b] - vs[a]) * (us[i] - us[a])
+            if cross > 0:
+                break
+            hull.pop()
+        hull.append(i)
+    return [float(np.interp(u, [us[i] for i in hull], [vs[i] for i in hull])) for u in us]
+
+
+def _window_pin(kit, view: str, p: Params) -> list[tuple[float, float]]:
+    """A green strip `pin` px tall under the side window's lower edge, nose to tail, in car space. Behind
+    the window (from `haunch_u`) it runs along the haunch `haunch_px` under the side map's upper edge, a
+    smoothed lower envelope of it: there the top view owns the haunch tops, and a strip on the boundary
+    showed from above as green fragments."""
     line = kit.feature(f"window_line_{view[-1]}").geometry()
 
     # `pin` px at each point of the line, at the door's texture scale there (the door ends at u 0.6).
     def d(u: float, v: float) -> float:
         return p.pin / carspace.px_per_unit(kit, view, (min(u, 0.6), min(v, 0.93) - 0.03))[1]
 
-    pts = [(u, v - d(u, v)) for u, v in line.coords]
-    pts = [(0.27, pts[0][1]), *pts, (1.3, pts[-1][1]), (1.3, 1.4), (0.27, 1.4)]
-    return shape(kit, f"window-pin.{view}", view, pts, GREEN, z=3)
+    def line_v(u: float) -> float:
+        cut = line.intersection(LineString([(u, -1.0), (u, 2.0)]))
+        return 1.0 if cut.is_empty else cut.centroid.y
+
+    us = [p.haunch_u + 0.01 * i for i in range(int((1.0 - p.haunch_u) / 0.01))]
+    reach = _side_top(kit, view, us)
+    n = next((i for i, r in enumerate(reach) if r is None), len(reach))
+    us, reach = us[:n], [float(r) for r in reach[:n] if r is not None]
+    # A narrow minimum, so the line only falls where the haunch does (behind u 0.88), not ahead of it.
+    env = [min(reach[max(0, i - 1) : i + 2]) for i in range(n)]
+    # Rising to the haunch's crown, the line runs on the lower convex hull of the map's edge: the left's
+    # edge dips at u 0.64-0.68 (0.03 v), and a line following it wobbled there (sim run 20261021-221929).
+    # Behind the crown it falls with the tail, smoothed.
+    crown = int(np.argmax(env))
+    fall = [float(np.mean(env[max(crown, i - 2) : i + 3])) for i in range(crown, n)]
+    curve = _lower_hull(us[: crown + 1], env[: crown + 1])[:-1] + fall
+    curve = [float(np.mean(curve[max(0, i - 1) : i + 2])) for i in range(n)]
+    curve = [min(c, e) for c, e in zip(curve, env, strict=True)]
+
+    # haunch_px in v: d is `pin` px in v there
+    # The offset ramps in from a quarter at `haunch_u`: at the B-pillar's foot the full one left a white
+    # sliver between the pin and the black intake above it.
+    def off(u: float) -> float:
+        return p.haunch_px * min(1.0, max(0.25, (u - p.haunch_u) / 0.05))
+
+    haunch = [(u, min(line_v(u), e - d(u, e) * off(u) / p.pin)) for u, e in zip(us, curve, strict=True)]
+    ahead = [(u, v) for u, v in line.coords if u < p.haunch_u]
+    top = [(0.27, ahead[0][1]), *ahead, *haunch]
+
+    # From the B-pillar's foot back the pin is `haunch_k` times as tall, ramping in from `pinch_u` over
+    # 0.03 u: at one height in car space it showed two thirds as wide on screen there as on the door
+    # (8-10 px against 13-16 px in side_l, sim runs 20261021-221929 and -224139), on both sides.
+    def k(u: float) -> float:
+        return 1.0 + (p.haunch_k - 1.0) * min(1.0, max(0.0, (u - p.pinch_u) / 0.03))
+
+    return top + [(u, v - d(u, v) * k(u)) for u, v in reversed(top)]
 
 
 def _number_box(kit, view: str) -> Polygon:
@@ -214,35 +325,53 @@ def _plates(kit, p: Params) -> list[Element]:
 
 def _side(kit, view: str, p: Params) -> list[Element]:
     left = view == "side_l"
-    front = _bolt(kit, p)
+    front = _bolt(kit, p, view)
     black = front if left else shapely.box(-0.3, -0.3, 1.3, 1.3).difference(front)
     ink_front = WHITE if left else BLACK  # marks in the field ahead of and below the bolt
     ink_back = BLACK if left else WHITE
-    els = geom.outline(kit, f"bolt-pin.{view}", view, front, [(p.pin, GREEN)], place="centred", z=3)
+    panel_ = f"front_panel_{view[-1]}"  # painted whole in its field's colour (`build`): no pin on it
+    els = [
+        clip_out(kit, panel_, e)
+        for e in geom.outline(kit, f"bolt-pin.{view}", view, front, [(p.pin, GREEN)], place="centred", z=3)
+    ]
+    # The pin up the fender's rear edge reaches a little over the shut line onto the fender, where the
+    # front panel's cut takes it back to the island's own edge: no sliver of field between edge and pin.
+    edge = _fender_edge(kit, view)
+    scale = carspace.px_per_unit(kit, view, (0.29, p.shoulder_v))[0]
+    a, b = p.edge_over / scale, p.pin / 2 / scale
+    vs = (p.shoulder_v, 1.2)
+    over = [
+        (edge(vs[0]) - a, vs[0]),
+        (edge(vs[0]) + b, vs[0]),
+        (edge(vs[1]) + b, vs[1]),
+        (edge(vs[1]) - a, vs[1]),
+    ]
+    els.append(clip_out(kit, panel_, shape(kit, f"edge-pin.{view}", view, over, GREEN, z=3)))
     els.append(shape(kit, f"field.{view}", view, list(black.exterior.coords)[:-1], BLACK, z=1))
-    els.append(_window_pin(kit, view, p))
+    els.append(
+        clip_out(kit, panel_, shape(kit, f"window-pin.{view}", view, _window_pin(kit, view, p), GREEN, z=3))
+    )
     els += _hairlines(kit, view, front, _number_box(kit, view), p)
 
-    # Green chevrons on the black front fender: behind the arch on the left (below the shoulder), ahead
-    # of it in the shoulder strip on the right.
-    mid = p.chev_mid if left else 0.745
-    half = p.chev_half if left else 0.045
-    els.append(
-        patterns.chevrons(
-            kit,
-            f"chev.{view}",
-            view,
-            p.chev_u0 if left else 0.3,
-            p.chev_n,
-            p.chev_step,
-            half,
-            p.chev_t,
-            GREEN,
-            p.lean * 2,
-            mid=mid,
-            z=4,
+    # Green chevrons on the left's black panel behind the front wheel. The right's black above the bar
+    # is only the thin shoulder strip on the door, between two pins: no room for them there.
+    if left:
+        els.append(
+            patterns.chevrons(
+                kit,
+                f"chev.{view}",
+                view,
+                p.chev_u0,
+                p.chev_n,
+                p.chev_step,
+                p.chev_half,
+                p.chev_t,
+                GREEN,
+                p.lean * 2,
+                mid=p.chev_mid,
+                z=4,
+            )
         )
-    )
 
     # One type system on the rear door and haunch, in the field's opposite colour: zentiq, the designation,
     # and under it the code lines in Space Mono on its start edge (its nose end on the left, as read; its
@@ -272,19 +401,28 @@ def _side(kit, view: str, p: Params) -> list[Element]:
         shear=12.0,
         z=6,
     )
-    # The sill row under the number, in the black (left) or white (right) lower field: one wordmark on the
-    # panel behind the front wheel, one on the door, the gap between them on the door's front edge, which
-    # would cut a letter.
+    # The sill row under the number, in the black (left) or white (right) lower field: a wordmark on the
+    # panel behind the front wheel, two marks on the door, the gap between them on the door's front edge,
+    # which would cut a letter. The panel ahead stands proud of the door and hides its first 0.01 u from
+    # front34, so the door's marks start `sill_back` behind the edge.
     edge = kit.feature(f"door_front_edge_{view[-1]}").geometry()
     seam_u = edge.intersection(LineString([(0.0, p.sill_row_v), (1.0, p.sill_row_v)])).centroid.x
-    for (brand, variant), (u0, u1) in zip(
-        SILL, ((0.31, seam_u - p.sill_gap), (seam_u + p.sill_back, 0.515)), strict=True
+    # The front arch's rear edge beside the row: the sill wordmark starts `arch_gap` behind it, clear of
+    # the wheel and the arch's flare, which side_r showed cutting its last letter at 0.008.
+    arch = kit.feature(f"front_arch_{view[-1]}").geometry()
+    arch_u = max(u for u, v in arch.coords if v <= p.sill_row_v + 0.1)
+    for i, (group, (u0, u1)) in enumerate(
+        zip(
+            (SILL, DOOR),
+            ((arch_u + p.arch_gap, seam_u - p.sill_gap), (seam_u + p.sill_back, p.door_end)),
+            strict=True,
+        )
     ):
         els += sponsor_group(
             kit,
-            f"sill-{brand}.{view}",
+            f"sill{i}.{view}",
             view,
-            [(brand, variant)],
+            group,
             (u0, p.sill_row_v),
             (u1, p.sill_row_v),
             p.sill_h,
@@ -308,24 +446,53 @@ def _side(kit, view: str, p: Params) -> list[Element]:
         els += sponsor_group(
             kit, f"arch.{view}", view, ARCH, (0.33, 0.6), (0.365, 0.3), 0.026, ink_front, axis="column", z=6
         )
+    else:  # above the chevrons, where the door's front edge has leaned back to u 0.346
+        els.append(
+            sponsor(
+                kit,
+                f"arch.{view}",
+                view,
+                "telvio",
+                (p.arch_u, p.arch_v),
+                WHITE,
+                height=0.022,
+                variant="mark",
+                z=6,
+            )
+        )
     els += sponsor_group(
         kit, f"rear.{view}", view, REAR, (0.968, 0.72), (0.968, 0.45), 0.022, ink_back, axis="column", z=6
     )
-    els += sponsor_group(
-        kit,
-        f"nose.{view}",
-        view,
-        NOSE,
-        (-0.005, 0.33),
-        (-0.005, 0.09),
-        0.02,
-        ink_front,
-        axis="column",
-        z=6,
+    # A partner over the left rear arch, between the haunch's crease and the arch. The right haunch has no
+    # such place: its crease sits lower (lint `crease` 33-37% at u 0.78-0.85), and behind u 0.86 the
+    # haunch pin falls with the tail onto the letters.
+    if left:
+        els += sponsor_group(
+            kit,
+            f"haunch.{view}",
+            view,
+            HAUNCH,
+            (p.over_u0, p.over_v),
+            (p.over_u1, p.over_v),
+            p.over_h,
+            ink_back,
+            z=6,
+        )
+    els.append(
+        sponsor(
+            kit,
+            f"mirror.{view}",
+            view,
+            "norvane",
+            (p.mirror_u, 1.0),
+            BLACK,
+            height=p.mirror_h,
+            variant="mark",
+            z=6,
+        )
     )
-    els.append(sponsor(kit, f"mirror.{view}", view, "bellcrest", (0.374, 1.0), BLACK, height=0.012, z=6))
     # Race markings: the tow arrow at the nose, the extinguisher E by the mirror.
-    els.append(marks(kit, f"tow.{view}", "tow", (view, 0.968, 0.33), ink_back, 0.016, toward="tail", z=6))
+    els.append(marks(kit, f"tow.{view}", "tow", (view, 0.968, p.tow_v), ink_back, 0.016, toward="tail", z=6))
     els.append(marks(kit, f"ext.{view}", "extinguisher", (view, 0.43, 0.75), ink_back, 0.018, z=6))
     return els
 
@@ -373,6 +540,30 @@ def _top_hairlines(kit, keep_out, p: Params) -> Element:
     }
     el = geom.fill(kit, "hair.top", "top", layers, edges=geom.edges(kit), z=2)
     return clip_to(kit, FRONT_TOP + REAR_TOP, el)
+
+
+def _fender_hairlines(kit, p: Params) -> list[Element]:
+    """The door's hairlines carried onto each front fender's top, which the top view maps (the side maps
+    only a strip over the arch, where they were too short to keep): raked, the first `fh_g0` ahead of the
+    fender's rear edge and each gap `hair_r` times the last, so they open out towards the headlight as
+    the door's open out from the bolt. In the other field's tone: dark grey on the left's black, grey on
+    the right's white."""
+    su, sw = carspace.px_per_unit(kit, "top")
+    kk = geom.rake(kit, p.fh_lean, "top")
+    out = []
+    for side, color in (("l", DGREY), ("r", GREY)):
+        sign = -1.0 if side == "l" else 1.0
+        rear = min(u for u, _ in kit.feature(f"fender_rear_edge_{side}").geometry().coords)
+        lines, d, g = [], 0.0, p.fh_g0
+        for _ in range(p.fh_n):
+            d += g
+            g *= p.hair_r
+            c = rear - d  # the line's u at |w| 0.5
+            pts = [(c + kk * (a - 0.5), sign * a) for a in (0.15, 0.8)]
+            lines.append(_line(pts, p.fh_px, (su, sw)))
+        el = geom.fill(kit, f"hair.fender_{side}", "top", {color: lines}, edges=geom.edges(kit), z=2)
+        out.append(clip_to(kit, f"front_panel_{side}", el))
+    return out
 
 
 def _top(kit, p: Params) -> list[Element]:
@@ -424,15 +615,56 @@ def _top(kit, p: Params) -> list[Element]:
             z=6,
         )
     )
+    # And across the wing's top, as WRT carries GEN there, for the chase cam and the overhead shots.
+    els.append(
+        clip_to(
+            kit,
+            "wing_top",
+            sponsor(
+                kit,
+                "wing-word",
+                "top",
+                "zentiq",
+                (p.wing_u, 0.0),
+                GREEN,
+                height=p.wing_h,
+                variant="wordmark",
+                facing="rear",
+                z=6,
+            ),
+        )
+    )
+    # A partner on the green splitter, black, reading from the front. The top view sees the splitter's upper face only at its corners (|w| 0.3-0.48; the bonnet hides
+    # the rest), so the front's partner is a mark on each corner.
+    for side in (-1, 1):
+        els.append(
+            clip_to(
+                kit,
+                "splitter_top",
+                sponsor(
+                    kit,
+                    f"splitter{side}",
+                    "top",
+                    SPLITTER,
+                    (p.splitter_u, side * 0.42),
+                    BLACK,
+                    height=p.splitter_h,
+                    variant="mark",
+                    z=6,
+                ),
+            )
+        )
     keep_out = shapely.union_all(
         [
             Polygon(nose_plate).buffer(0.02),
             Polygon(plate).buffer(0.02),
             _mark_poly(kit, p).buffer(0.02),
             shapely.box(SEAM_U - 0.03, -2.0, SEAM_U + 0.015, 2.0),
+            shapely.box(-0.3, 0.0, 0.2, 2.0),  # the bonnet's right half, black as a whole (`build`)
         ]
     )
     els.append(_top_hairlines(kit, keep_out, p))
+    els += _fender_hairlines(kit, p)
     return els
 
 
@@ -456,6 +688,19 @@ def build(kit, p: Params):
         els.append(geom.paint(f"chin-pin-{part}", geom.clean(rim), GREEN, z=2))
     for part, color, z in (
         ("front_bumper_l", BLACK, 0),
+        # Each front fender (skin, nose piece, slats) wholly in its side's nose colour, from the side and
+        # from above alike: the side and top views share its crest, and an edge there tore.
+        ("front_panel_l", BLACK, 1),
+        ("front_panel_r", WHITE, 1),
+        # The vent is an opening: black as a whole, so its walls, which no view maps, don't show white in
+        # stepped pieces beside the bonnet's black half.
+        ("bonnet_vent", BLACK, 1),
+        # The bonnet's right half is the number's black plate but for a sliver at its rear corner, whose
+        # white met the plate in a stepped edge in the nose crop: the bonnet is black as a whole.
+        ("bonnet_skin", BLACK, 0),
+        # One island drawn on both sides (u 0.131-0.143, v 0.63-0.70, under the shoulder bar), so it can't
+        # take each side's field: black as the vent it is, never white in the left's black field.
+        ("fender_arch_vent", BLACK, 2),  # under the shoulder pin, which crosses its top
         ("sill_l", BLACK, 2),
         ("sill_r", BLACK, 2),
         ("intake_strakes", BLACK, 2),
