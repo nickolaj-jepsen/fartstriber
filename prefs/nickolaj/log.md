@@ -120,3 +120,7 @@ Parked: zentiq-e — "Set zentiq-e aside for now and keep going with zentiq-c an
 ## 2026-10-21: zentiq-b, final
 Accepted: final:zentiq-b, rated 3 — "The side pod "sponser square" looks very rectangular/boxy when seen directly from the side, otherwise the livery looks good". Critic 8/10 (iterate) after four rounds (7, 7, 8, 8); its last notes were a flat green strip under the side window and two stray black shapes under the bonnet zentiq. Kit v2 maps neither the front bumper corners nor the rear face, so neither carries partner marks.
 Installed: zentiq-b, replacing fireproof-v2 on the car.
+
+## 2026-10-21: zentiq-c, final
+Accepted: final:zentiq-c, rated 4 — no note. Critic 8/10 (iterate) after four rounds (7, 7, 8, 8); its last note was the plain front fender side faces, which the kit maps only in a thin band over the arch. The sim's own rear 451 wraps round the tail corner ('45' from the right), and kit v2 maps no bumper corner or rear deck for partner marks.
+Installed: zentiq-c, replacing zentiq-b on the car (his higher rating of the two).
