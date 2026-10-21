@@ -32,7 +32,7 @@ One design, this round's shots, and its `history`: every earlier verdict with th
 - `fixes`: at most three, the most important first, each what is visible and where. `optional: true` is polish the owner wouldn't send the car back for. A previous fix that is `partly` or `not` resolved and still matters is listed again.
 - `verdict`: your call for a round that doesn't ship: `iterate` (the concept holds) or `rework` (the concept is what fails). Ship is computed from the rest.
 - `lint_missed`: problems only the 3D shots show, which a flat texture check couldn't see.
-- `blocked`: problems still visible that the builder can't fix in the design: answered `blocked` in the history, or kit and renderer faults. Don't spend a fix on them. Scenery in front of the car in a shot (a grass bank, a kerb) is how that camera sees the replay, not a fault: judge what it hides from a view that shows it, and list it here only when no view does.
+- `blocked`: problems still visible that the builder can't fix in the design: answered `blocked` in the history, or kit and renderer faults. Don't spend a fix on them. Scenery in front of the car in a shot (a grass bank, a kerb) is how that camera sees the replay, not a fault: judge what it hides from a view that shows it, and list it here only when no view does. The same holds for a face no camera sees square-on (the sill under the doors faces down) and for what the sim draws itself (its 451, wherever it wraps): leave them out of `blocked`, and judge them from the view that shows them best.
 
 ```json
 {
