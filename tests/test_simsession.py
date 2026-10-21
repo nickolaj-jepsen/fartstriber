@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from livery import capture, config, install, paintfolder, simlock, simsession
+from livery import capture, config, install, iracing, paintfolder, simlock, simsession
 from livery.capture import SimInFront
 from livery.check import run_build
 from livery.config import Shot
@@ -93,6 +93,14 @@ class World:
         self.on_grab = lambda n: None
         self.grey_left = 0
         self.shown = self.on_disk()
+        # The sim's graphics settings as the policy needs them.
+        needs = config.policy(config.REPO / "policy.toml").renderer
+        ini = cfg.documents / iracing.RENDERER_INI
+        ini.parent.mkdir(parents=True, exist_ok=True)
+        ini.write_text(
+            "".join(f"[{s}]\n" + "".join(f"{k}={v}\n" for k, v in keys.items()) for s, keys in needs.items()),
+            encoding="utf-8",
+        )
 
     def on_disk(self) -> tuple:
         f = self.folder / f"car_{self.stem}.tga"
@@ -546,6 +554,20 @@ def test_a_shot_with_the_replay_ui_over_the_car_is_taken_again_then_refused(worl
         world.ui = False
 
     run(world, lambda s: s.shoot("side", SIDE, check_ui=True), log=cursor_leaves)  # gone by the retake
+
+
+def test_a_run_waits_while_a_graphics_setting_differs_from_what_previews_need(world):
+    ini = world.cfg.documents / iracing.RENDERER_INI
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text("[Replay Graphics]\nLODPctMax=400            ; LOD\n", encoding="utf-8")
+    needs = {"Replay Graphics": {"LODPctMax": "100"}}
+
+    with pytest.raises(SimNotReady, match="LODPctMax"):
+        run(world, renderer=needs)
+    assert not world.sent  # it touched nothing
+
+    ini.write_text("[Replay Graphics]\nLODPctMax=100            ; LOD\n", encoding="utf-8")
+    run(world, renderer=needs)
 
 
 def test_a_view_whose_car_fills_the_ui_bands_is_judged_by_the_cursor_alone(world):

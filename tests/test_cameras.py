@@ -45,6 +45,20 @@ def test_a_view_the_profile_lacks_is_added_on_its_default_pose_in_a_group_of_its
         cameras.preview_views(kit, ["side_l", "no_such_view"])
 
 
+def test_a_reset_view_goes_back_to_its_default_in_a_new_group_and_keeps_its_frame(ws):
+    kit = kits.load(ws, "tiny")
+    prof = kits.profile(kit)
+    moved = View("Mine", (0.0, 20.0, 0.5, 0.0, 0.0, 0.2), 0.1, frame=1234)
+    kits.write_profile(kit.dir, replace(prof, preview={"side_l": moved}))
+
+    cameras.reset_views(kit, ["side_l"])
+
+    now = kits.profile(kit).preview["side_l"]
+    assert (now.pose, now.aim) == cameras.preview_poses(cameras.car_size(prof))["side_l"]
+    assert now.group != moved.group
+    assert now.frame == moved.frame
+
+
 def track_camera_set(groups: dict[str, list[tuple[str, int]]]) -> bytes:
     """A track set with these groups, each a list of (camera name, type)."""
     recs = []

@@ -442,12 +442,19 @@ def preview_cameras(
     arm: Annotated[
         bool, typer.Option(help="If camera.ini has to change, wait for the sim to close, then write.")
     ] = False,
+    reset: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Pose this view of the kit at its default again, in a new camera group (repeatable)."
+        ),
+    ] = None,
     as_json: AsJson = False,
 ) -> None:
     """Add the car-locked preview cameras to the track camera set of the kit's replay in the sim's documents.
 
     The set gets the preview cameras of every kit shot on that track, so adding one kit keeps the others'.
-    The poses come from each kit's profile; one it lacks is filled in with the default sized for its car.
+    The poses come from each kit's profile; one it lacks, or one --reset names, gets the default sized for
+    its car.
 
     The sim reads the set when a session opens: open the replay again afterwards. With --arm it waits, when
     camera.ini has to change, until the sim is closed, so one close and reopen loads the cameras.
@@ -464,6 +471,8 @@ def preview_cameras(
     elif not car:
         raise typer.BadParameter("name the kit, or pass --restore")
     else:
+        if reset:
+            cameras.reset_views(kit.load(ws, car), reset)
         views = cameras.track_views(ws, cfg, track, ws.policy.preview)
         running = (
             cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log) if arm else sim_running(cfg)

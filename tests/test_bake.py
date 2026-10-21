@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from livery import bake, calibrate, config, critic, graycode, state
+from livery import bake, calibrate, config, critic, graycode, iracing, state
 from livery import kit as kits
 from livery.config import Workspace
 from livery.kit import Profile
@@ -140,7 +140,7 @@ def _new_spec(ws: Workspace) -> None:
 
 
 def _new_graphics(ws: Workspace) -> None:
-    ini = config.load().documents / calibrate.RENDERER_INI
+    ini = config.load().documents / iracing.RENDERER_INI
     ini.parent.mkdir(parents=True, exist_ok=True)
     ini.write_text("[Graphics Options]\nMSAASamples=4\n", encoding="utf-8")
 

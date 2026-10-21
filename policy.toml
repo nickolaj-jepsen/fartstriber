@@ -28,6 +28,31 @@ crease_kink = 0.3                        # a fold: the screen jumps off the line
 crease_share = 0.15                      # of text, a sponsor or a mark beyond a crease that runs through it
 max_hidden_detail_share = 0.5            # of a pattern's area where no view sees it well
 
+# The sim's graphics settings every sim run needs, by section of its rendererDX11Monitor.ini (a replay
+# overrides [Graphics Options] with [Replay Graphics]); a run waits, naming each that differs. Nothing that
+# blurs or shifts the paint on screen, and the car's detail pinned: below the FPS target the LOD percentages
+# let the sim swap in a coarser car mid-capture.
+[renderer."Graphics Options"]
+AntiAliasMethod = 0
+Sharpening = 0
+MotionBlurStrength = 0
+DepthOfField = 0
+SSAO = 0
+ResolutionScaling = 0
+MipLODBias = 0
+CompressTexturesCars = 1
+CarPaint2048x2048 = 1
+EnableHDR = 1
+
+[renderer."Replay Graphics"]
+Sharpening = 0
+MotionBlurStrength = 0
+DepthOfField = 0
+SSAO = 0
+CarDetail = 2
+LODPctMax = 100
+LODPctDynoMax = 100
+
 [preview]
 # The views `livery preview sim` shoots, in this order (the paint reloads framed at the first); each kit's
 # profile.toml says how its car is shot from each.

@@ -3,9 +3,11 @@
 Every broadcast first calls `guard`, which `SimSession` uses to stop a run once the sim is in front.
 """
 
+import configparser
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import irsdk
@@ -15,6 +17,33 @@ from livery.config import Config, Replay
 from livery.errors import LiveryError
 
 TRADING_PAINTS = ("tradingpaints", "trading paints")
+RENDERER_INI = "rendererDX11Monitor.ini"
+# The ini's sections that shape a replay's picture: the options, and those a replay overrides them with.
+RENDERER_SECTIONS = ("Graphics Options", "Replay Graphics")
+
+
+def renderer_settings(documents: Path) -> dict[str, dict[str, str]] | None:
+    """The sim's graphics settings by section, without their comments; None without the ini."""
+    path = documents / RENDERER_INI
+    if not path.exists():
+        return None
+    ini = configparser.ConfigParser(inline_comment_prefixes=(";",), interpolation=None, strict=False)
+    ini.optionxform = str  # type: ignore[assignment]  # keep the keys' case
+    ini.read_string(path.read_text(encoding="utf-8", errors="replace"))
+    return {s: {k: v.strip() for k, v in ini[s].items()} for s in RENDERER_SECTIONS if ini.has_section(s)}
+
+
+def renderer_differs(documents: Path, required: dict[str, dict[str, str]]) -> list[str]:
+    """Each setting the policy requires that the sim's ini holds otherwise, as '[section] key is x, needs y'."""
+    if not required:
+        return []
+    have = renderer_settings(documents) or {}
+    return [
+        f"[{section}] {key} is {have.get(section, {}).get(key, 'unset')}, needs {want}"
+        for section, keys in required.items()
+        for key, want in keys.items()
+        if have.get(section, {}).get(key) != str(want)
+    ]
 
 
 class SimNotReady(LiveryError, RuntimeError):

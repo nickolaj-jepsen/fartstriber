@@ -48,6 +48,15 @@ MATTE = (0, 255, 0)  # no metal, fully rough: the fewest reflections between the
 PAINT_DIFF = 40  # a channel moving this much between the white and the black car is paint
 MIN_PART = 0.005  # paint pieces smaller than this share of the largest are foliage moving, not car
 CLEAR = 0.97  # of the paint the clearest candidate shows: less, and something covers the car
+# How the body moves on screen between frames, rolling and pitching against the camera, as shares of the
+# frame's width: shifted up to SHIFT and turned up to MAX_TURN_DEG (4° between Daytona's banking and its
+# infield), aligned on an ALIGN grid; paint within EDGE of the aligned mask counts as shown. Frames whose
+# roll is within ROLL_PEER rad of each other are compared for cover.
+SHIFT = 0.02
+MAX_TURN_DEG, TURN_STEP_DEG = 5.0, 0.5
+ALIGN = 0.002
+EDGE = 0.0016
+ROLL_PEER = 0.02
 MARGIN = 0.02  # of the frame, between the car and each edge
 CENTRE = 0.1  # of the frame, the car's centre may sit off the frame's
 SIZE_TOL = 0.1  # cameras sized this much differently for the measured car get resized
@@ -61,6 +70,7 @@ MEASURE = ("side_l", "side_r")  # the square-on side views, which measure the ca
 # Views shot in another light: at the passing candidate whose white car is brightest in them, not the kit's
 # frame (at the McLaren's frame the sun leaves its right side in shade).
 LIT = frozenset({"side_r_lit"})
+SHADE = 0.8  # of its lit frame's brightness: the kit's frame leaves a lit view's car in shade below this
 
 
 class NoClearFrame(LiveryError):
@@ -173,6 +183,7 @@ class Seen:
     width: int
     height: int
     bright: float = 0.0  # the white car's median brightness: how much light the view sees on it
+    covered: float = 0.0  # share of the clearest candidate's paint this one lacks, beyond a small shift
 
     @property
     def margin(self) -> float:
@@ -204,6 +215,53 @@ def seen(mask: np.ndarray, white: np.ndarray | None = None) -> Seen:
     return Seen((int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())), int(mask.sum()), w, h, bright)
 
 
+def aligned(ref: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """`mask` turned and shifted to lie best over `ref`: the body rolls and pitches against a car-locked
+    camera from frame to frame, turning the car up to a few degrees in the front and rear views."""
+    step = max(1, round(ALIGN * ref.shape[1]))
+    a = ref[::step, ::step].astype(np.float32)
+    fa = np.fft.rfft2(a)
+    best = (-1.0, 0.0, 0, 0)
+    for deg in np.arange(-MAX_TURN_DEG, MAX_TURN_DEG + 1e-9, TURN_STEP_DEG):
+        b = ndimage.rotate(mask[::step, ::step].astype(np.float32), deg, reshape=False, order=1)
+        corr = np.fft.irfft2(fa * np.conj(np.fft.rfft2(b)), a.shape)
+        r = max(1, round(SHIFT * ref.shape[1] / step))
+        corr = np.roll(corr, (r, r), (0, 1))[: 2 * r + 1, : 2 * r + 1]
+        i, j = np.unravel_index(int(np.argmax(corr)), corr.shape)
+        if corr[i, j] > best[0]:
+            best = (float(corr[i, j]), float(deg), (int(i) - r) * step, (int(j) - r) * step)
+    _, deg, dy, dx = best
+    turned = ndimage.rotate(mask.astype(np.uint8), deg, reshape=False, order=0) > 0
+    return np.roll(turned, (dy, dx), (0, 1))
+
+
+def with_covered(
+    by_frame: dict[int, Seen], masks: dict[int, np.ndarray], rolls: dict[int, float | None]
+) -> dict[int, Seen]:
+    """Each frame's view with how much paint it lacks against the clearest frame the car rolls about as far
+    on: rolled further, a side view sees more of the roof or the sill, which no turn of the picture undoes.
+    Paint near the aligned mask counts as shown, so only a fence, a wall or a bank leaves a gap."""
+    out = {}
+    for f, x in by_frame.items():
+        peers = [
+            g
+            for g in by_frame
+            if rolls.get(f) is None or rolls.get(g) is None or abs(rolls[f] - rolls[g]) <= ROLL_PEER
+        ]
+        clearest = max(peers, key=lambda g: by_frame[g].area)
+        ref = masks[clearest]
+        if not ref.any() or clearest == f:
+            out[f] = x
+            continue
+        if not masks[f].any():
+            out[f] = replace(x, covered=1.0)
+            continue
+        edge = EDGE * ref.shape[1]
+        near = cast(np.ndarray, ndimage.distance_transform_edt(~aligned(ref, masks[f]))) <= edge
+        out[f] = replace(x, covered=float((ref & ~near).sum() / ref.sum()))
+    return out
+
+
 def judge(views: dict[str, dict[int, Seen]]) -> dict[int, dict[str, str | None]]:
     """Per candidate frame and view, what is wrong with the shot, or None. A close-up shows part of the car,
     so only whether something covers it counts."""
@@ -218,8 +276,8 @@ def judge(views: dict[str, dict[int, Seen]]) -> dict[int, dict[str, str | None]]
                 problem = "the car runs off the frame"
             elif not close and x.off_centre > CENTRE:
                 problem = "the car is off-centre"
-            elif x.area < CLEAR * clearest:
-                problem = f"something covers {100 * (1 - x.area / clearest):.0f}% of the car"
+            elif x.covered > 1 - CLEAR:
+                problem = f"something covers {100 * x.covered:.0f}% of the car"
             else:
                 problem = None
             out.setdefault(frame, {})[view] = problem
@@ -235,6 +293,19 @@ def lit_frame(
     """The candidate frame that shows `view`'s white car brightest of those that show it clearly."""
     clear = [f for f in frames if problems[f][view] is None]
     return max(clear, key=lambda f: by_view[view][f].bright) if clear else None
+
+
+def in_shade(
+    view: str,
+    frame: int,
+    frames: list[int],
+    problems: dict[int, dict[str, str | None]],
+    by_view: dict[str, dict[int, Seen]],
+) -> bool:
+    """Whether `view`'s car is clearly darker at `frame` than at its lit frame: a kit frame there leaves the
+    lit view something to add."""
+    best = lit_frame(view, frames, problems, by_view)
+    return best is not None and by_view[view][frame].bright < SHADE * by_view[view][best].bright
 
 
 def measured(views: dict[str, View], seen_by_view: dict[str, list[Seen]]) -> CarSize | None:
@@ -323,6 +394,7 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         sim="any-replay",
         log=log,
         window=ws.policy.window,
+        renderer=ws.policy.renderer,
         checkout=ws.root,
     ) as s:
         s.out = _out(ws, kit)
@@ -337,6 +409,7 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         log(f"candidates: {', '.join(str(x.frame) for x, _ in picked)}")
         paint_name, spec_name = s.paint_names
         white: dict[tuple[int, str], np.ndarray] = {}
+        masks: dict[tuple[int, str], np.ndarray] = {}
         by_view: dict[str, dict[int, Seen]] = {n: {} for n in names}
         for colour, data in paint.items():
             s.put({paint_name: data, spec_name: spec})
@@ -351,9 +424,13 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
                     shown = white.pop((x.frame, name))
                     mask = paint_mask(shown, img)
                     by_view[name][x.frame] = seen(mask, shown)
+                    masks[x.frame, name] = mask
                     _half(shown).save(s.out / f"{x.frame}_{name}.png")
                     Image.fromarray(mask).save(s.out / f"{x.frame}_{name}_paint.png")
             log(f"shot the {'white' if colour else 'black'} car")
+    rolls = {x.frame: x.roll for x, _ in picked}
+    for n in names:
+        by_view[n] = with_covered(by_view[n], {f: masks[f, n] for f in by_view[n]}, rolls)
     problems = judge(by_view)
     report["frames"] = {
         str(x.frame): {
@@ -390,7 +467,15 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         )
         raise NoClearFrame(f"no candidate frame shows the car clearly from every camera ({reasons}); {s.out}")
     else:
-        best, _ = min(passing, key=lambda c: (c[1], sum(by_view[n][c[0].frame].off_centre for n in sides)))
+        frames = [x.frame for x, _ in picked]
+        shaded = [
+            c
+            for c in passing
+            if all(in_shade(n, c[0].frame, frames, problems, by_view) for n in LIT & set(names))
+        ]
+        best, _ = min(
+            shaded or passing, key=lambda c: (c[1], sum(by_view[n][c[0].frame].off_centre for n in sides))
+        )
         report["frame"] = best.frame
         log(f"frame {best.frame} on replay {sub} at {track}")
         lit = {n: lit_frame(n, [x.frame for x, _ in picked], problems, by_view) for n in names if n in LIT}
@@ -446,6 +531,7 @@ def check(cfg: Config, ws: Workspace, kit: Kit, log=print) -> dict:
         replay=replay,
         log=log,
         window=ws.policy.window,
+        renderer=ws.policy.renderer,
         checkout=ws.root,
     ) as s:
         s.out = _out(ws, kit, "check-")

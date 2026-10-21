@@ -18,7 +18,6 @@ stops is carried on with `--resume`, after its last finished paint. When a spec 
 shoots that material's ladder again into the current capture (`livery kit spec --preset`).
 """
 
-import configparser
 import hashlib
 import os
 import time
@@ -35,6 +34,7 @@ from livery import kit as kits
 from livery.config import Config, Shot, Workspace
 from livery.errors import LiveryError
 from livery.hashing import kit_hash
+from livery.iracing import renderer_settings
 from livery.kit import Kit
 from livery.model import Material
 from livery.raster import tga_bytes
@@ -47,8 +47,6 @@ BACKGROUND = f"{Material.matte}_120"
 MIN_DECODED_PCT = 80.0  # a view that decodes less of the car than this was shot wrong
 CLIPPED = 254
 HIGHLIGHT = 64  # black paint under gloss shows only reflections: brighter than this, a highlight
-RENDERER_INI = "rendererDX11Monitor.ini"
-RENDERER_SECTION = "Graphics Options"
 
 Log = Callable[[str], object]
 
@@ -81,16 +79,6 @@ def paint(job: Job, canvas: int) -> np.ndarray:
 
 
 # What a capture depends on.
-
-
-def renderer_settings(path: Path) -> dict[str, str] | None:
-    """The sim's graphics options, without their comments."""
-    if not path.exists():
-        return None
-    ini = configparser.ConfigParser(inline_comment_prefixes=(";",), interpolation=None, strict=False)
-    ini.optionxform = str  # type: ignore[assignment]  # keep the keys' case
-    ini.read_string(path.read_text(encoding="utf-8", errors="replace"))
-    return dict(ini[RENDERER_SECTION]) if ini.has_section(RENDERER_SECTION) else None
 
 
 def car_dat(cfg: Config, paint_folder: str) -> dict | None:
@@ -133,7 +121,7 @@ def identity(cfg: Config, ws: Workspace, kit: Kit, prof: kits.Profile) -> dict:
             "track": r.track,
         },
         "track_cameras": _sha(cameras.track_cam(cfg.documents, r.track)),
-        "renderer": renderer_settings(cfg.documents / RENDERER_INI),
+        "renderer": renderer_settings(cfg.documents),
         "car_dat": car_dat(cfg, kit.paint_folder),
         "scheme": [[list(slot) for slot in p] for p in graycode.SCHEME],
         "jobs": [[j.name, j.grey, list(j.spec)] for j in jobs(kit)],
@@ -264,6 +252,7 @@ def _shoot(
         paint_folder=kit.paint_folder,
         groups=groups,
         window=ws.policy.window,
+        renderer=ws.policy.renderer,
         log=log,
         checkout=ws.root,
     ) as s:

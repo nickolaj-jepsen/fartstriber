@@ -43,6 +43,7 @@ def preview_sim(cfg: Config, ws: Workspace, name: str, log=print) -> Path:
         groups=groups,
         replay=replay,
         window=ws.policy.window,
+        renderer=ws.policy.renderer,
         log=log,
         checkout=ws.root,
     ) as s:

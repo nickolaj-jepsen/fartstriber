@@ -43,6 +43,7 @@ class Policy:
     lint: dict  # the output lint's thresholds by name; `lint.run.thresholds` checks and types them
     preview: tuple[str, ...]  # the views `livery preview sim` shoots, in order; the kit's profile frames each
     window: tuple[int, int]  # the sim window's client size every sim run shoots at
+    renderer: dict  # graphics settings every sim run needs, by section of the sim's renderer ini
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,7 @@ def _policy(path: Path, _mtime: int) -> Policy:
         lint=dict(_get(raw, "lint", path)),
         preview=tuple(_get(raw, "preview.views", path)),
         window=(int(w), int(h)),
+        renderer={s: {k: str(v) for k, v in keys.items()} for s, keys in raw.get("renderer", {}).items()},
     )
 
 

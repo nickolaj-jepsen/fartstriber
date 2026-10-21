@@ -31,9 +31,9 @@ pose = [0.0, -2.1788935686914543, 25.40486745229364, 1.5707963267948966, 1.48352
 aim = 0.0
 
 [preview.rear_chase]
-group = "mclaren-720 Rear Chase 0d64"
+group = "mclaren-720 Rear Chase 679b"
 pose = [-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157]
-aim = 0.1744
+aim = 0.344
 
 [preview.front]
 group = "mclaren-720s-gt3 Front f067"

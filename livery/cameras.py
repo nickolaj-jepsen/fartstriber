@@ -88,9 +88,10 @@ def preview_poses(size: CarSize = REF) -> dict[str, tuple[tuple[float, ...], flo
 
 # Views nearer than D, posed on the McLaren's geometry from its capture (docs/sim.md, Camera sets): behind
 # and ahead at a driver's eye height, and close-ups of the left door and the nose. Their aims sit between
-# the field's two readings (a raised aim point, or a tilt), so either frames the car.
+# the field's two readings (a raised aim point, or a tilt), so either frames the car; rear_chase's is raised
+# by what centred the car in its first shots (it sat 115 px high at 0.17).
 NEAR = {
-    "rear_chase": ((-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157), 0.1744),
+    "rear_chase": ((-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157), 0.344),
     "front": ((12.0, 0.0, 0.587, -math.pi, 0.0489, 0.2114), 0.179),
     "door_close": ((2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367), 0.0),
     "nose_close": ((6.45, 0.0, 0.237, -math.pi, 0.0367, 0.4581), -0.031),
@@ -396,6 +397,23 @@ def armed(docs: Path, track: str, running: Callable[[], bool], log=print, poll_s
 
 
 # The poses a kit's profile holds: what it gives, else the defaults sized for its car, written into it.
+
+
+def reset_views(kit: Kit, names: Sequence[str]) -> None:
+    """Pose the kit's views `names` at their defaults again, each in a group of its own, keeping any frame."""
+    prof = kits.profile(kit)
+    defaults = preview_poses(car_size(prof))
+    unknown = [n for n in names if n not in defaults]
+    if unknown:
+        raise kits.KitError(f"no default pose for {', '.join(unknown)}")
+    was = {n: prof.preview.get(n) or View("", ()) for n in names}
+    preview = {
+        n: replace(
+            was[n], group=group_name(kit.name, n, *defaults[n]), pose=defaults[n][0], aim=defaults[n][1]
+        )
+        for n in names
+    }
+    kits.write_profile(kit.dir, replace(prof, preview=prof.preview | preview))
 
 
 def preview_views(kit: Kit, names: Sequence[str]) -> dict[str, View]:

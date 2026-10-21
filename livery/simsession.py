@@ -25,7 +25,15 @@ from livery import cameras, capture, paintfolder, simlock, state
 from livery import kit as kits
 from livery.capture import CaptureError, SimInFront
 from livery.config import Config, Replay, Shot, Workspace, sha256, track_path
-from livery.iracing import Car, Sim, SimNotReady, trading_paints_running, wait_for
+from livery.iracing import (
+    RENDERER_INI,
+    Car,
+    Sim,
+    SimNotReady,
+    renderer_differs,
+    trading_paints_running,
+    wait_for,
+)
 
 READY_WAIT_S = 1800.0  # how long a run waits for the sim to be ready and behind other windows
 POLL_S = 1.0
@@ -95,6 +103,7 @@ class SimSession:
         sim: Literal["replay", "any-replay", "optional", "none"] = "replay",
         replay: Replay | None = None,
         window: tuple[int, int] | None = None,
+        renderer: dict | None = None,
         log: Callable[[str], object] = print,
         lock_timeout: float = 1800,
         ready_timeout: float | None = None,
@@ -104,6 +113,7 @@ class SimSession:
         self.replay = replay or cfg.replay
         self.groups, self.groups_fix = sorted(set(groups)), groups_fix
         self.size = window
+        self.renderer = renderer or {}
         self.lock_timeout = lock_timeout
         self.ready_timeout = READY_WAIT_S if ready_timeout is None else ready_timeout
         self.out: Path | None = None  # where the manifest goes; set it once the sim is ours
@@ -178,6 +188,12 @@ class SimSession:
         missing = [g for g in self.groups if g not in sim.groups]
         if missing:
             return f"the replay has no camera group {', '.join(missing)}; {self.groups_fix}"
+        differs = renderer_differs(self.cfg.documents, self.renderer)
+        if differs:
+            return (
+                f"the sim's graphics settings aren't the ones previews need: {'; '.join(differs)} "
+                f"(policy.toml [renderer]; set them in the sim's options, or in {RENDERER_INI} while it is closed)"
+            )
         self.window = capture.Window.find(self.cfg.process)
         if self.window is None:
             return f"no {self.cfg.process} window"
@@ -622,4 +638,6 @@ def status(cfg: Config, ws: Workspace) -> list[str]:
                 f"{cw}x{ch}, not the {pw}x{ph} runs shoot at ({why or 'a run resizes it and puts it back'})"
             )
         lines.append(f"window: {where}, {size}{cursor}")
+    differs = renderer_differs(cfg.documents, ws.policy.renderer)
+    lines.append(f"graphics: {'; '.join(differs) if differs else 'as policy.toml [renderer] needs'}")
     return lines
