@@ -124,3 +124,10 @@ Installed: zentiq-b, replacing fireproof-v2 on the car.
 ## 2026-10-21: zentiq-c, final
 Accepted: final:zentiq-c, rated 4 — no note. Critic 8/10 (iterate) after four rounds (7, 7, 8, 8); its last note was the plain front fender side faces, which the kit maps only in a thin band over the arch. The sim's own rear 451 wraps round the tail corner ('45' from the right), and kit v2 maps no bumper corner or rear deck for partner marks.
 Installed: zentiq-c, replacing zentiq-b on the car (his higher rating of the two).
+
+## 2026-10-21: Fireproof v3 concepts
+Brief: "another take on the fireproof livery, i really like the pixel motif, but the rest i'm not really sold on", with no big wordmark ("for my own brand, i'd rather it just being cool-looking") and the colours of his Fireproof desktop theme (Flexoki: warm dark greys, paper, terracotta #CF6A4C).
+Edit: concept:fireproof-v3b, rated 2 — "I like the concept, but not the execution, and not really the cyan either, i get there has to be a \"contrast\" color, but maybe try another?"
+Edit: concept:fireproof-v3a, rated 2 — "I'm not sure i like the side-pod \"info-box\" but otherwise it's quite cool"
+Rejected: concept:fireproof-v3e — "I don't like this at all" (saved as an edit)
+Context: v3b is terracotta 8-bit linework panels over all of a warm-black car (SPIRIT's system), cyan mirrors, lip, endplates and number frames. v3a is a black nose turning into a paper tail through a terracotta block collage (Paul Miller's system); the "info-box" is the FP-03 / GT3 EVO / T-2048 label plate on the haunch. v3e is one raked black slash repeated at falling resolution on a paper car. The critics ranked v3b > v3a > v3e; v3f (lava cracks), v3d (fire salamander) and v3c (tonal grey facets) ranked lower and weren't shown.
