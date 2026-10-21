@@ -3,12 +3,10 @@ terracotta, after SPIRIT's geometric panels (references.md 34), with every line 
 
 Each view is cut into raked panels by recursive splits in the view as seen (v or w scaled into units of u,
 so a pixel is square). Panels are largest, and full terracotta, along one band raked with the lean (low on
-the front fender, up over the door top and haunch, over the roof); towards the lower nose and the lower
-tail they get smaller, dim and quiet. Every panel is rasterised onto one pixel grid in SPIRIT's nested
-frames: a stepped frame in its own ink, black, a border row, black, an inner line, black, and a core
-pattern; the hottest panels are solid terracotta with black stair lines cut in. The black between panels,
-the lower body under the intake crease, the number windows and the yellow hardware are the only solid
-colours.
+the front fender, up over the door top and haunch, over the roof); the nose is as hot as the band; away
+from both they get smaller and dim. Every panel is a filled shape with a black gutter round it, rasterised
+onto one pixel grid in SPIRIT's nested frames (`_rasterise`) in three strengths. The black gutters, the
+lower body under the intake crease, the windows and the yellow hardware are the only solid colours.
 """
 
 import math
@@ -34,12 +32,13 @@ PAPER = "#DAD8CE"
 CONTRASTS = ("#D0A215", "#F2F0E5", "#8B7EC8", "#CE5D97")  # yellow, bright paper, purple, magenta
 
 PATTERNS = ("hatch", "saw", "diamond", "dots", "chevron", "embers")
-QUIET = ("dots", "embers", "diamond")  # the dim panels' cores
+LINES = ("hatch", "saw", "diamond", "chevron")  # the patterns cut into solid panels as black lines
 BANDS = ("rope", "ladder", "teeth")
 
 
 @dataclass(frozen=True)
 class Params(DesignParams):
+    seed: int = param(3, 0, 2**31 - 1)  # the panel layout: seeds 1-6 side by side, 3 has the clearest panels
     cell: float = param(0.0085, 0.005, 0.014)  # one pixel, in units of u as seen
     lean: float = param(28.0, 0.0, 60.0)  # the raked cuts, degrees from upright, tops towards the tail
     band_v0: float = param(0.44, 0.2, 0.7)  # the hot band's centre at the nose (v)
@@ -48,14 +47,18 @@ class Params(DesignParams):
     top_u: float = param(0.47, 0.3, 0.7)  # on top, the band's centre over the roof (u)
     top_sweep: float = param(0.35, 0.0, 0.8)  # how far back it sweeps at the outer edge (u per w)
     top_w: float = param(0.22, 0.05, 0.5)  # its half width on top (u)
-    big: float = param(0.05, 0.005, 0.12)  # a panel's area at the band's heart (u² as seen)
-    small: float = param(0.014, 0.001, 0.04)  # its area far from the band
+    nose_heat: float = param(1.0, 0.0, 1.0)  # the nose's own heat, so the front carries full panels too
+    nose_w: float = param(0.4, 0.05, 0.5)  # how far back from the nose it reaches (u)
+    big: float = param(0.06, 0.005, 0.12)  # a panel's area at the band's heart (u² as seen)
+    small: float = param(0.025, 0.001, 0.05)  # its area far from the band
     hot: float = param(0.55, 0.1, 0.9)  # heat above which a panel is terracotta, else #6B3528
     solid: float = param(0.75, 0.3, 1.01)  # heat above which a panel may be solid with a fine pattern
     solid_share: float = param(1.0, 0.0, 1.0)  # of the panels hot enough, how many are solid
     contrast: int = param(0, 0, 3)  # which theme colour is the contrast (CONTRASTS)
-    accent_share: float = param(0.5, 0.0, 1.0)  # of nose and tail panels with an inner line in the contrast
-    gap: float = param(2.0, 0.6, 4.0)  # black between panels, in cells
+    accent_share: float = param(1.0, 0.0, 1.0)  # of nose and tail panels with an inner line in the contrast
+    gap: float = param(3.0, 0.6, 5.0)  # black between panels, in cells
+    ring2: int = param(6, 4, 99)  # a panel this many cells deep gets a two-cell black ring inside its frame
+    framed: int = param(5, 1, 10)  # a panel at least this many cells deep has a frame; thinner, a toned block
     window_pad: float = param(1.0, 0.5, 4.0)  # black round the number, in cells
     window_lean: float = param(14.0, 0.0, 40.0)  # the number windows' rake, degrees
     bracket: float = param(4.5, 2.0, 12.0)  # the number windows' corner brackets, arm length in cells
@@ -63,6 +66,25 @@ class Params(DesignParams):
     crease_pad: float = param(0.06, 0.0, 0.15)  # the lower body's top above the intake crease (v)
     mark_v: float = param(0.14, 0.05, 0.2)  # the door sill marks' centre line (v)
     mark_u1: float = param(0.49, 0.47, 0.52)  # where their row ends (u)
+    duct_u2: float = param(0.69, 0.66, 0.73)  # the duct's wordmark over the marks: its start (u)
+    duct_v2: float = param(0.28, 0.2, 0.36)  # and its centre line (v)
+    plate_u: float = param(0.05, 0.02, 0.2)  # the bonnet's corner sponsor plates: centre (u)
+    plate_w: float = param(0.3, 0.2, 0.5)  # their centre off the centre line (w)
+    plate_du: float = param(0.025, 0.01, 0.06)  # their half length (u)
+    plate_dw: float = param(0.12, 0.03, 0.15)  # their half width (w)
+    # The sides: a finer pixel, so their short panels hold a frame, a ring and a visible core pattern.
+    side_seed: int = param(5, 0, 99)  # the sides' panel layout: seeds 0-9 side by side, 5 reads best
+    side_cell: float = param(0.0065, 0.004, 0.014)  # one pixel on the sides, in units of u as seen
+    side_big: float = param(0.022, 0.005, 0.06)  # a side panel's area at the band's heart (u² as seen)
+    side_small: float = param(0.011, 0.002, 0.04)  # far from it
+    front_seam: int = param(0, 0, 1)  # 1: a gutter along the door's front edge too, not only its shut line
+    side_min_w: float = param(8.0, 0.0, 20.0)  # a side piece narrower than twice this (cells) isn't cut
+    side_solid_share: float = param(0.55, 0.0, 1.0)  # of the side panels hot enough to be solid, how many are
+    side_gap: float = param(2.0, 1.0, 5.0)  # black between the side panels, in side cells
+    side_inset: float = param(0.0, 0.0, 4.0)  # black between the panels and the side's paint edges, in cells
+    tail_v: float = param(0.74, 0.4, 0.9)  # the lower body's top at the tail end (v): a wedge rising back
+    tail_v0: float = param(0.26, 0.2, 0.4)  # the rear bumper's column of marks: its lower end (v)
+    tail_v1: float = param(0.51, 0.35, 0.6)  # and its upper end
 
 
 # --- the panel layout ------------------------------------------------------------------------------------
@@ -80,28 +102,49 @@ def _half_plane(p0, d, side: int, size: float = 10.0) -> Polygon:
     return Polygon([a, b, (b[0] + nx * size, b[1] + ny * size), (a[0] + nx * size, a[1] + ny * size)])
 
 
-def _split(poly: Polygon, heat, p: Params, rng, dirs, depth: int = 0) -> list[Polygon]:
-    """Cut a region into panels: while a piece is larger than its heat allows, cut it once, raked, along
-    the band or corner to corner, near its middle."""
+def _narrow(poly: Polygon) -> float:
+    """A piece's width across its narrow way (its smallest bounding rectangle's short side)."""
+    ring = list(poly.minimum_rotated_rectangle.exterior.coords)
+    a, b, c = ring[0], ring[1], ring[2]
+    return min(math.dist(a, b), math.dist(b, c))
+
+
+def _split(
+    poly: Polygon,
+    heat,
+    size,
+    rng,
+    dirs,
+    along_min: float = 0.0,
+    min_w: float = 0.0,
+    depth: int = 0,
+) -> list[Polygon]:
+    """Cut a region into panels: while a piece is larger than its heat allows (`size`), cut it once,
+    raked, along the band or corner to corner, near its middle. A piece no taller than `along_min` is
+    never cut along the band, and one narrower than twice `min_w` is never cut, so the sides' panels keep
+    the room to nest rather than breaking into slivers."""
     if poly.is_empty or poly.area <= 0:
         return []
     c = poly.centroid
-    h = heat(c.x, c.y)
-    target = p.small + (p.big - p.small) * h**1.5
+    h = heat(c.x, c.y, False)  # sized by the band alone: the nose's panels stay small enough for the bonnet
+    target = size(h)
     r1, r2, r3 = rng.random(), rng.random(), rng.random()
-    if poly.area < target or depth > 12:
+    if poly.area < target or depth > 12 or (min_w and _narrow(poly) < 2 * min_w):
         return [poly]
     x0, y0, x1, y1 = poly.bounds
     w, t = x1 - x0, y1 - y0
     raked, along = dirs(c.y)
+    tall = t > along_min
     if w > 2.4 * t:
         d = raked
-    elif t > 1.3 * w:
+    elif t > 1.3 * w and tall:
         d = along
     elif r1 < 0.45:
         d = raked
-    elif r1 < 0.8:
+    elif r1 < 0.8 and tall:
         d = along
+    elif r1 < 0.8:
+        d = raked
     else:
         d = (w, t if c.y >= 0 else -t)  # corner to corner: stepped triangles
     f = 0.35 + 0.3 * r2
@@ -110,7 +153,7 @@ def _split(poly: Polygon, heat, p: Params, rng, dirs, depth: int = 0) -> list[Po
     for side in (1, -1):
         part = poly.intersection(_half_plane(at, d, side))
         for g in geom.polygons(part):
-            out += _split(g, heat, p, rng, dirs, depth + 1)
+            out += _split(g, heat, size, rng, dirs, along_min, min_w, depth + 1)
     return out
 
 
@@ -197,23 +240,44 @@ def _depth(mask: np.ndarray) -> np.ndarray:
     return d
 
 
-def _rasterise(panels, heat, accent_at, p: Params, rng) -> dict[str, list[Polygon]]:
-    """Each panel as cells by colour, as seen, in SPIRIT's nested frames: a solid stepped frame, black, a
-    patterned band round the inside, black, an inner line (in the contrast colour on some nose and tail
-    panels), black, and a core pattern. The hottest panels are solid ink with black linework cut in."""
-    c = p.cell
+@dataclass(frozen=True)
+class Nest:
+    """How deep a panel (in cells, from its edge in) must be for each layer of its nesting."""
+
+    frame2: int  # a two-cell frame
+    framed: int  # a one-cell frame; thinner, a toned block
+    ring2: int  # a two-cell black ring inside the frame; else one cell
+    border: int  # cells of core a hot panel keeps after a border row, for it to get one
+    solid_share: float  # of the panels hot enough to be solid, how many are
+    gap: float  # black between panels, in cells
+    min_cells: int = 24  # a smaller panel is left out
+
+
+def _rasterise(panels, heat, accent_at, p: Params, rng, c: float, nest: Nest) -> dict[str, list[Polygon]]:
+    """Each panel as cells by colour, as seen, in SPIRIT's nested frames, three strengths of one system:
+
+    - solid (the band's heart): a terracotta frame, a black ring, then solid terracotta with black linework
+      cut in;
+    - hot: a terracotta frame, a black ring, on the larger ones a terracotta border row and another black
+      ring, then a #6B3528 ground with terracotta linework;
+    - dim (far from the band): a #6B3528 frame, a black ring, then a #6B3528 ground with black linework.
+
+    Some nose and tail panels carry an inner line in the contrast colour just inside the black ring. Every
+    panel is a filled shape with a black gutter round it, so the panels read apart at 10 m, and the frame
+    (two cells), the gutter (three) and the linework (one) are three line weights. `c` is the view's cell
+    and `nest` how deep a panel must be for each layer."""
     layers: dict[str, list[Polygon]] = {TERRA: [], DIM: [], "accent": []}
     for poly in panels:
-        shrunk = poly.buffer(-p.gap * c / 2, join_style="mitre")
+        shrunk = poly.buffer(-nest.gap * c / 2, join_style="mitre")
         if shrunk.is_empty:
             continue
         mask, i0, j0 = _grid(shrunk, c)
-        if mask.sum() < 24:
+        if mask.sum() < nest.min_cells:
             continue
         cen = poly.centroid
         h = heat(cen.x, cen.y)
-        ink = TERRA if h >= p.hot else DIM
-        r_kind, r_band, r_acc, r_phase = rng.random(), rng.random(), rng.random(), int(rng.integers(0, 8))
+        r_kind, r_band, r_acc, r_solid = rng.random(), rng.random(), rng.random(), rng.random()
+        r_phase = int(rng.integers(0, 8))
         d = _depth(mask)
         deep = int(d.max())
         jj, ii = np.nonzero(mask)
@@ -221,32 +285,40 @@ def _rasterise(panels, heat, accent_at, p: Params, rng) -> dict[str, list[Polygo
         b = np.zeros(mask.shape, int)
         a[jj, ii] = ii - ii.min() + r_phase
         b[jj, ii] = (jj - jj.min()) if cen.y >= 0 else (jj.max() - jj)
-        fw = 2 if deep >= 9 else 1  # the frame's width
-        on: dict[str, np.ndarray] = {ink: mask & (d < fw), "accent": np.zeros_like(mask)}
-        core0 = fw + 1
-        if ink == DIM:  # the dim panels stay quiet: a frame, an inner line and a sparse core
-            if deep >= fw + 5:
-                on[ink] |= mask & (d == fw + 2)
-                core0 = fw + 4
-            core = mask & (d >= core0)
-            on[ink] |= core & _pattern(QUIET[int(r_kind * len(QUIET))], a, b, rng)
-            for k, m in on.items():
-                layers[k] += _boxes(m, i0, j0, c)
-            continue
-        if deep >= fw + 9:  # room for the band and the inner line
-            band = mask & (d >= fw + 1) & (d <= fw + 3)
-            on[ink] |= band & _band(BANDS[int(r_band * len(BANDS))], a, b, d - fw - 1)
-            line = mask & (d == fw + 5)
-            acc = accent_at(cen.x, cen.y) and r_acc < p.accent_share
-            on["accent" if acc else ink] |= line
-            core0 = fw + 7
-        core = mask & (d >= core0)
-        if h >= p.solid:  # solid ink with black stair lines cut in
-            on[ink] |= core & ((b - a // 2) % 5 != 0)
+        # The frame's width: none on the thin panels (the door's slivers between sill and window), which are
+        # toned blocks with linework, since a frame and ring would leave them only an outline.
+        fw = 2 if deep >= nest.frame2 else 1 if deep >= nest.framed else 0
+        on: dict[str, np.ndarray] = {k: np.zeros_like(mask) for k in layers}
+        if h >= p.solid and r_solid < nest.solid_share:
+            strength = "solid"
+        elif h >= p.hot:
+            strength = "hot"
         else:
-            on[ink] |= core & _pattern(PATTERNS[int(r_kind * len(PATTERNS))], a, b, rng)
+            strength = "dim"
+        frame_ink = DIM if strength == "dim" else TERRA
+        on[frame_ink] |= mask & (d < fw)
+        # The black ring inside the frame: two cells on the larger panels, so it reads heavier than the
+        # one-cell linework and the frame stands apart from the core.
+        core0 = 0 if fw == 0 else fw + (2 if deep >= nest.ring2 else 1)
+        if fw and accent_at(cen.x, cen.y) and r_acc < p.accent_share and deep >= core0 + 3:
+            on["accent"] |= mask & (d == core0)
+            core0 += 2
+        elif fw and strength == "hot" and deep >= core0 + 4 + nest.border:  # room for a border row
+            band = mask & (d >= core0) & (d <= core0 + 2)
+            on[TERRA] |= band & _band(BANDS[int(r_band * len(BANDS))], a, b, d - core0)
+            core0 += 4
+        core = mask & (d >= core0)
+        if strength == "solid":
+            on[TERRA] |= core & ~_pattern(LINES[int(r_kind * len(LINES))], a, b, rng)
+        elif strength == "hot":
+            pat = _pattern(PATTERNS[int(r_kind * len(PATTERNS))], a, b, rng)
+            on[TERRA] |= core & pat
+            on[DIM] |= core & ~pat
+        else:
+            on[DIM] |= core & ~_pattern(LINES[int(r_kind * len(LINES))], a, b, rng)
         for k, m in on.items():
-            layers[k] += _boxes(m, i0, j0, c)
+            if m.any():
+                layers[k] += _boxes(m, i0, j0, c)
     return layers
 
 
@@ -322,22 +394,57 @@ def _brackets(win: Polygon, c: float, arm: float) -> list[Polygon]:
 # --- views -------------------------------------------------------------------------------------------------
 
 
+def _seen(kit, view: str, pts: np.ndarray) -> np.ndarray:
+    """Which car-space points land on the view's mapped paint."""
+    out = np.zeros(len(pts), bool)
+    for pc in carspace.pieces(kit, view):
+        cov = (
+            np.ones(len(pts), bool)
+            if pc.car_area is None
+            else shapely.contains_xy(pc.car_area, pts[:, 0], pts[:, 1])
+        )
+        px = pc.to_px(pts)
+        out |= cov & shapely.contains_xy(pc.area, px[:, 0], px[:, 1])
+    return out
+
+
+def _skin(kit, k: float) -> Polygon:
+    """The side's paint as seen, on both sides at once (so both carry one layout): where both side maps
+    land, closed over the speckle, and ahead of the front fender's rear edge everything but the arch (the
+    fender's maps there are thin strips the sampling misses). The panels are cut to fit it, so a panel ends
+    whole at the window, the arches and the shoulder rather than as a frame cut in half."""
+    step = 0.004
+    us = np.arange(-0.06, 1.08, step)
+    vs = np.arange(-0.02, 1.12 * k, step)
+    uu, aa = np.meshgrid(us, vs)
+    pts = np.stack([uu.ravel(), aa.ravel() / k], 1)
+    seen = (_seen(kit, "side_l", pts) & _seen(kit, "side_r", pts)).reshape(uu.shape)
+    cells = _boxes(seen, round(us[0] / step), round(vs[0] / step), step)
+    arch = kit.feature("front_arch_l").coords
+    arch_poly = geom.as_seen(Polygon([*arch, (arch[-1][0], -0.5), (arch[0][0], -0.5)]), k)
+    front = shapely.box(-0.1, -0.02, kit.feature("fender_rear_edge_l").coords[0][0], 0.85 * k)
+    skin = shapely.union_all([*cells, front.difference(arch_poly)])
+    return skin.buffer(2 * step, join_style="mitre").buffer(-2 * step, join_style="mitre")
+
+
 def _side(kit, view: str, p: Params) -> list:
     k = carspace.side_aspect(kit)
     s = view[-1]
     slope = math.tan(math.radians(p.lean))
+    c = p.side_cell
 
     def vc(u):
         return p.band_v0 + p.band_dv * u
 
-    def heat(x, y):
-        return math.exp(-((((y / k) - vc(x)) / p.band_w) ** 2))
+    def heat(x, y, nose=True):
+        band = math.exp(-((((y / k) - vc(x)) / p.band_w) ** 2))
+        return max(band, nose * p.nose_heat * math.exp(-((x / p.nose_w) ** 2)))
 
     def dirs(_y):
         return (slope, 1.0), (1.0, p.band_dv * k)
 
     def accent_at(x, y):
-        return x < 0.16 or x > 0.9
+        return x < 0.3 or x > 0.85
 
     # The lower body: under the door's sill line, then under the intake crease, rising to the tail.
     crease = kit.feature(f"intake_crease_{s}").coords
@@ -349,12 +456,15 @@ def _side(kit, view: str, p: Params) -> list:
             (cu0, p.sill_v),
             (cu1, cv1 + p.crease_pad),
             (0.95, cv1 + p.crease_pad),
-            (1.1, 0.40),
+            (1.1, p.tail_v),
             (1.1, -0.2),
         ]
     )
-    win = _window(kit.feature(f"number_{s}").box, k, p.window_pad * p.cell, p.window_lean)
+    win = _window(kit.feature(f"number_{s}").box, k, p.window_pad * c, p.window_lean)
+    # The sim's light panel sits in a window of its own, framed like the number, so its dark box reads
+    # as a designed display rather than a hole in the haunch panels.
     light = shapely.box(*kit.feature(f"door_light_panel_{s}").box)
+    lwin = geom.as_seen(light, k).buffer(p.window_pad * c, join_style="mitre")
     mirror = (
         shapely.box(*kit.feature(f"mirror_base_{s}").box)
         .buffer(0.01)
@@ -364,18 +474,41 @@ def _side(kit, view: str, p: Params) -> list:
     keep = shapely.union_all(
         [
             geom.as_seen(lower, k),
-            win.buffer(2 * p.cell, join_style="mitre"),
-            geom.as_seen(light, k).buffer(p.cell, join_style="mitre"),
+            win.buffer(2 * c, join_style="mitre"),
+            lwin.buffer(2 * c, join_style="mitre"),
             geom.as_seen(mirror, k),
         ]
     )
-    region = shapely.box(-0.08, -0.02, 1.08, 1.1 * k).difference(keep)
+    # The door's shut lines are gutters: a panel across one would run its stair edges along the line, which
+    # the lint fails and the paint step cuts out as a black gash through the panel.
+    seams = shapely.union_all(
+        [
+            geom.as_seen(shapely.LineString(kit.feature(f"{n}_{s}").coords), k).buffer(c)
+            for n in ("door_front_edge", "door_shut_line")[1 - p.front_seam :]
+        ]
+    )
+    region = _skin(kit, k).buffer(-p.side_inset * c, join_style="mitre").difference(keep).difference(seams)
+
+    def size(h):
+        return p.side_small + (p.side_big - p.side_small) * h**1.5
+
     panels = []
+    rng = p.rng(f"split-r{p.side_seed or ''}")
     for g in geom.polygons(region):
-        # Both sides draw from one stream, so they carry the same layout.
-        panels += _split(g, heat, p, p.rng("split-r"), dirs)
+        # Both sides draw from one stream, so they carry the same layout. The side between the lower body
+        # and the window is too short to halve: panels are cut across it only, raked or corner to corner.
+        panels += _split(g, heat, size, rng, dirs, along_min=0.16, min_w=p.side_min_w * c)
     acc = CONTRASTS[p.contrast]
-    layers = _rasterise(panels, heat, accent_at, p, p.rng("cells-r"))
+    nest = Nest(
+        frame2=7,
+        framed=4,
+        ring2=99,
+        border=3,
+        solid_share=p.side_solid_share,
+        gap=p.side_gap,
+        min_cells=12,
+    )
+    layers = _rasterise(panels, heat, accent_at, p, p.rng("cells-r"), c, nest)
     out = _emit(kit, "panels", view, layers, k, 3, acc)
     # The solid fields: the lower body and the number window in black over the weave, corner brackets in
     # the contrast colour.
@@ -387,36 +520,54 @@ def _side(kit, view: str, p: Params) -> list:
         )
         if el is not None
     ]
-    out += _emit(kit, "bracket", view, {"accent": _brackets(win, p.cell, p.bracket)}, k, 3, acc)
+    brackets = _brackets(win, c, p.bracket) + _brackets(lwin, c, p.bracket)
+    out += _emit(kit, "bracket", view, {"accent": brackets}, k, 3, acc)
     return out
+
+
+def _nose_plate(p: Params, sg: int) -> Polygon:
+    """A black sponsor plate on one front corner of the bonnet (top view, car space: u, w)."""
+    u, w = p.plate_u, sg * p.plate_w
+    return shapely.box(u - p.plate_du, w - p.plate_dw, u + p.plate_du, w + p.plate_dw)
 
 
 def _top(kit, p: Params) -> list:
     k = carspace.aspect(kit, "top")
     slope = math.tan(math.radians(p.lean))
 
-    def heat(x, y):
+    def heat(x, y, nose=True):
         w = abs(y) / k
-        return math.exp(-(((x - (p.top_u + p.top_sweep * w)) / p.top_w) ** 2))
+        band = math.exp(-(((x - (p.top_u + p.top_sweep * w)) / p.top_w) ** 2))
+        return max(band, nose * p.nose_heat * math.exp(-((x / p.nose_w) ** 2)))
 
     def dirs(y):
         sg = 1.0 if y >= 0 else -1.0
         return (slope, sg), (1.0, 0.0)
 
     def accent_at(x, _y):
-        return x < 0.12 or x > 0.92
+        return x < 0.25 or x > 0.88
 
     acc = CONTRASTS[p.contrast]
     win = _window(kit.feature("number_top").box, k, p.window_pad * p.cell, 0.0)
+    # Black sponsor plates on the bonnet's front corners, clear of the panels.
+    plates = [_nose_plate(p, sg) for sg in (-1, 1)]
     region = shapely.box(-0.08, -1.05 * k, 1.13, 1.05 * k).difference(
-        win.buffer(2 * p.cell, join_style="mitre")
+        shapely.union_all(
+            [win.buffer(2 * p.cell, join_style="mitre")]
+            + [geom.as_seen(pl, k).buffer(p.gap * p.cell / 2, join_style="mitre") for pl in plates]
+        )
     )
     panels = []
     for g in geom.polygons(region):
-        panels += _split(g, heat, p, p.rng("split-top"), dirs)
-    layers = _rasterise(panels, heat, accent_at, p, p.rng("cells-top"))
+        panels += _split(g, heat, lambda h: p.small + (p.big - p.small) * h**1.5, p.rng("split-top"), dirs)
+    nest = Nest(frame2=6, framed=p.framed, ring2=p.ring2, border=3, solid_share=p.solid_share, gap=p.gap)
+    layers = _rasterise(panels, heat, accent_at, p, p.rng("cells-top"), p.cell, nest)
     out = _emit(kit, "panels", "top", layers, k, 3, acc)
     out += [el for el in (_paint(kit, "window.top", "top", geom.as_car(win, k), BLACK, z=2),) if el]
+    for sg, pl in zip(("l", "r"), plates, strict=True):
+        el = _paint(kit, f"plate_{sg}.top", "top", pl, BLACK, z=2)
+        if el is not None:
+            out.append(el)
     out += _emit(kit, "bracket", "top", {"accent": _brackets(win, p.cell, p.bracket)}, k, 3, acc)
     return out
 
@@ -447,11 +598,13 @@ def _tiled(kit, id: str, region: str, tile: str, tile_px: float, z: int):
 def build(kit, p: Params):
     cpx = p.cell * carspace.px_per_unit(kit, "top")[0]  # one cell in texture px
     weave = _tile(WEAVE, cpx * 2, [(0, 0), (1, 0), (2, 2), (2, 3)], 4)
-    stairs = _tile(DIM, cpx * 2, [(0, 0), (1, 1), (2, 2), (3, 3)], 4)
+    # Terracotta stairs two cells wide, at the panels' own cell size, on the parts no view maps: the bonnet
+    # vent (so it doesn't merge with the black number window), the front bumper corners and the rear face.
+    stairs = _tile(TERRA, cpx * 4, [(i, j) for i in range(4) for j in range(4) if (j - i) % 4 < 2], 4)
     els = [_tiled(kit, f"weave-{v}", v, weave, cpx * 2, z=1) for v in ("side_l", "side_r", "top")]
     els += [
-        _tiled(kit, f"tail-{r}", r, stairs, cpx * 2, z=1)
-        for r in ("rear_face_all", "front_bumper_corner_l", "front_bumper_corner_r")
+        _tiled(kit, f"stairs-{r}", r, stairs, cpx * 4, z=1)
+        for r in ("rear_face_all", "front_bumper_corner_l", "front_bumper_corner_r", "bonnet_vent")
     ]
     for view in ("side_l", "side_r"):
         els += _side(kit, view, p)
@@ -484,4 +637,40 @@ def build(kit, p: Params):
         color=PAPER,
         z=6,
     )
+    els += mirror_sides(
+        sponsor_group,
+        kit,
+        "duct2",
+        [("drexa", "wordmark")],
+        start=(p.duct_u2, p.duct_v2),
+        end=(0.765, p.duct_v2),
+        height=0.024,
+        color=PAPER,
+        z=6,
+    )
+    els += mirror_sides(
+        sponsor_group,
+        kit,
+        "tail",
+        [("norvane", "mark"), ("altmere", "mark")],
+        start=(0.977, p.tail_v1),
+        end=(0.977, p.tail_v0),
+        height=0.02,
+        color=PAPER,
+        axis="column",
+        z=6,
+    )
+    for sg in (-1, 1):
+        u, w = p.plate_u, sg * p.plate_w
+        els += sponsor_group(
+            kit,
+            f"nose{'lr'[sg > 0]}",
+            "top",
+            [("brandvik", "mark"), ("hexmoor", "mark")],
+            start=(u, w - 0.7 * p.plate_dw),
+            end=(u, w + 0.7 * p.plate_dw),
+            height=0.03,
+            color=PAPER,
+            z=6,
+        )
     return base(BLACK).add(*els)
