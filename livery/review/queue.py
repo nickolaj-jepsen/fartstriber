@@ -1,7 +1,10 @@
 """Every waiting `livery review` on the machine, so one page shows them all: a folder per review (a group) under
 the state dir's review/. The CLI writes group.json (its checkout, branch, process and items) and, after
 Apply, result.json; the page's server writes decisions.json (the decisions and the request to apply). Each file
-has one writer and is replaced whole."""
+has one writer and is replaced whole.
+
+A page screen (`page`) has no CLI waiting on it: the Library's Review again and `build --all`'s "still OK?"
+queue one and go. It never goes stale, and the server serving the page applies it in its checkout on Send."""
 
 import json
 import os
@@ -96,7 +99,10 @@ def read(gid: str) -> dict | None:
         return None
     decided = _read(d / DECISIONS) or {}
     result = _read(d / RESULT)
-    alive = state.alive(group["owner"])
+    applier = (decided.get("apply") or {}).get("by")
+    if group.get("page") and result is None and applier and not state.alive(applier):
+        decided["apply"] = None  # the server applying it died: Send again
+    alive = bool(group.get("page")) or state.alive(group["owner"])
     if result is not None:
         status = "failed" if "error" in result else "applied"
     elif not alive:
@@ -130,11 +136,12 @@ def groups(prune: bool = False) -> list[dict]:
     return sorted(out, key=lambda g: g["created"])
 
 
-def enqueue(root: Path, items: list[dict]) -> str:
+def enqueue(root: Path, items: list[dict], page: bool = False) -> str:
     """Queues a review from the checkout at `root`, as a screen of its own: a checkout may have several
     waiting (their Applies take turns). A stale or failed one from the same checkout with any of the same
     items is taken over: its decisions on items still in the review are kept. One still waiting with any of
-    the same items is refused, since the owner would answer the same thing twice."""
+    the same items is refused, since the owner would answer the same thing twice; a page screen (`page`)
+    takes over a page screen instead, since no session waits on either."""
     here = _checkout(root)
     ids = {i["id"] for i in items}
     kept: dict[str, dict] = {}
@@ -143,7 +150,7 @@ def enqueue(root: Path, items: list[dict]) -> str:
             continue
         if not ids & {i["id"] for i in g["items"]}:
             continue
-        if g["alive"] and g["status"] != "failed":
+        if g["alive"] and g["status"] != "failed" and not (page and g.get("page")):
             raise ReviewOpen(
                 f"a review from this checkout is still waiting on the same items ({g['id']}: "
                 f"{', '.join(i['title'] for i in g['items'])}): send it, or take it off the page with "
@@ -163,6 +170,8 @@ def enqueue(root: Path, items: list[dict]) -> str:
         "created": time.time(),
         "items": items,
     }
+    if page:
+        group["page"] = True
     _write(d / GROUP, group)  # last: a group is listed once this exists
     return gid
 
@@ -186,7 +195,7 @@ def undecide(gid: str, item_id: str) -> None:
 def request_apply(gid: str) -> None:
     d = _dir(gid)
     decided = _read(d / DECISIONS) or {"decisions": {}, "apply": None}
-    decided["apply"] = {"at": time.time()}
+    decided["apply"] = {"at": time.time(), "by": state.me()}
     _write(d / DECISIONS, decided)
 
 
@@ -224,5 +233,5 @@ def summary(g: dict) -> dict:
         "root": g["root"],
         "items": [i["id"] for i in g["items"]],
         "decided": len(g["decisions"]),
-        "pid": g["owner"].get("pid"),
+        "pid": None if g.get("page") else g["owner"].get("pid"),
     }

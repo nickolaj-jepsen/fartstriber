@@ -1,6 +1,6 @@
 # Sponsor roster
 
-The brands designs place with `sponsor` and `sponsor_group`, one row each. Voice is the lettering, chosen so no two brands look like one company; the fonts are OFL families in `assets/fonts`. Checked is the name check and what it found: the web searched for the name alone and with its category (+), and the US trademark register through Trademarkia ("US"). None of it is a legal clearance, and the EU and WIPO registers were not reachable. The owner marks each row yes or no in `livery review --roster`; a yes row is then drawn in `assets/sponsors/<brand>/`.
+The brands designs place with `sponsor` and `sponsor_group`, one row each. Voice is the lettering, chosen so no two brands look like one company; the fonts are OFL families in `assets/fonts`. Checked is the name check and what it found: the web searched for the name alone and with its category (+), and the US trademark register through Trademarkia ("US"). None of it is a legal clearance, and the EU and WIPO registers were not reachable. A new row is drawn in `assets/sponsors/<brand>/`, and the owner judges the row and its drawing together in `livery review --sponsors`: fine marks it yes, no marks it no.
 
 | Brand | Name | Category | Voice | Mark | Colours | Checked | Status |
 |---|---|---|---|---|---|---|---|

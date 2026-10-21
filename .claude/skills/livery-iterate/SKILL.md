@@ -13,7 +13,7 @@ Load `livery-design` first. A workflow starts with the Workflow tool, `{scriptPa
 
 In the owner's words: what the car is, the 2-3 favourites it draws on as a `References:` line (rows of `references.md` they name, or yes rows that fit), and the headline sponsor as the brief asks (Fireproof only when it asks, and small is fine). Add what always holds: the kit, number zones clear. `brief.md` is the brief as it stands: when they redirect it, fold their new words in, dated, and drop what they replace; no round sections. Run `livery references fetch` if those rows have no pictures in `.cache/references/`.
 
-Another round or a change to an existing design goes straight to 5, with their words as the note. A variant or a v2 is a new design: concepts from here, or, when they want the same car taken further, a copy of its `design.py`, `brief.md`, `notes.md` and `sponsors/` under the new name, then 5.
+Another round or a change to an existing design goes straight to 5, with their words as the note. So does a car they revived, or asked to change on a screen the page queued itself (Review again, "still OK?"): `livery library` lists it as revived or in work, and its latest note is theirs (`livery critic pack` and the timeline read it). A variant or a v2 is a new design: concepts from here, or, when they want the same car taken further, a copy of its `design.py`, `brief.md`, `notes.md` and `sponsors/` under the new name, then 5.
 
 ## 2. Concepts
 
@@ -45,11 +45,11 @@ Delete the variant folders it lists under `remove`, and an adopted variant's onc
 
 ## 6. Final review
 
-`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They race it (maybe as a favourite), change it, park it (not now, worth coming back to) or stop it (not worth more work); log it as in 4. A final review needs a checked build, and racing pins exactly that build. On a change, refine again (5) with their note, its strategy and what they ticked. On park or stop, stop; a parked design is picked up again only when they ask.
+`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They race it (maybe as a favourite), change it, park it (not now, worth coming back to) or stop it (not worth more work); log it as in 4. A final review needs a checked build, and racing pins exactly that build. On a change, refine again (5) with their note, its strategy and what they ticked. On park or stop, stop (a stop takes back an approval the design had); a parked design is picked up again only when they ask, or revive it in the Library.
 
 ## 7. Install and export
 
-When they raced it, at once and without asking: `livery install <design>`, which refuses any other build, and tell them to run `livery install <design> --finish` after their first session of the other kind (solo or team) so that spec's .mip is archived too. Then `livery export <design>`, and give them the folder and upload line it prints, so other drivers see it through Trading Paints. A favourite is a car to learn from: propose it as a `references.md` yes row.
+When they raced it, at once and without asking: `livery install <design>`, which refuses any other build, and tell them to run `livery install <design> --finish` after their first session of the other kind (solo or team) so that spec's .mip is archived too. Then `livery export <design>`, and give them the folder and upload line it prints, so other drivers see it through Trading Paints. A favourite is a car to learn from: add it to `references.md` as a yes row, and commit it with the design. A reference the owner supplies in chat is a yes too, with no review.
 
 ## 8. Retro
 

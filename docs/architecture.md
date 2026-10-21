@@ -74,14 +74,15 @@ A primitive that covers several views returns one element per view, with the vie
 ## Sponsors
 
 - A brand is a folder: one-colour SVG variants (`wordmark`, `lockup`, `mark`), a `brand.toml`, and the `draw.py` that drew them. Builds read only the SVGs; a redrawn variant loses its approval.
-- Roster brands live in `assets/sponsors/`, indexed by `roster.md`: name, category, lettering voice, mark, colours, the name-check evidence and the owner's yes or no.
+- Roster brands live in `assets/sponsors/`, indexed by `roster.md`: name, category, lettering voice, mark, colours, the name-check evidence and the owner's yes or no. The owner judges a row with its drawn brand (`review --sponsors`): fine makes it a yes, no turns it down. Designs place every drawn brand whose row isn't a no.
 - A design's own themed brands live in `designs/<name>/sponsors/`. They are looked up first and need no approval.
 - `source = "supplied"` marks a real logo kept byte for byte, `"owned"` the Fireproof brand.
 - `brand.toml` records per variant its aspect, ink share, thinnest stroke, narrowest counter and approval date. A variant's minimum height is `min_stroke_px` divided by the smaller of its stroke and counter. A `large_only` brand never goes below `large_min_px`.
 - `sponsor` places one brand by `height` or `fit=(w, h)`, in one colour or `"own"`, and refuses any variant below its minimum height.
 - `sponsor_group` spreads brands along a line, each sized by (ink × aspect)^-0.25. A group that doesn't fit shrinks, and fails rather than go below a minimum.
 - Race markings (tow, cut-off switch, extinguisher…) are brands in `assets/marks/`. `marks` places one at a car-space anchor; a marking that points has a variant drawn for each direction.
-- Unapproved roster variants and markings build and preview. A final review and `livery install` need them approved (`review --sponsors`, `review --marks`).
+- Unapproved roster variants and markings build and preview. A final review and `livery install` need them approved (`review --sponsors`, `review --marks`), one tile each.
+- Dropping a brand or a marking (a no on its tile, or Drop in the Library) unapproves its variants and keeps its drawing for a redraw. Every approved car placing it is held: it doesn't install until a new final without it, or the drop is undone.
 
 ## Lints
 
@@ -226,18 +227,31 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 - One localhost page (port 8765) serves every session on the machine. Each `livery review` is one screen: it queues its items in the state dir (`review/<id>/`) and blocks until the owner presses Send on it. Whichever waiting review holds the port serves the page; when it exits, the next one takes over.
 - A checkout may have several screens waiting; their Sends take turns (a lock per checkout). A screen whose process died stays on the page, and the next review from that checkout with any of the same items takes it over; one still waiting with the same items is refused.
 - A review that queues sends a Windows notification that opens the page. The tab's title counts what's waiting, newest first.
-- `--list` lists the screens; `--cancel` takes this checkout's off the page.
+- A page screen has no session waiting on it: the Library's Review again and `build --all`'s "still OK?" queue one and go. It never goes stale, and whichever process serves the page applies it in its checkout on Send.
+- `--list` lists the screens; `--cancel` takes this checkout's off the page. `livery library --serve` keeps the page up while no review serves it.
 
 | Flag | Items | Layout |
 |---|---|---|
 | `<design>` | a final | Focus |
 | `<designs>` | concepts to pick from; `--sketch <name>` adds a concept outside the top three, shown small to revive | Compare |
 | `--kit <kit>` | a kit's overlays and calibration shots | Focus |
-| `--roster`, `--sponsors`, `--marks`, `--references`, `--proposals <file>` | roster rows, drawn brands, race markings, `references.md` rows, a retro's edits (`[{title, body}]`) | Grid |
+| `--sponsors`, `--marks`, `--proposals <file>` | drawn brands with their roster rows, race markings, a retro's edits (`[{title, body}]`) | Grid |
+| `--roster`, `--references` | roster rows alone, `references.md` rows: rarely needed, since a row is judged with its drawing and a reference the owner supplies is a yes | Grid |
+
+What reaches the owner, and what doesn't:
+
+| Kind | On the page |
+|---|---|
+| Concepts, finals, kits, retro proposals | yes |
+| New brands, race markings | yes, one tile each |
+| Roster rows | with their drawn brand |
+| References the owner supplies | no: the agent writes them into `references.md` as yes |
+| An approved design a library or kit change moved | no if no paint or spec channel moved past `approvals.TOLERANCE` (carried, by the agent); else a "still OK?" screen |
 
 | On | Answers (`items.ANSWERS`) |
 |---|---|
-| a final | Race it (`accept`, maybe `favourite`), Change (`edit`, with a `strategy`, quick or full), Park (not now, worth coming back to), Stop (not worth more work) |
+| a final | Race it (`accept`, maybe `favourite`), Change (`edit`, with a `strategy`, quick or full), Park (not now, worth coming back to), Stop (not worth more work; takes back an approval the design has) |
+| a "still OK?" final (`items.STILL`) | Keep it (`accept`: the approval moves to this build), Change, Stop |
 | concepts | picked (`accept`, a note each and one for all) or not (`reject`, what Send records for the rest); a picked sketch is `revived` |
 | a kit | approve, change |
 | a grid tile | fine, change, no (a reference: yes or no) |
@@ -249,7 +263,7 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 
 Send runs Apply in the checkout that queued the screen:
 
-1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, and brand and marking approvals. These come first, so a final that places a brand accepted in the same review can be pinned.
+1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, brand and marking approvals and drops, and a stopped design's approval taken back. Brands and markings come first, so a final that places a brand accepted in the same review can be pinned.
 2. It appends every decision to the owner's ledger (Records): the note verbatim, the extras, the sim runs (or baked run) shown and a shrunk copy of their shots in the state dir (`review-shots/<uid>/`), the design hash, and the critic's verdict on that hash.
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
@@ -261,18 +275,39 @@ The page's History lists every decision, newest first, with what it showed, the 
 
 | Action | Writes |
 |---|---|
-| Edit note, Undo, Redo | a line of its own in the ledger naming the decision by uid (`prefs.change`) |
-| Keep as mine, Retire | the taste row, by the owner; a retired row stops gating designs |
+| Edit note, Undo, Redo | a line of its own in the ledger naming the decision by uid (`prefs.change`). Undo puts back what the decision changed and Redo does it again: an approval revoked, stopped or carried, a brand or marking dropped, a taste row retired, a design brought back from git |
+| Keep as mine | the taste row, by the owner |
+| Retire | as the Library's Retire |
 
 When an undo leaves a live taste row resting on fewer than two of the owner's notes, History asks whether to keep it as theirs or retire it.
+
+### Library
+
+The page's Library shows where everything stands now in the main checkout (`livery library` prints it): cars, brands, race markings, kits and taste rows, each with a picture, its state, its last decision and what depends on it. Each change is a ledger line by the owner carrying what it replaced (`was`), with an Undo in History, committed in the main checkout.
+
+| Action | On | Does |
+|---|---|---|
+| Review again | a car, brand, marking or kit | queues it as a page screen of its own; a car is built first if its check isn't current |
+| Revoke | an approved car | deletes `approved.json`; when the car is on the owner's car (its paint is in the paint folder), offers `livery install --restore` |
+| Drop | an approved brand or marking | as a no on its tile (Sponsors), after listing the cars it holds |
+| Retire | a live taste row | it stops gating designs; a retro brings it back only with new evidence |
+| Revive | a parked or stopped car, a concept not picked | back in work, from the owner's words; a deleted folder comes back from git |
+
+| Car state | When |
+|---|---|
+| on your car, approved | approved; its paint is on the owner's car, or not |
+| held | approved, but it places a brand or marking that isn't |
+| in work, revived | a concept picked or a change asked for; revived in the Library |
+| parked, stopped, not picked | the owner's last answer on it (a revoke is a stop) |
 
 ## Approvals
 
 - Accepting a final writes `designs/<name>/approved.json`: the output digests; the design, toolchain and policy hashes and the design hash's parts; the waivers; and the roster variants and markings it places. Its paint, spec and flat pictures are kept in `.cache/approved/<name>/<digest>/`.
 - Nothing is pinned if the build changed while the review was open, if `flat/` no longer shows it, or if it places an unapproved variant or marking.
 - `livery install` installs only the approved build, and only while what it places is approved. `--unapproved` overrides that, and says so.
-- `livery build --all` builds every design and reports each as approved, changed, unapproved or failed, with fixtures listed apart. It exits 1 when a design failed or an approved one changed.
+- `livery build --all` builds every design and reports each as approved, carried, changed, unapproved or failed, with fixtures listed apart. It exits 1 when a design failed or an approved one changed.
 - For a changed design it lists what moved and the share of pixels that moved more than `approvals.TOLERANCE`, and writes `diff/approved-vs-now.png`.
+- A design only the kit, `assets/`, the toolchain or the policy moved, with no car pixel of its paint or spec past `approvals.TOLERANCE`, is carried: its approval moves to the new build, keeping who approved it and when, as a ledger line by the agent (`decision: carry`) that History can undo. The session commits it with its change. Any other changed design on an approved kit is queued as a "still OK?" page screen.
 
 ## Critic
 
@@ -339,7 +374,7 @@ flowchart TD
 | Record | Where | Committed |
 |---|---|---|
 | Verdicts | `designs/<name>/verdicts.jsonl` | yes |
-| Decisions | `prefs/<person>/decisions.jsonl`, written by Send and History | yes |
+| Decisions | `prefs/<person>/decisions.jsonl`, written by Send, History, the Library and `build --all`'s carry | yes |
 | The owner's words | `prefs/<person>/log.md` | yes |
 | Their taste | `prefs/<person>/taste.json` (`livery taste`) | yes |
 | What each review showed | `review-shots/` in the state dir | no |

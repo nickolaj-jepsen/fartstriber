@@ -12,6 +12,7 @@ from pathlib import Path
 from livery import prefs, taste
 from livery.config import Workspace
 from livery.errors import UsageError
+from livery.review import library
 
 
 def main_root(root: Path) -> Path:
@@ -82,6 +83,10 @@ def entries(ws: Workspace) -> list[dict]:
                 "favourite": bool(d.get("favourite")),
                 "undone": bool(d.get("undone")),
                 "trail": d.get("trail", []),
+                "via": d.get("via"),
+                "moved": d.get("moved"),
+                "held": d.get("held"),
+                "still": bool(d.get("still")),
                 "picture": _picture(ws, d),
                 "taste": citing.get(u, []),
             }
@@ -107,21 +112,32 @@ def entries(ws: Workspace) -> list[dict]:
     return sorted(out, key=lambda e: str(e["at"]), reverse=True)
 
 
-def _commit(ws: Workspace, files: list[Path], message: str) -> str | None:
+def _commit(ws: Workspace, files: list[Path], message: str, folders: list[Path] | None = None) -> str | None:
     from livery.review.apply import _commit as commit
     from livery.review.apply import _dirty
 
     before = _dirty(ws.root)
     if before is None:
         return None
-    return commit(ws.root, before, files, [], message, prefs.ledger_path(ws))
+    return commit(ws.root, before, files, folders or [], message, prefs.ledger_path(ws))
 
 
 def change(ws: Workspace, of: str, kind: str, note: str | None = None) -> dict:
-    """The owner's edit, undo or redo of a decision, committed; with the live taste rows it left resting on
-    too few of their notes, for them to keep or retire."""
+    """The owner's edit, undo or redo of a decision, committed; an undo puts back what the decision changed
+    (an approval revoked or carried, a brand dropped, a taste row retired, a design revived) and a redo does
+    it again. With the live taste rows it left resting on too few of their notes, for them to keep or
+    retire."""
     line = prefs.change(ws, of, kind, note)
-    committed = _commit(ws, [prefs.ledger_path(ws)], f"History: {kind} {of}")
+    files: list[Path] = []
+    folders: list[Path] = []
+    if kind in ("undo", "redo"):
+        d = prefs.find(ws, of)
+        try:
+            files, folders = (library.undo if kind == "undo" else library.redo)(ws, d)
+        except Exception:
+            prefs.change(ws, of, "redo" if kind == "undo" else "undo")  # the ledger says what stands
+            raise
+    committed = _commit(ws, [prefs.ledger_path(ws), *files], f"History: {kind} {of}", folders)
     thin = [r for r in taste.thin(ws) if any(w.get("of") == of for w in r["words"])]
     return {
         "line": line,
@@ -131,13 +147,12 @@ def change(ws: Workspace, of: str, kind: str, note: str | None = None) -> dict:
 
 
 def keep_or_retire(ws: Workspace, row_id: str, keep: bool, why: str = "") -> dict:
-    """A thin taste row kept as the owner's own, or retired with their reason."""
-    if keep:
-        row = next((r for r in taste.rows(ws) if r["id"] == row_id), None)
-        if row is None:
-            raise UsageError(f"no live taste row {row_id!r}")
-        out = taste.put(ws, row, by=prefs.owner_by())
-    else:
-        out = taste.retire(ws, row_id, why, by=prefs.owner_by())
-    committed = _commit(ws, [taste.path(ws)], f"History: {'keep' if keep else 'retire'} taste row {row_id}")
+    """A thin taste row kept as the owner's own, or retired with their reason (a ledger line, undoable)."""
+    if not keep:
+        return library.retire(ws, row_id, why)
+    row = next((r for r in taste.rows(ws) if r["id"] == row_id), None)
+    if row is None:
+        raise UsageError(f"no live taste row {row_id!r}")
+    out = taste.put(ws, row, by=prefs.owner_by())
+    committed = _commit(ws, [taste.path(ws)], f"History: keep taste row {row_id}")
     return {"row": out, "committed": committed}

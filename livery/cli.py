@@ -313,7 +313,12 @@ def _standing(row: dict) -> str:
         moved = ", ".join(row["changed_by"]) or "?"
         paint, spec = row.get("paint_changed", "?"), row.get("spec_changed", "?")
         diff = row.get("diff", row.get("pictures"))
-        return f" by {moved}: paint {paint}, spec {spec} of the car; {diff}{waits}"
+        asked = "; still OK? queued on the review page" if row.get("asked") else ""
+        if row.get("not_asked"):
+            asked = f"; not asked still OK?: {row['not_asked']}"
+        return f" by {moved}: paint {paint}, spec {spec} of the car; {diff}{waits}{asked}"
+    if row["status"] == "carried":
+        return f" by {', '.join(row['changed_by'])}, no pixel past tolerance: approval kept (undo in History)"
     if row["status"] == "failed":
         return f": {row['errors'][0]}"
     return waits
@@ -331,9 +336,11 @@ def build(
 
     With --all, builds every design and reports each one's standing against its approval: approved,
     changed since approval (by what, how much of the car, and a diff picture), unapproved or failed.
-    Fixtures are listed apart and are 'built' rather than unapproved. It fails if a design failed or an
-    approved one changed. Run it after any kit or library change. The report also goes to
-    .cache/build-all.json.
+    Fixtures are listed apart and are 'built' rather than unapproved. Run it after any kit or library change:
+    an approved design only that moved, with no paint or spec channel past approvals.TOLERANCE, keeps its
+    approval ('carried', a ledger line by this agent the owner can undo in History; commit it with the
+    change); one moved further is queued on the review page as a "still OK?" screen. It fails if a design
+    failed or an approved one changed and wasn't carried. The report also goes to .cache/build-all.json.
     """
     from livery.check import run_build
 
@@ -352,9 +359,15 @@ def build(
         if not result["passed"]:
             raise typer.Exit(1)
         return
-    from livery import approvals
+    from livery import approvals, notify
+    from livery.review import library
 
     report = approvals.standings(ws)
+    settled = library.settle(ws, report)
+    if settled["asked"]:
+        notify.toast(
+            "Fartstriber review", f"Still OK? {', '.join(settled['asked'])}", "http://127.0.0.1:8765/"
+        )
     text = []
     for role, heading in (("livery", "liveries"), ("fixture", "fixtures")):
         rows = {name: row for name, row in report.items() if row["role"] == role}
@@ -606,6 +619,42 @@ def review(
         )
     result = serve(ws, queue, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
     _emit(as_json, result)
+
+
+@app.command()
+def library(
+    serve: Annotated[
+        bool, typer.Option("--serve", help="Keep the review page up, open on the Library, until Ctrl+C.")
+    ] = False,
+    port: int = 8765,
+    as_json: AsJson = False,
+) -> None:
+    """Where everything the owner decided stands now, in the main checkout: cars, brands, race markings, kits
+    and taste rows, each with its state and last decision. A car the owner revived waits for a design session.
+
+    On the page's Library the owner reviews any of them again, revokes a car, drops a brand or a marking,
+    retires a taste row or revives a car; each is a ledger line History can undo. With --serve, the page stays
+    up while no waiting review serves it.
+    """
+    from livery.review import history
+    from livery.review import library as lib
+    from livery.review.server import serve_page
+
+    ws = Workspace()
+    if serve:
+        return serve_page(ws, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
+    main = history.main_root(ws.root)
+    if main.resolve() != ws.root.resolve():
+        ws = Workspace(root=main, assets=main / "assets", policy_file=main / "policy.toml")
+    out = lib.sections(ws)
+    text = []
+    for section, cards in out.items():
+        text.append(section)
+        for c in cards:
+            last = c.get("last") or {}
+            when = str(last.get("at") or "")[:10]
+            text.append(f"  {c['title']:24} {c['state']:12} {when}  {', '.join(c.get('actions', []))}")
+    _emit(as_json, out, text)
 
 
 @taste_app.command("show")

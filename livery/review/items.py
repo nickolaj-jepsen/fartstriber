@@ -27,6 +27,11 @@ ANSWERS = {
     "reference": ("accept", "reject"),
     "proposal": ("accept", "edit", "reject"),
 }
+STILL = (
+    "accept",
+    "edit",
+    "stop",
+)  # a "still OK?" final, moved by a library or kit change: keep it, change, stop
 STRATEGIES = ("quick", "full")  # how the agents work on a change: one round on the note, or a refinement
 HIDDEN = ("critic",)  # item fields the page gets only once the owner has answered the item
 
@@ -132,7 +137,16 @@ def _verdict(r: dict) -> dict:
     }
 
 
-LABELS = {"accept": "picked", "reject": "not picked", "edit": "change", "park": "parked", "stop": "stopped"}
+LABELS = {
+    "accept": "picked",
+    "reject": "not picked",
+    "edit": "change",
+    "park": "parked",
+    "stop": "stopped",
+    "revoke": "approval revoked",
+    "revive": "revived",
+    "carry": "approval carried",
+}
 
 
 def _timeline(ws: Workspace, name: str, now_run: Path | None) -> list[dict]:
@@ -153,7 +167,7 @@ def _timeline(ws: Workspace, name: str, now_run: Path | None) -> list[dict]:
         points.append(
             {
                 "at": line["at"],
-                "who": "you",
+                "who": "agents" if str(line.get("by", "")).startswith("agent") else "you",
                 "label": f"{'Concept' if kind == 'concept' else 'Final'} · {what}",
                 "note": line.get("note", ""),
                 "views": _shown(ws, name, line),
@@ -278,7 +292,7 @@ def _last_time(
     .cache)."""
     from livery.review.apply import decisions_on, latest_note
 
-    lines = decisions_on(ws, name)
+    lines = [d for d in decisions_on(ws, name) if not str(d.get("by", "")).startswith("agent")]
     if not lines:
         return "", None, {}
     last, note = lines[-1], latest_note(ws, name)
@@ -509,9 +523,12 @@ def roster_items(path: Path | None = None) -> list[dict]:
 ROSTER_CAR = "sponsor-roster"  # the test design that puts every brand on a car
 
 
-def sponsor_items(ws: Workspace, root: Path | None = None, only: list[str] | None = None) -> list[dict]:
-    """Each drawn brand (or each of `only`) with a variant not yet approved, as a sheet; then the roster on
-    a car, if that design exists."""
+def sponsor_items(
+    ws: Workspace, root: Path | None = None, only: list[str] | None = None, again: bool = False
+) -> list[dict]:
+    """Each drawn brand (or each of `only`) with a variant not yet approved, as a sheet, its roster row
+    judged with it; then the roster on a car, if that design exists. A brand the owner turned down shows
+    only when named. With `again` (the Library's Review again), the named brands as they stand, alone."""
     from livery.lint.run import thresholds
 
     root = root or ws.sponsors
@@ -521,9 +538,11 @@ def sponsor_items(ws: Workspace, root: Path | None = None, only: list[str] | Non
     for toml in sorted(root.glob("*/brand.toml")):
         if only and toml.parent.name not in only:
             continue
+        if not only and rows.get(toml.parent.name, {}).get("status") == "no":
+            continue
         brand = sponsors.load(toml.parent.name, root)
         pending = [n for n, v in brand.variants.items() if not v.approved]
-        if not pending:
+        if not pending and not again:
             continue
         sheet = sponsors.sheet(brand, ws.cache / "sponsors" / brand.id / "sheet.png", min_stroke, ws.fonts)
         row = rows.get(brand.id)
@@ -533,11 +552,12 @@ def sponsor_items(ws: Workspace, root: Path | None = None, only: list[str] | Non
                 "kind": "sponsor",
                 "title": row["name"] if row else brand.id,
                 "body": (_brand_text(row) + "\n\n" if row else "")
-                + f"To approve: {', '.join(pending)}. Accept approves every variant; reject drops the brand.",
+                + (f"To approve: {', '.join(pending)}. " if pending else "Approved. ")
+                + "Fine approves every variant and the roster row; no drops the brand.",
                 "images": [_rel(ws, sheet)],
             }
         )
-    if items and (ws.design_dir(ROSTER_CAR) / "design.py").exists():
+    if items and not again and (ws.design_dir(ROSTER_CAR) / "design.py").exists():
         for car in design_items(ws, [ROSTER_CAR], pin=False):  # a test car for the brands, not a livery
             car["body"] = (
                 "The brands above on a car. Accepting it pins nothing: its build is approved by "
