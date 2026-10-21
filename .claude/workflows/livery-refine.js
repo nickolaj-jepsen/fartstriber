@@ -298,8 +298,8 @@ function buildPrompt(n, adopt, baked) {
     'The owner sees the result at the end.\n'
   if (n === 1 && NOTE) task += `The owner's direction, verbatim, which outranks the critic's fixes:\n${indent(NOTE)}\n`
   else if (n === 1)
-    task += `Start from the owner's latest decision on this design in prefs/decisions.jsonl (concept:${DESIGN} or ` +
-      `final:${DESIGN}: their note, a mix) and its entry in prefs/log.md; their direction outranks the critic's fixes.\n`
+    task += `Start from the owner's latest decision on this design in their prefs/<person>/decisions.jsonl (concept:${DESIGN} or ` +
+      `final:${DESIGN}: their note, and any critic suggestions they endorsed) and its entry in their log.md; their direction outranks the critic's fixes.\n`
   if (adopt)
     task += `First adopt designs/${adopt}/, the variant that won ${n === 1 ? 'the owner\'s pick' : 'the pairwise ranking'}: copy its ` +
       'design.py (and any sponsors/ folder) over this design\'s, keep brief.md\'s character, and write the move ' +

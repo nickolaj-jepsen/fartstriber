@@ -17,35 +17,35 @@ Another round or a change to an existing design goes straight to 5, with their w
 
 ## 2. Concepts
 
-Start `livery-concepts` with `{brief, names, references}`: 6 new design names unless they ask for more (every pair is judged in both orders: 30 critics for 6 concepts, 56 for 8). It returns the critic's ranking, the top 3 checked and shot in the sim (or baked, where the bake stands in), and `for_owner`. Delete the `unshown` sketch folders, which were never committed.
+Start `livery-concepts` with `{brief, names, references}`: 6 new design names unless they ask for more (every pair is judged in both orders: 30 critics for 6 concepts, 56 for 8). It returns the critic's ranking, the top 3 checked and shot in the sim (or baked, where the bake stands in), and `for_owner`. Keep the `unshown` sketch folders until the pick: the owner may revive one.
 
 ## 3. Concept pick
 
-`livery review <the top 3>` in the background; give the owner its URL and the `for_owner` lines, and wait for its JSON. They pick one, or mix several with a note, and may rate them. Every session's reviews share one page, one waiting per checkout: if they answer in chat instead of pressing Apply, `livery review --cancel` takes yours off the page (the waiting command exits) before the next.
+`livery review <the top 3> --sketch <each unshown one>` in the background; give the owner the `for_owner` lines (the page notifies them and needs no URL), and wait for its JSON. They pick one or more, each with a note of its own, or revive a sketch (`revived`); the rest come back as not picked. Delete the sketch folders they didn't revive, which were never committed. Every session's reviews share one page: if they answer in chat instead of pressing Send, `livery review --cancel` takes yours off the page (the waiting command exits) before the next.
 
 ## 4. Log
 
-Apply has written every decision to `prefs/decisions.jsonl` (their note verbatim, their rating, the critic's verdict) and committed it with the decided designs' folders; its JSON says if it couldn't. Write the entry in `prefs/log.md` from the review JSON, in their words: chosen, rejected, mix, parked, why. A line you add for context starts with `Context:`. Commit it.
+Send has written every decision to the owner's `prefs/<person>/decisions.jsonl` (their note verbatim, a favourite, the strategy, the critic suggestions they ticked, the critic's verdict) and committed it with the decided designs' folders; its JSON says if it couldn't. Write the entry in their `log.md` from the review JSON, in their words: picked, not picked, raced, a favourite, parked, stopped, why. A line you add for context starts with `Context:`. Commit it. A critic suggestion they ticked is not their words: it goes in no log line and no taste row.
 
 ## 5. Refine
 
-Start `livery-refine` with `{design, budget: 4, note}`: the picked design (for a mix, the one they named first) and their note verbatim. Its `stop` says what next:
+Start `livery-refine` with `{design, budget, note}` for each picked design, one after another: their note verbatim, then each critic suggestion they ticked (`endorsed`) as a line starting `Endorsed from the critic:`. The budget is 1 for a `quick` change and 4 for a `full` one or a pick. Its `stop` says what next:
 
 - `ship`, or `budget` (four rounds without ship): 6.
 - `blocked` or `kit`: tell them each `for_owner` line at once, as a proposed kit fix (`kit-calibrate`) or library change. First look for the same fault in the calibration shots in `.cache/kit-review/<kit>/`: if the calibration design shows it too, the kit or the renderer is at fault, not the design. Refine again once they have decided.
 - `character` or `sim`: theirs to answer; refine again after.
-- `plateau`: its `review` is the design beside the fork's variants (a pick, as in 3) or the design alone (a final, as in 6). Refine again with their note (and `adopt: <variant>` when they picked one), unless they accept or park.
+- `plateau`: its `review` is the design beside the fork's variants (a pick, as in 3) or the design alone (a final, as in 6). Refine again with their note (and `adopt: <variant>` when they picked one), unless they race, park or stop it.
 - `error`: report it.
 
 Delete the variant folders it lists under `remove`, and an adopted variant's once the next run has adopted it; they are never committed. Keep its `constraints` for the retro: each is a kit or library proposal.
 
 ## 6. Final review
 
-`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They accept (good enough to race), edit with a note, or park it, and may rate it; log it as in 4. A final review needs a checked build, and accepting pins exactly that build. On edit, refine again with their note. On park, stop.
+`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They race it (maybe as a favourite), change it, park it (not now, worth coming back to) or stop it (not worth more work); log it as in 4. A final review needs a checked build, and racing pins exactly that build. On a change, refine again with their note, its strategy and what they ticked. On park or stop, stop; a parked design is picked up again only when they ask.
 
 ## 7. Install and export
 
-On accept only: `livery install <design>`, which refuses any other build, and tell them to run `livery install <design> --finish` after their first session of the other kind (solo or team) so that spec's .mip is archived too. Then `livery export <design>`, and give them the folder and upload line it prints, so other drivers see it through Trading Paints.
+When they raced it, at once and without asking: `livery install <design>`, which refuses any other build, and tell them to run `livery install <design> --finish` after their first session of the other kind (solo or team) so that spec's .mip is archived too. Then `livery export <design>`, and give them the folder and upload line it prints, so other drivers see it through Trading Paints. A favourite is a car to learn from: propose it as a `references.md` yes row.
 
 ## 8. Retro
 
