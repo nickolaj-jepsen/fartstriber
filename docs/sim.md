@@ -145,16 +145,35 @@ The McLaren's PSD is 2048×2048, RGB, 8-bit, with 51 layers. The top view sits i
 - A bake renders the five views in about 5 s (3.5 s with one isotropic sample), after 5 s to load the capture.
 - Baked against one preview sim run of the same build, outside a 2 px silhouette band, p95 per view (R/G/B):
 
-  | View | calibration fixture | fireproof-v2 | fireproof-v2, isotropic |
-  |---|---|---|---|
-  | front34 | 2/2/2 | 7/8/2 | 22/14/2 |
-  | side_l | 2/1/2 | 6/8/2 | 8/8/2 |
-  | side_r | 1/1/1 | 3/2/1 | 4/3/1 |
-  | rear34 | 1/1/1 | 5/3/1 | 10/6/2 |
-  | top | 2/2/2 | 6/6/2 | 6/7/2 |
+  | View | calibration fixture | fireproof-v2 | fireproof-v2, isotropic | materials |
+  |---|---|---|---|---|
+  | front34 | 2/2/2 | 7/8/2 | 22/14/2 | 13/12/11 |
+  | side_l | 2/1/2 | 6/8/2 | 8/8/2 | 35/33/60 |
+  | side_r | 1/1/1 | 3/2/1 | 4/3/1 | 3/4/4 |
+  | rear34 | 1/1/1 | 5/3/1 | 10/6/2 | 5/5/5 |
+  | top | 2/2/2 | 6/6/2 | 6/7/2 | 11/9/8 |
 
-- The median error is 0 on the fixture and 1–2 on fireproof-v2 (dense pixel-block dissolves) in every view. Two sim runs of each build gave the same numbers.
-- What remains is thin lines along paint edges and, on metallic and chrome, soft halos around highlights. Dense metallic patterns of random colour are the worst case.
+- The median error is 0 on the fixture and 1–2 on fireproof-v2 (dense pixel-block dissolves) and on the materials fixture in every view. Two sim runs of each of the first two builds gave the same numbers.
+- The `materials` fixture puts every spec preset on black, grey, white, red and blue fields, each with thin bars, pinstripes and type. Per finish, p95 per view (R/G/B):
+
+  | View | gloss | satin | matte | metallic | chrome |
+  |---|---|---|---|---|---|
+  | front34 | 8/8/7 | 17/12/10 | 10/11/10 | 26/24/18 | 10/11/10 |
+  | side_l | 6/14/24 | 10/8/8 | 7/18/25 | 73/42/33 | 32/49/116 |
+  | side_r | 2/2/2 | 4/3/3 | 3/4/5 | 8/7/6 | 4/4/4 |
+  | rear34 | 3/3/3 | 6/5/4 | 6/6/7 | 8/8/7 | 6/6/6 |
+  | top | 6/6/5 | 6/6/5 | 9/7/5 | 26/23/18 | 11/10/8 |
+
+- Split by distance from a paint edge (a change of colour or finish), over every view, p95 of the worst channel:
+
+  | | gloss | satin | matte | metallic | chrome |
+  |---|---|---|---|---|---|
+  | within 1.5 px | 19 | 18 | 18 | 41 | 37 |
+  | further | 4 | 3 | 5 | 29 | 34 |
+
+- Away from edges, gloss, satin and matte fields match to a p95 of 1–6 in every view but side_l, and metallic and chrome fields to 2–5 in side_r and rear34.
+- The rest is the sun's highlights on metal: the left door (side_l), the bonnet and roof edge (top), the front wing (front34). The sim spreads their glare over the cells around them, whatever their finish: a gloss red field beside the left door's highlight is p95 39 too blue. A white metallic field, itself a ladder step, shows 32 levels darker (R) in the sim than baked there, where the ladder's all-white car lit glare of its own. The bake reads each pixel's light from its own texel, so it can't show light that depends on the paint around it.
+- Thin lines along paint edges remain on every finish.
 - One isotropic sample at the mip of the footprint's long axis blurs the oblique three-quarter views. Filtering as a GPU does (the short axis's mip, taps along the long axis) brings them in line with the rest.
 
 ## Fitting from the preview views
