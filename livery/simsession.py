@@ -194,7 +194,7 @@ class SimSession:
         other windows; else what keeps it from that size."""
         want = f"{size[0]}x{size[1]}"
         wrong = f"the sim window is {now[0]}x{now[1]}; previews need {want}"
-        why = self.window.unsizable(*size)
+        why = self.window.unsizable()
         if why is not None:
             return f"{wrong}, and it can't be resized: {why}"
         if self._resized is not None:
@@ -511,7 +511,7 @@ class SimSession:
                     f"the sim is in front, so its window was left at the run's size; it was {was}"
                 )
                 return
-            why = win.unsizable(*size)
+            why = win.unsizable()
             if why is not None:
                 problems.append(f"the sim window was left at the run's size, since {why}; it was {was}")
                 return
@@ -616,7 +616,7 @@ def status(cfg: Config, ws: Workspace) -> list[str]:
         if (cw, ch) == (pw, ph):
             size = f"{cw}x{ch}"
         else:
-            why = w.unsizable(pw, ph)
+            why = w.unsizable()
             size = (
                 f"{cw}x{ch}, not the {pw}x{ph} runs shoot at ({why or 'a run resizes it and puts it back'})"
             )

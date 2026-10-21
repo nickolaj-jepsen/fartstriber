@@ -147,9 +147,10 @@ class Window:
             user32.GetWindowRect(self.hwnd, ctypes.byref(e))
         return e
 
-    def unsizable(self, width: int, height: int) -> str | None:
-        """Why the window can't be given this client size without more than a resize, or None. A maximised
-        window would need a restore, which takes focus; a fullscreen one has no frame to size."""
+    def unsizable(self) -> str | None:
+        """Why the window can't be resized with a resize alone, or None. A maximised window would need a
+        restore, which takes focus; a fullscreen one has no frame to size. A window may grow past its monitor
+        and the desktop: the sim renders and the capture sees all of it (docs/sim.md)."""
         if user32.IsIconic(self.hwnd):
             return "it is minimised"
         if user32.IsZoomed(self.hwnd):
@@ -164,14 +165,6 @@ class Window:
         m, e = info.rcMonitor, self._bounds()
         if (e.left, e.top, e.right, e.bottom) == (m.left, m.top, m.right, m.bottom):
             return "it is fullscreen"
-        w, h = self.client_size()
-        if (
-            e.left < m.left
-            or e.top < m.top
-            or e.right + width - w > m.right
-            or e.bottom + height - h > m.bottom
-        ):
-            return "it wouldn't fit on its monitor where it is"
         return None
 
     def set_client_size(self, width: int, height: int) -> None:

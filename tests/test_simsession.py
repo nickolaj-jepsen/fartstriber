@@ -186,7 +186,7 @@ class FakeWindow:
     def client_size(self):
         return self.world.size
 
-    def unsizable(self, width, height):
+    def unsizable(self):
         return self.world.unsizable
 
     def set_client_size(self, width, height):
@@ -642,7 +642,7 @@ def test_the_window_is_only_ever_read(monkeypatch):
     w.minimised()
     w.cursor_over()
     w.client_box(100, 50)
-    w.unsizable(100, 50)
+    w.unsizable()
 
     reads = {
         "IsZoomed",
@@ -728,7 +728,7 @@ def on_desktop(monkeypatch, **kw) -> tuple[Desktop, capture.Window]:
 def test_a_resize_keeps_the_window_where_it_is_and_behind_other_windows(monkeypatch):
     d, w = on_desktop(monkeypatch)
 
-    assert w.unsizable(1780, 992) is None
+    assert w.unsizable() is None
     w.set_client_size(1780, 992)
 
     assert w.client_size() == (1780, 992)
@@ -740,10 +740,20 @@ def test_a_resize_keeps_the_window_where_it_is_and_behind_other_windows(monkeypa
 
 @pytest.mark.parametrize(
     "kw",
-    [{"zoomed": True}, {"style": 0}, {"x": 900}, {"x": 0, "y": 0, "w": 2544, "h": 1401}],
-    ids=["maximised", "borderless", "wouldn't fit", "fullscreen"],
+    [{"zoomed": True}, {"style": 0}, {"x": 0, "y": 0, "w": 2544, "h": 1401}],
+    ids=["maximised", "borderless", "fullscreen"],
 )
-def test_only_a_normal_window_that_fits_may_be_resized(monkeypatch, kw):
+def test_only_a_normal_window_may_be_resized(monkeypatch, kw):
     _d, w = on_desktop(monkeypatch, **kw)
 
-    assert w.unsizable(1780, 992)
+    assert w.unsizable()
+
+
+def test_a_window_may_grow_past_its_monitor(monkeypatch):
+    d, w = on_desktop(monkeypatch, x=1500, y=800)
+
+    assert w.unsizable() is None
+    w.set_client_size(1920, 1080)
+
+    assert w.client_size() == (1920, 1080)
+    assert d.pos == (1500, 800)

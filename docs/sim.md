@@ -40,6 +40,9 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
 - A windowed capture includes the title bar and a 1 px border. At 100% scaling the client area starts 31 px down and 1 px in.
 - Shots line up with a capture pixel for pixel only at the client size it was shot at. Runs at 1782 × 992 against a 1780 × 992 capture differ from its background by a median 1–6 levels; runs at its size by 1.
 - `SetWindowPos` with `SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER` resizes the sim behind other windows in about 0.06 s, without taking focus. Shots right after a resize from 1782 × 992 to 1780 × 992 match a run already at that size to within 2/255 on car pixels, with a background median of 1 against the capture.
+- A window larger than its monitor, or reaching past the desktop, renders and captures whole:
+  - Shots of a 1780 × 992 window hung 400 px past the desktop's left edge and 430 px below it match the same window on screen to within 2/255 on car pixels.
+  - The sim takes client sizes larger than a monitor (2700 × 1300 across two) and taller than the 1440 px desktop (1780 × 1500, past Windows' default 1460 px cap). Its rows below the desktop render as the rest of the frame.
 - A run must stop when:
   - the window is minimised (restoring it would take focus)
   - a frame comes back blank
@@ -66,7 +69,7 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
 - The shots repeat: car pixels match exactly in any order of views and across sim sessions. Only animated foliage and a 1 px window border differ.
 - A fence or wall sits between camera and car on some frames, so a frame needs a clear line from every camera.
 - Framing at the preview poses:
-  - At 25 m and 0.2 rad the McLaren's paint spans 1507 × 360 px of a 1780 × 992 px window in a side view.
+  - At 25 m and 0.2 rad the McLaren's paint spans about 1630 px across a 1920 × 1080 window in a side view (1507 × 360 px of a 1780 × 992 one): the view scales with the window.
   - The three-quarter views, at 0.24 rad, show the car about 1100 px wide.
   - In every preview view the car's paint sits within 60 px of the centre.
   - A shot takes about 0.9 s from a running capture session, including the seek and a 0.6 s settle.
