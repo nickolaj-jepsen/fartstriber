@@ -93,7 +93,8 @@ class Sim:
     def telemetry(self, car_idx: int) -> dict:
         """Where the car is and how it moves at the replay's frame, read from one tick: its share of the lap,
         track surface (irsdk.TrkLoc), whether it is on pit road, its steering (rad), and for the player's car
-        its yaw rate (rad/s) and speed (m/s). What the sim doesn't give is None."""
+        its yaw rate (rad/s), speed (m/s) and roll (rad, the track's banking with it). What the sim doesn't
+        give is None."""
         ir = self.ir
         ir.freeze_var_buffer_latest()
         try:
@@ -111,6 +112,7 @@ class Sim:
                 "steer": of_car("CarIdxSteer"),
                 "yaw_rate": ir["YawRate"] if player else None,
                 "speed": ir["Speed"] if player else None,
+                "roll": ir["Roll"] if player else None,
             }
         finally:
             ir.unfreeze_var_buffer_latest()

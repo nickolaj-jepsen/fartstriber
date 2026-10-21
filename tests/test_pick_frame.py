@@ -35,6 +35,7 @@ class Lap(World):
         self.yaw_known = True
         self.shares: dict[str, float] = {}  # groups that show the car at another share, by name
         self.shade: list[tuple[str, range]] = []  # groups whose car is in shade, on a range of frames
+        self.banked = range(0)  # frames where the track's banking rolls the car
 
     def group(self) -> str:
         num = self.vars["CamGroupNumber"]
@@ -59,6 +60,7 @@ class Lap(World):
             "PlayerCarIdx": 3,
             "YawRate": (0.0 if straight else 0.4) if self.yaw_known else None,
             "Speed": 50.0,
+            "Roll": -0.3 if f in self.banked else 0.0,
         }[key]
 
     def render(self) -> np.ndarray:
@@ -93,6 +95,7 @@ class LapIR(FakeIR):
         "PlayerCarIdx",
         "YawRate",
         "Speed",
+        "Roll",
     )
 
     def __getitem__(self, key):
@@ -184,6 +187,14 @@ def test_a_view_in_another_light_gets_the_clear_frame_that_lights_it_most(lap, w
     assert prof.preview[lit].frame in STRAIGHTS[1]
     assert prof.shot(lit).frame == prof.preview[lit].frame
     assert prof.shot("side_l").frame == prof.frame
+
+
+def test_of_two_straights_the_banked_one_loses(lap, ws, tiny):
+    lap.banked = STRAIGHTS[0]
+
+    pick_frame.pick(lap.cfg, ws, tiny, log=lap.logs.append)
+
+    assert kits.profile(tiny).frame in STRAIGHTS[1]
 
 
 def test_without_a_turn_rate_the_frame_checks_still_pick_a_clear_frame(lap, ws, tiny):

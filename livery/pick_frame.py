@@ -3,8 +3,8 @@
 A frame needs the car on a straight, where the car-locked cameras sit square and centred, with nothing
 between any preview camera and the car (docs/sim.md, Camera sets). The scan seeks across the replay and reads
 the car's telemetry at each stop (no camera switch, no paint): where it is on the lap, whether it is on track,
-and how fast it turns where the sim says. It keeps on-track frames whose neighbours turn least, spread around
-the lap. Each candidate is then shot from every preview group with the car painted white, then black, under a
+and how fast it turns and how far it rolls where the sim says. It keeps on-track frames whose neighbours turn
+and roll least (a banked straight leans the car against the cameras), spread around the lap. Each candidate is then shot from every preview group with the car painted white, then black, under a
 matte spec: the pixels that differ are the car's paint, whatever lies behind it. A candidate passes a view when
 the car is whole in the frame with a margin, about centred, and shows as much paint as on the clearest
 candidate, so no fence or wall covers part of it. The straightest candidate that passes every view becomes the
@@ -41,6 +41,7 @@ MAX_SAMPLES = 400
 MIN_STRIDE = 30  # replay frames between samples: half a second
 NEIGHBOURS = 2  # samples either side that count towards how much a candidate turns
 TURN_SLACK = 0.02  # rad/s (or rad of steering) a straight may wander by
+ROLL_WEIGHT = 1.0  # rad/s of turn a rad of roll counts as: 3° of banking outweighs a straight's wander
 CANDIDATES = 6
 SEPARATION = 0.03  # of a lap between candidates, so they see different backgrounds
 MATTE = (0, 255, 0)  # no metal, fully rough: the fewest reflections between the two paints
@@ -72,6 +73,7 @@ class Sample:
     lap: float | None  # share of the lap
     on_track: bool
     turn: float | None  # |yaw rate| in rad/s, or |steering| in rad where the sim gives no yaw rate
+    roll: float | None = None  # |roll| in rad: the track's banking leans the car against level cameras
 
 
 def _turn(t: dict) -> float | None:
@@ -93,7 +95,9 @@ def scan(s: SimSession, log=print) -> list[Sample]:
         surface = t.get("surface")
         on = (surface is None or int(surface) == ON_TRACK) and not t.get("pit")
         lap = t.get("lap")
-        out.append(Sample(f, None if lap is None or lap < 0 else float(lap), on, _turn(t)))
+        roll = t.get("roll")
+        lap_share = None if lap is None or lap < 0 else float(lap)
+        out.append(Sample(f, lap_share, on, _turn(t), None if roll is None else abs(float(roll))))
     return out
 
 
@@ -116,7 +120,8 @@ def candidates(samples: list[Sample], n: int = CANDIDATES) -> list[tuple[Sample,
         around = samples[max(0, i - NEIGHBOURS) : i + NEIGHBOURS + 1]
         if not all(x.on_track for x in around):
             return float("inf")
-        return max((x.turn or 0.0) for x in around) if known else 0.0
+        turn = max((x.turn or 0.0) for x in around) if known else 0.0
+        return turn + ROLL_WEIGHT * max((x.roll or 0.0) for x in around)
 
     def room(i: int, most: float) -> int:
         """Samples to the nearer end of the stretch around i that turns no more than `most`: the middle of a
