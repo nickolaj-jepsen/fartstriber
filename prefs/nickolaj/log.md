@@ -115,3 +115,4 @@ Chosen: concept:zentiq-c, rated 3 — no note. The black and white fields swap s
 Chosen: concept:zentiq-b, rated 3 — no note. Paul Miller's dissolve in Zentiq colours, built only from horizontal blocks.
 Edit: concept:zentiq-e, rated 2 — "The line across the top is a bit to straight compare to the more "natural" curves found elsewhere in the design". The acid-green mamba coiled round a black car.
 Context: he took forward every concept shown, so all three are refined: c and b as they are, e with his note.
+Parked: zentiq-e — "Set zentiq-e aside for now and keep going with zentiq-c and zentiq-b. Revisit the seam if they hit it too." (said in chat). Its round 1 (6/10, his note resolved: the top line is now one S-curve) stopped on a few-px step of the ribbon at the right door's front shut line, a kit v2 seam (i046/i054; i128/i158 on the left).
