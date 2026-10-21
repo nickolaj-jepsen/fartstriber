@@ -12,7 +12,7 @@ from livery import check, cli, critic, references
 from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
-from tests.conftest import OWNER, checked, sim_run, write_design
+from tests.conftest import OWNER, TASTE_IDS, checked, sim_run, write_design
 from tests.test_review_critic import verdict
 
 FIX = {"text": "the bonnet is one plain field", "optional": False}
@@ -52,7 +52,7 @@ def test_a_round_pack_holds_its_own_copies_upscaled_distance_images_and_anchors(
     boring = sim_run(ws, "fireproof-sweep", "20251018-000000", None, "orange")
     references.copy_boring(ws, log=lambda m: None)
     ws.references.write_text("| # | Livery | Car | Why | Yes/no |\n", encoding="utf-8")
-    ws.prefs.mkdir()
+    ws.prefs.mkdir(parents=True, exist_ok=True)
     (ws.prefs / "log.md").write_text("He likes a second layer.\n", encoding="utf-8")
     warnings: list[str] = []
 
@@ -189,7 +189,7 @@ def test_a_round_ships_when_every_check_passes(ws):
 
 
 def _failing(id_: str) -> list[dict]:
-    return [{"id": i, "pass": i != id_, "where": "front34"} for i in critic.taste_ids()]
+    return [{"id": i, "pass": i != id_, "where": "front34"} for i in TASTE_IDS]
 
 
 RESOLVED = [{"status": "resolved", "evidence": "front34.png"}]

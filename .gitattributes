@@ -2,7 +2,7 @@
 # them CRLF would send every design back through check.
 * text=auto eol=lf
 # Apply appends to the ledger and commits it on each session's branch: keep every branch's lines on merge.
-prefs/decisions.jsonl merge=union
+prefs/*/decisions.jsonl merge=union
 *.png binary
 *.jpg binary
 *.tga binary
