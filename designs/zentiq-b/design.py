@@ -14,7 +14,7 @@ from shapely.geometry import Polygon
 
 from livery import body, carspace, geom, typeset
 from livery.params import DesignParams, param
-from livery.primitives import base, clip_out, mirror_sides, panel, sponsor, sponsor_group, svg
+from livery.primitives import base, clip_out, marks, mirror_sides, panel, sponsor, sponsor_group, svg
 
 KIT = "mclaren-720s-gt3-evo"
 
@@ -33,6 +33,10 @@ TIERS = (
     ("small", 0.015, 700, 0.75, 0.06),
 )
 GRID = 0.004  # every block edge on this grid, as seen, so no sliver between two blocks
+HEAD_LEN = 3.3266  # the zentiq wordmark's length in its heights
+SUB = "ENERGY RACING"  # the headline's small line
+TELVIO_ASPECT = 4.986  # the Telvio wordmark's length in its heights (assets/sponsors/telvio/brand.toml)
+NUM_U = (0.392, 0.488)  # the side number's block in u: the partner plate on it shares its edges
 
 # Parts painted whole.
 LOWER = (
@@ -76,10 +80,25 @@ class Params(DesignParams):
     stray: float = param(0.25, 0.0, 0.6)  # share of zone-body small blocks in a foreign colour
     tone: float = param(0.6, 0.0, 1.0)  # share of zone-body blocks in the zone's tone
     black_tone: float = param(1.8, 1.0, 3.0)  # the black zone's body carries this many more blocks
+    grey_tone: float = param(1.8, 1.0, 3.0)  # and the grey nose's body this many
+    green_tone: float = param(1.8, 1.0, 3.0)  # and the green door's body this many
+    # The headline's plate is a mosaic of its own: this many blocks, this share of them the darker green.
+    plate_n: int = param(40, 0, 120)
+    plate_tone: float = param(0.55, 0.0, 1.0)
+    # The partner plate on top of the side number's block: its padding round the wordmark (car lengths).
+    np_pad: float = param(0.0055, 0.004, 0.006)  # Telvio's wordmark needs 0.0169 car lengths of height
+    wing_w: float = param(0.45, 0.3, 0.6)
+    wing_h: float = param(0.028, 0.02, 0.035)  # the wing-top partners' centres either side of the tail zentiq
+    ext_v: float = param(0.81, 0.7, 0.86)  # the extinguisher E's centre, over the partner plate
     # Headline on the door.
     head_u: float = param(0.6, 0.5, 0.7)
     head_v: float = param(0.64, 0.5, 0.8)
     head_h: float = param(0.058, 0.03, 0.08)  # car lengths
+    # The small line under the headline: its em (car lengths), its top's gap under the wordmark's ink (v),
+    # and how far the green plate reaches down to hold it (v).
+    sub_em: float = param(0.017, 0.012, 0.025)
+    sub_gap: float = param(0.03, 0.0, 0.1)
+    sub_drop: float = param(0.08, 0.0, 0.2)
     # The sill rows' centre line (v), under the side number's zone.
     sill_v: float = param(0.24, 0.2, 0.3)
     sill_h: float = param(0.05, 0.03, 0.06)  # the sill rows' largest height, car lengths
@@ -228,7 +247,7 @@ def build(kit, p: Params):
                 a = y / k
                 t = near(u, a)
                 home = zone(u, a, 0.5, 0.5, 0.5)
-                body_dens = dens_z * (p.black_tone if home == 2 else 1.0)
+                body_dens = dens_z * (p.grey_tone, p.green_tone, p.black_tone)[home]
                 dens = body_dens + (dens_t - body_dens) * t**1.5
                 if r[0] >= dens:
                     continue
@@ -251,14 +270,26 @@ def build(kit, p: Params):
         m.add(0.384, 0.215, 0.5, 0.235, CHAR)
         m.add(0.392, 0.235, 0.488, 0.575, BLACK)
         # The headline's green block, and the sill rows' black blocks.
-        hl, hv = p.head_h * 3.3266, p.head_h / k  # the wordmark's length in u, height in v
-        m.add(
-            _snap(p.head_u - hl / 2 - 0.012),
-            p.head_v - hv * 0.75,
-            _snap(p.head_u + hl / 2 + 0.012),
-            p.head_v + hv * 0.75,
-            GREEN,
-        )
+        hl, hv = p.head_h * HEAD_LEN, p.head_h / k  # the wordmark's length in u, height in v
+        pu0, pu1 = _snap(p.head_u - hl / 2 - 0.012), _snap(p.head_u + hl / 2 + 0.012)
+        pa0, pa1 = p.head_v - hv * 0.75 - p.sub_drop, p.head_v + hv * 0.75
+        m.add(pu0, pa0, pu1, pa1, GREEN)
+        # The plate is a mosaic of the green's own two tones (black letters read on both), so the door is
+        # never one flat field: big and medium blocks, clipped to the plate's rectangle.
+        prng = p.rng(f"plate.{view}")
+        for _ in range(p.plate_n):
+            h = (TIERS[0][1], TIERS[1][1], TIERS[1][1])[int(prng.random() * 3)] * prng.uniform(0.75, 1.25)
+            ll = h * prng.uniform(2.0, 6.0)
+            u, y = prng.uniform(pu0, pu1), prng.uniform(pa0 * k, pa1 * k)
+            c = GREEN_T if prng.random() < p.plate_tone else GREEN
+            u0, u1 = max(pu0, u - ll / 2), min(pu1, u + ll / 2)
+            y0, y1 = max(pa0 * k, y - h / 2), min(pa1 * k, y + h / 2)
+            m.add_seen(u0, y0, u1, y1, c)
+        # A partner plate in grey on top of the number's block, its wordmark padded equally all round.
+        np_v1 = 0.575 + (0.096 - 2 * p.np_pad) / TELVIO_ASPECT / k + 2 * p.np_pad / k
+        m.add(0.392, 0.575, 0.488, np_v1, GREY)
+        # The front fender's partner block behind the front wheel, from the arch to the door's front edge.
+        m.add(0.29, 0.22, 0.372, 0.5, BLACK)
         # The tech labels' charcoal block on the haunch over the rear arch.
         m.add(0.78, 0.785, 0.95, 1.05, CHAR)
         m.add(0.40, 0.2, 0.525, 0.31, BLACK)
@@ -273,7 +304,11 @@ def build(kit, p: Params):
     # --- top -----------------------------------------------------------------------------------------------
     m = mosaic("top", zone_top, near_top, -1.05, 1.05)
     m.add(0.095, 0.235, 0.182, 0.45, BLACK)  # the top number's block
+    m.add(0.095, -0.49, 0.182, -0.235, BLACK)  # and its twin across the green vent, for a partner
     m.add(0.01, -0.2, 0.09, 0.2, GREY)  # the bonnet lockup's block
+    # The roof wordmark's green block, as on the doors, so no black block runs into its letters.
+    rl = 0.05 * HEAD_LEN / carspace.aspect(kit, "top") / 2 + 0.03
+    m.add(_snap(0.45 - 0.05 * 0.8), -rl, _snap(0.45 + 0.05 * 0.8), rl, GREEN)
     els.append(_mosaic_fill(kit, "mosaic.top", "top", m.layers(), z=1))
 
     # --- parts no view maps whole -------------------------------------------------------------------------
@@ -281,7 +316,8 @@ def build(kit, p: Params):
     els.append(panel(kit, "splitter-top", "splitter_top", BLACK, z=2))
     els.append(panel(kit, "lip", "splitter_lip", GREEN, z=3))
     els.append(panel(kit, "mirrors", "mirrors", GREEN, z=3))
-    els.append(panel(kit, "vent", "bonnet_vent", BLACK, z=2))
+    # The bonnet vent in the accent, so the black number blocks either side of it read as blocks of their own.
+    els.append(panel(kit, "vent", "bonnet_vent", GREEN, z=2))
     # Parts no view maps: their ground, cut with blocks drawn as texture rectangles.
     for part, ground, palette, n in (
         ("rear_face", BLACK, {CHAR: 3.0, GREEN: 1.0}, 60),
@@ -371,6 +407,57 @@ def build(kit, p: Params):
     els += mirror_sides(
         sponsor, kit, "mirror", "altmere", at=(0.375, 0.995), height=0.014, color=BLACK, variant="mark", z=6
     )
+    for view in SIDES:
+        # Telvio on the grey plate on top of the number's block, padded equally all round.
+        k = carspace.aspect(kit, view)
+        wl = NUM_U[1] - NUM_U[0] - 2 * p.np_pad
+        els.append(
+            sponsor(
+                kit,
+                f"numplate.{view}",
+                view,
+                "telvio",
+                ((NUM_U[0] + NUM_U[1]) / 2, 0.575 + (wl / TELVIO_ASPECT / 2 + p.np_pad) / k),
+                BLACK,
+                height=wl / TELVIO_ASPECT,
+                variant="wordmark",
+                z=6,
+            )
+        )
+    # Two partner marks stacked on the black block behind the front wheel.
+    els += mirror_sides(
+        sponsor_group,
+        kit,
+        "fender",
+        [("grivant", "mark"), ("avelor", "mark")],
+        start=(0.331, 0.475),
+        end=(0.331, 0.245),
+        height=0.018,
+        color=GREY,
+        axis="column",
+        z=6,
+    )
+    # The bonnet's second block carries Huilec, read from the front like the lockup.
+    els.append(
+        sponsor(kit, "bonnet-p", "top", "huilec", (0.1385, -0.37), GREY, height=0.03, variant="mark", z=6)
+    )
+    # The wing top carries a partner mark either side of the tail's zentiq, read from the chase cam: the
+    # wing's map ends about |w| 0.68, too short for a wordmark at its minimum height beside the zentiq.
+    for brand, w in (("drexa", -p.wing_w), ("grivant", p.wing_w)):
+        els.append(
+            sponsor(
+                kit,
+                f"wing-{brand}",
+                "top",
+                brand,
+                (1.04, w),
+                GREY,
+                height=p.wing_h,
+                variant="mark",
+                facing="rear",
+                z=6,
+            )
+        )
     els += mirror_sides(
         sponsor, kit, "stack-0", "ostrand", at=(0.98, 0.685), height=0.025, color=BLACK, variant="mark", z=6
     )
@@ -393,7 +480,25 @@ def build(kit, p: Params):
         color=GREY,
         z=6,
     )
-    # Tech labels in Space Mono on blocks: a part number on the haunch, a telemetry readout on the door.
+    # The headline's small line, on the wordmark's left edge and spread to its width: one Orbitron
+    # hierarchy on the door.
+    hl, hv = p.head_h * HEAD_LEN, p.head_h / carspace.aspect(kit, "side_l")
+    sub = typeset.measure(SUB, "Orbitron", 1.0, 700)
+    track = (hl / p.sub_em - (sub.ink[2] - sub.ink[0])) / (len(SUB) - 1)
+    for view in SIDES:
+        els += typeset.type_block(
+            kit,
+            f"sub.{view}",
+            view,
+            [typeset.Line(SUB, p.sub_em, font="Orbitron", weight=700, tracking=track)],
+            at=(p.head_u + (hl if view == "side_r" else -hl) / 2, p.head_v - hv / 2 - p.sub_gap),
+            color=BLACK,
+            z=6,
+        )
+    # Race markings: the extinguisher E by the mirror.
+    for view in SIDES:
+        els.append(marks(kit, f"ext.{view}", "extinguisher", (view, 0.44, p.ext_v), BLACK, 0.018, z=6))
+    # Tech labels in Space Mono on blocks: a part number on the haunch.
     for view in SIDES:
         els += typeset.type_block(
             kit,
