@@ -3,7 +3,7 @@
 # yaw, pitch (down positive) and FOV in radians; a preview camera's aim raises its aim point (field 9).
 
 replay = 84333072
-frame = 2917
+frame = 3225
 
 [preview.front34]
 group = "Preview Front34"
@@ -51,15 +51,16 @@ pose = [2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367]
 aim = 0.0
 
 [preview.nose_close]
-group = "mclaren-720 Nose Close 152d"
-pose = [6.45, 0.0, 0.237, -3.141592653589793, 0.0367, 0.4581]
-aim = -0.031
+group = "mclaren-720 Nose Close b23e"
+pose = [5.37, 0.0, 1.63, -3.141592653589793, 0.436, 0.6]
+aim = -2.49
 
 [preview.side_r_lit]
 group = "mclaren-720 Side R Lit 8fc1"
 pose = [0.0, -25.0, 0.5, 1.5707963267948966, 0.0, 0.2]
 aim = 0.27
+frame = 2175
 
 [crops]
-beltline = ["side_l", 520, 430, 1360, 600]
-nose = ["front34", 290, 380, 850, 650]
+beltline = ["side_l", 541, 488, 1482, 710]
+nose = ["front34", 308, 410, 909, 714]
