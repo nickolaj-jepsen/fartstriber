@@ -81,4 +81,4 @@ Both hold the current state, never a history (verdicts.jsonl and git keep that):
 
 ## Report
 
-End with the report your prompt asks for (in a workflow, its schema): what you did; whether `livery check` passed and which sim run shows the build (none in a baked round); each answer's status; and, for the owner, the constraints. The blocked fixes, kit faults, a character conflict and what the sim needs stop the session for the owner, so name only what does: a kit gap you designed around, or a sim run a baked round didn't need, goes in notes, and an empty field means none.
+End with the report your prompt asks for (in a workflow, its schema): what you did; whether `livery check` passed and which sim run shows the build (none in a baked round); each answer's status; and, for the owner, the constraints. A character conflict and what the sim needs stop the session for the owner; blocked fixes and kit faults go to the owner while the next round works the other fixes. Name only real ones: a kit gap you designed around, or a sim run a baked round didn't need, goes in notes, and an empty field means none.
