@@ -1,0 +1,42 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "",
+ "design_hash": "2448b3ebb33ae70bc3e04ea4a7d69b8a89674c27c186e18d58922d6061f87731",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "b8a407e4e732991e145d8f32d66d46a520dde7bed283170ad9ad5b012ed7917e",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "cb83d326c7fb9026211d82a984250f612a21148a7a0c0060aeabb1097c1d63f3",
+  "car_spec.tga": "d8b77e173e457acfbd7c6f5475c6c5b026e1afaac5923c11606843f857b98702",
+  "layers.svg": "f20bbc45242be58ed82d662589d83547df3461a4f8ad4e5f35789c3ac581a885",
+  "paint.png": "7040f80063e1ae9471473dce8f12ed56894d4549e90b941f8c1187894475845d",
+  "spec.png": "8673b8d925590f160d1a674315e1ee56c04eb1986362a52321988081d3af2c02",
+  "spec.svg": "4bd16d653b41ab82c9ceea3b6e501f31ed1c7651cb6ad4e01fe870b03c0b0f7e"
+ },
+ "waivers": [
+  {
+   "check": "seam",
+   "id": "hex-solid.side_r",
+   "reason": "the core breaks only at the fender-crest slats, painted red over it",
+   "hid": [
+    "stops at 20 of the 42 seam points it reaches"
+   ]
+  },
+  {
+   "check": "seam",
+   "id": "hex-solid.top",
+   "reason": "the top's whole nose cells are laid out on the top view's own honeycomb, so where the fenders, door shoulders, mirrors and splitter hand over to the side views (or are painted red) the cells don't continue across",
+   "hid": [
+    "stops at 107 of the 204 seam points it reaches"
+   ]
+  }
+ ],
+ "sponsors": [],
+ "marks": []
+}

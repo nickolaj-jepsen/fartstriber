@@ -1,0 +1,46 @@
+---
+name: retro
+description: Fartstriber session retro - read this session's transcript and the decision, verdict and metrics records since the last retro, and propose concrete edits (taste rows, lint checks, kit keep-clear zones, skill lines, CLAUDE.md rules) as review items the owner accepts or rejects. Use as /retro, and as the last step of every design, kit and library session.
+---
+
+# Retro
+
+The retro proposes; the owner decides in `livery review`; only what they accept is made. Nothing changes without their yes.
+
+## 1. Read what happened since the last retro
+
+`prefs/retro.json` holds `last`, when the last retro's review was applied (no file: read all of the records). From then on:
+
+- **This session's transcript**: `~/.claude/projects/<project>/<session id>.jsonl`. `<project>` is the session's starting folder with every character other than a letter or digit replaced by `-` (`C--Users-you-Development-fartstriber`); the id is `${CLAUDE_SESSION_ID}` (also `CLAUDE_CODE_SESSION_ID` in the environment), else the newest `.jsonl` there. Subagents' transcripts are in `<session id>/subagents/`. Transcripts are large: search them for the owner's messages and for errors, don't read them whole.
+- `prefs/decisions.jsonl`: the owner's decisions, ratings and notes, with the critic's verdict on the same design hash.
+- `designs/*/verdicts.jsonl`: each round's fixes, the builder's answers, `lint_missed`.
+- `livery stats` (with `--json` for the rows): sim runs and failed attempts, the critic beside the owner's decisions, `lint_missed` by kind, time per stage.
+- What the session promised ("next round I'll…", "I'll propose…") and whether it happened.
+
+## 2. Find the lessons
+
+- The same correction from the owner twice, or a note that says what they like or don't.
+- A critic verdict far from the owner's decision or rating (a ship they parked or rated 1, an iterate they rated 4).
+- `lint_missed` items that recur or that a check could catch before the sim.
+- A fix answered `done` that came back, a `blocked` fix, a kit fault found in a design round.
+- A step a session had to work out again, a rule it broke, a promise it didn't keep.
+
+Drop what a skill, taste row, lint or rule already says. A lesson needs evidence: the owner's words, a verdict, a record line, a transcript quote.
+
+## 3. Propose
+
+One proposal is one edit in one place:
+
+- a taste row in `.claude/skills/livery-design/taste.md`
+- a lint check (a library change)
+- a kit keep-clear zone (a kit change, through `livery kit review`)
+- a line in a skill
+- a rule in CLAUDE.md
+
+Write them to `.cache/retro/<time>.json` as a JSON list of `{"title", "body"}`: the title says the change in one line; the body says where it goes, gives the exact text or a diff, and the evidence. A few strong proposals beat many weak ones. Run `livery review --proposals .cache/retro/<time>.json` in the background and give the owner the URL.
+
+## 4. Make what the owner accepts
+
+Apply's JSON lists `proposals`: the accepted ones, to make as written, and the edited ones, to make as their note says (ask if it doesn't say). Taste rows, skill lines and CLAUDE.md rules are made now. A lint check or kit zone is a library or kit change: start it as its own work, never inside a design session, and `livery build --all` after. A rejected proposal comes back only with new evidence.
+
+Then write `prefs/retro.json` as `{"last": "<now, ISO with its offset>", "review": "<Apply's review id>"}` and commit it with the edits.

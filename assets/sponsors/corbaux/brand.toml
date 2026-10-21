@@ -1,0 +1,9 @@
+source = "fictional"
+large_only = true
+
+[variants.wordmark]
+aspect = 7.5567
+stroke = 0.0467
+counter = 0.0533
+ink = 0.3105
+approved = "2026-10-19"

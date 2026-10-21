@@ -1,0 +1,17 @@
+questions:
+- 'i170 and i175 (number_panels) hold number and series boxes but show in no shot and not in the UI view: what are
+  they?'
+- 'Three pairings each rest on one argument: i005 as the wing''s underside (wing_bottom), which endplate face is
+  inner and which outer (wing_endplate_l/r), and which swan neck is left (swan_neck_l/r). A sim shot with each painted
+  alone would settle them.'
+- Where exactly is the door light panel's edge? A sim preview with a contrasting box at the keep-clear zone (u 0.712-0.772,
+  v 0.45-0.70) would confirm the margin.
+- 'The nose names (splitter_lip, splitter_top, grille_upright_l/r, fender_nose_l/r): do they read right?'
+- Is the position display the door light panel? The labels make it the same box (position_display_l/r same_as door_light_panel_l/r);
+  a second sim overlay would need its own box.
+fit_problems:
+- 'i128 / i046 (door_l, door_r): their side maps claim u 0.29-0.40, v 0.02-0.54, where the sim shows i158 / i054
+  (fender_rear_l/r); that i128 texture is never seen, and the flat preview draws it over i158.'
+- 'i147 / i069 (grille_upright_l/r): their side maps claim u 0.008-0.04, which no shot sees.'
+- 'i080 (splitter_lip): its top map covers |w| 0.35-0.74, which is never seen from above.'
+- 'i107 (bonnet_vent''s floor) and i103 (windscreen): never seen in any shot; the kit''s linear top map places them.'

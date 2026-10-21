@@ -1,0 +1,9 @@
+source = "marking"
+large_only = false
+
+[variants.mark]
+aspect = 1.0
+stroke = 0.14
+counter = 0.1133
+ink = 0.4551
+approved = "2026-10-21"

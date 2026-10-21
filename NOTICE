@@ -1,0 +1,18 @@
+Fartstriber
+Copyright (C) 2026 Nickolaj Jepsen
+
+Fartstriber is free software under the GNU General Public License, version 3 only (see LICENSE), with
+these exceptions:
+
+- The Fireproof brand is not licensed. The pixel-flame mark, the wordmark and the lockup in
+  assets/sponsors/fireproof/, and the Fireproof name and colours as a brand on any livery, belong to
+  Nickolaj Jepsen and Fireproof Racing; all rights reserved. A fork removes or replaces them, including
+  in designs that place them.
+- The fonts in assets/fonts/ are under the SIL Open Font License 1.1; each family's OFL.txt applies.
+
+The other sponsor brands in assets/sponsors/ are invented for this project and are covered by the GPL
+like the code.
+
+iRacing is a trademark of iRacing.com Motorsport Simulations, LLC. Fartstriber is not affiliated with or
+endorsed by iRacing. The car kits in kits/ are derived from iRacing's published paint templates and from
+measurements in the sim.

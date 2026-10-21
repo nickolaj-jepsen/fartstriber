@@ -1,0 +1,62 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "",
+ "design_hash": "74f9a779fa272c0757bcd29b77745ad244e219ae09898a45cf6b56229c9f3e11",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "58e7d6b30b2b24c5d8df6a7691360645550f0fb1922201179355a2308f49d9cd",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "b06ee812ee3dcc5705c52cd97739ea88d8093b5b6b1d6d47cc4a8e2a489072b3",
+  "car_spec.tga": "2f1e74980a8639fe626ee58d6f45dcc223e09e3c52e9196f177c258256bb7e99",
+  "layers.svg": "935d1ea77af4f739ac79e716b42fcc80ad59a0dc5b18985b4120d12f3220237a",
+  "paint.png": "0c8bc3c3ace18fd3b1e776f50a15ce81b4d34777ef0e7152078fed8def206e17",
+  "spec.png": "699201234f3574a1aa73ed379c18843611f18331cf82f61adf2137e6a41ed1bb",
+  "spec.svg": "0f60f43c9f84c9e74f56cecd8cfb5ff5b1032ad7c74bdf3ecc0b132556f53a57"
+ },
+ "waivers": [
+  {
+   "check": "seam",
+   "id": "side-nose.side_r",
+   "reason": "It ends where the splitter's top begins, which carries its own hazard tape; the seam check counts that designed end at the bonnet-to-splitter seam as a break.",
+   "hid": [
+    "stops at 9 of the 17 seam points it reaches"
+   ]
+  },
+  {
+   "check": "seam",
+   "id": "nose-plate.top",
+   "reason": "It ends where the splitter's top begins, which carries its own hazard tape; the seam check counts that designed end at the bonnet-to-splitter seam as a break.",
+   "hid": [
+    "stops at 85 of the 86 seam points it reaches"
+   ]
+  },
+  {
+   "check": "seam",
+   "id": "nose-core.top",
+   "reason": "It ends where the splitter's top begins, which carries its own hazard tape; the seam check counts that designed end at the bonnet-to-splitter seam as a break.",
+   "hid": [
+    "stops at 31 of the 31 seam points it reaches"
+   ]
+  }
+ ],
+ "sponsors": [
+  "fireproof/mark",
+  "fireproof/wordmark",
+  "grivant/mark",
+  "grivant/wordmark",
+  "hexmoor/mark",
+  "huilec/mark",
+  "norvane/mark",
+  "ostrand/mark",
+  "rigmount/mark",
+  "telvio/mark",
+  "zentiq/wordmark"
+ ],
+ "marks": []
+}

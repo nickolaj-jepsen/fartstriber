@@ -1,0 +1,1195 @@
+# The kit's body model, written by `livery kit label` (never by hand); docs/architecture.md (Kits) says
+# what each part and feature is for. Parts: whole islands, an island cut by a car-space polygon on one
+# view (cut), or the rest of their islands once the other parts' cuts are out (rest). Groups paint parts
+# together. Features: car-space geometry on one view; keep_clear and occluder count for the output lint.
+parts:
+  splitter_lip:
+    islands: [i080]
+    side: centre
+    confidence: likely
+    note: The splitter's vertical lip; designs' LIP = (i080, i083) is splitter_lip + splitter_top.
+    evidence: 'sim shots front/side/high: the thin front and side edge of the splitter, wrapping back to each front
+      wheel; never seen from straight above. kit maps: own top map u 0-0.138. designs: LIP in 5 designs.'
+  splitter_top:
+    islands: [i083]
+    side: centre
+    confidence: likely
+    note: Reads as a band across the nose from the front; from above it is the splitter's upper face.
+    evidence: 'sim shots top (6893 px, the front-most strip ahead of the bumper), front (the wide band above the
+      lip); kit maps: own top map u 0-0.074. designs: eva-unit01 calls it ''the bumper under the grille''.'
+  grille_upright_l:
+    islands: [i147]
+    side: left
+    confidence: sure
+    note: 'Its side map (u 0-0.04, v 0.08-0.34) claims more than the sim shows: u 0.008-0.04 is never seen.'
+    evidence: 'sim shots front: vertical bar left of the central grille; side_l u 0-0.01; mirror i069. designs:
+      sessions-B ''two upright bars in the grille opening''; eva-unit01 calls them bumper ''lower corners''.'
+  grille_upright_r:
+    islands: [i069]
+    side: right
+    confidence: sure
+    evidence: sim shots front, side_r; mirror i147.
+  grille_header:
+    islands: [i024]
+    side: centre
+    confidence: likely
+    evidence: 'UI view (354 px): the strip across the top of the central lower grille. designs: fireproof-v2 ''the
+      strip over the crash-structure opening''.'
+  crash_opening:
+    islands: [i172]
+    side: centre
+    confidence: unsure
+    note: Dark interior surfaces; paint barely reads.
+    evidence: 'UI view: the inside of the central lower grille between the uprights and parts of the right intake;
+      the UI also returns it on edge pixels. designs: fireproof-v2 ''the crash-structure opening''s inside and the
+      wheel-arch liners''.'
+  front_bumper_corner_l:
+    islands: [i021]
+    side: left
+    confidence: sure
+    note: Includes the horizontal bar over the left intake that is a separate island (i026) on the right.
+    evidence: 'sim shots side_l (17557 px, u 0-0.133, v 0.08-0.63), front, high_l, front34; its right twin i020
+      sits at the mirrored x in the same texture band. designs: sessions-B ''i020/i021 ... are the front bumper
+      corners''.'
+  front_bumper_corner_r:
+    islands: [i020]
+    side: right
+    confidence: sure
+    evidence: sim shots side_r (16136 px), high_r, front; UI view (6851 px).
+  intake_bar_r:
+    islands: [i026]
+    side: right
+    confidence: likely
+    evidence: 'sim shots front, side_r (u -0.014-0.009, v 0.29-0.43); UI view: the bar over the right lower intake
+      under the headlight. Its left twin is part of i021.'
+  intake_strake_upper_l:
+    islands: [i159]
+    side: left
+    confidence: sure
+    evidence: 'sim shots front, high_l: upper fin in the left bumper intake; kit maps: top map w -0.64..-0.56; mirror
+      i062. designs: STRAKES.'
+  intake_strake_lower_l:
+    islands: [i156]
+    side: left
+    confidence: sure
+    evidence: 'sim shots front, high_l: lower fin; mirror i066. designs: STRAKES.'
+  intake_strake_upper_r:
+    islands: [i062]
+    side: right
+    confidence: sure
+    evidence: 'sim shots front, high_r; U; kit maps top map w 0.50-0.64. designs: STRAKES.'
+  intake_strake_lower_r:
+    islands: [i066]
+    side: right
+    confidence: sure
+    evidence: sim shots front, high_r; U.
+  intake_edge_l:
+    islands: [i157]
+    side: left
+    confidence: likely
+    evidence: 'sim shots front (284 px): the diagonal strip on the left intake''s inner edge; mirror i056.'
+  intake_edge_r:
+    islands: [i056]
+    side: right
+    confidence: likely
+    evidence: sim shots front34/front; mirror i157.
+  intake_insert_r:
+    islands: [i032]
+    side: right
+    confidence: likely
+    evidence: 'UI view (783 px): the box inside the right lower intake, beside i026. designs: eva-nerv ''front intakes'',
+      fireproof-v2 lower nose.'
+  intake_insert_l:
+    islands: [i033]
+    side: left
+    confidence: unsure
+    note: The UI view shows only the right side.
+    evidence: By its position in the texture (mirror of i032 about x 1520); measured only a few px.
+  grille_side_l:
+    islands: [i138]
+    side: left
+    confidence: unsure
+    evidence: 'sim shots front (276 px): beside the left upright, inside the grille; mirror i070.'
+  grille_side_r:
+    islands: [i070]
+    side: right
+    confidence: unsure
+    evidence: sim shots front34 (422 px); mirror i138.
+  front_fender_l:
+    islands: [i123]
+    side: left
+    confidence: sure
+    evidence: 'sim shots side_l/high_l/top: the fender skin over the front arch; kit maps side_l u 0.077-0.284 v
+      0.62-0.85 and top w -0.51..-0.26; mirror i072. designs: FENDER_SKINS.'
+  front_fender_r:
+    islands: [i072]
+    side: right
+    confidence: sure
+    evidence: as i123; mirror i123.
+  fender_nose_l:
+    islands: [i120]
+    side: left
+    confidence: sure
+    evidence: 'sim shots front/high_l/side_l: the fender''s front piece from the nose round the headlight to the
+      arch front; kit maps side_l u 0-0.117 v 0.47-0.73; mirror i086. designs: FENDER_SKINS, fireproof-v2 ''nose-side
+      pieces''.'
+  fender_nose_r:
+    islands: [i086]
+    side: right
+    confidence: sure
+    evidence: as i120; mirror i120.
+  fender_slats_l:
+    islands: [i137, i130, i125, i122, i121]
+    side: left
+    confidence: sure
+    evidence: 'sim shots high_l/side_l/top: five louvre slats along the fender crest, front to back; kit maps side_l
+      u 0.12-0.27 v 0.73-0.88. designs: eva-nerv SLATS.'
+  fender_slats_r:
+    islands: [i085, i095, i100, i105, i108]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i137/i130/i125/i122/i121.
+  fender_arch_vent:
+    islands: [i049]
+    side: both
+    confidence: likely
+    note: Painting it paints both cars' sides alike.
+    evidence: 'sim shots both side shots and both high shots at u 0.131-0.143, v 0.63-0.70: one island drawn on
+      both sides (no mirror partner).'
+  fender_rear_l:
+    islands: [i158]
+    side: left
+    confidence: likely
+    note: i128's map also claims u 0.29-0.40, v 0.02-0.54 here; that i128 texture is never seen.
+    evidence: 'sim shots side_l (16231 px) u 0.298-0.399 v 0.01-0.58: the panel behind the front wheel up to the
+      door''s front edge; kit maps side_l; mirror i054.'
+  fender_rear_r:
+    islands: [i054]
+    side: right
+    confidence: likely
+    evidence: as i158; mirror i158.
+  door_l:
+    islands: [i128]
+    side: left
+    confidence: likely
+    cut:
+      view: side_l
+      polygon:
+      - [0.27, 1.1]
+      - [0.27, -0.1]
+      - [0.552, -0.1]
+      - [0.5521, 0.15]
+      - [0.5719, 0.3]
+      - [0.5874, 0.45]
+      - [0.5986, 0.6]
+      - [0.6056, 0.75]
+      - [0.6083, 0.9]
+      - [0.6052, 1.1]
+    note: Door and haunch are one island; the part is the island cut by the shut lines.
+    evidence: 'kit maps + shutlines.png: i128 ahead of the door''s rear shut line (u 0.552 at v 0.15 to 0.608 at
+      v 0.9) and behind the i158 edge; sim shots side_l. designs: eva-unit01 SIDE_SKINS (door and haunch one island).'
+  door_r:
+    islands: [i046]
+    side: right
+    confidence: likely
+    cut:
+      view: side_r
+      polygon:
+      - [0.27, 1.1]
+      - [0.27, -0.1]
+      - [0.552, -0.1]
+      - [0.5521, 0.15]
+      - [0.5719, 0.3]
+      - [0.5874, 0.45]
+      - [0.5986, 0.6]
+      - [0.6056, 0.75]
+      - [0.6083, 0.9]
+      - [0.6052, 1.1]
+    evidence: as door_l; shut lines agree within 0.005 u.
+  rear_haunch_l:
+    islands: [i128]
+    side: left
+    confidence: likely
+    rest: true
+    note: The sim's door light panel sits on it at u 0.72-0.765, v 0.46-0.69.
+    evidence: 'kit maps + shutlines.png: i128 behind the door shut line and above the intake crease; its up-facing
+      top (top view, u 0.858-0.963, w -0.34..-0.08) is the same island.'
+  rear_haunch_r:
+    islands: [i046]
+    side: right
+    confidence: likely
+    rest: true
+    evidence: as left.
+  intake_duct_l:
+    islands: [i128]
+    side: left
+    confidence: likely
+    cut:
+      view: side_l
+      polygon:
+      - [0.552, -0.1]
+      - [0.552, 0.15]
+      - [0.555, 0.163]
+      - [0.555, 0.1629]
+      - [0.6, 0.2175]
+      - [0.65, 0.2781]
+      - [0.7, 0.3388]
+      - [0.75, 0.3994]
+      - [0.776, 0.4309]
+      - [0.776, -0.1]
+    evidence: 'kit maps + shutlines.png: i128 below the intake crease, from the door foot to the rear arch, around
+      the side intake opening (u 0.585-0.65, v 0.05-0.2, no island).'
+  intake_duct_r:
+    islands: [i046]
+    side: right
+    confidence: likely
+    cut:
+      view: side_r
+      polygon:
+      - [0.552, -0.1]
+      - [0.552, 0.15]
+      - [0.555, 0.163]
+      - [0.555, 0.1629]
+      - [0.6, 0.2175]
+      - [0.65, 0.2781]
+      - [0.7, 0.3388]
+      - [0.75, 0.3994]
+      - [0.776, 0.4309]
+      - [0.776, -0.1]
+    evidence: as left.
+  sill_strip_l:
+    islands: [i174, i178]
+    side: left
+    confidence: sure
+    note: 'The sill''s up-facing top: the high camera sees i174 (4112 px) far better than the square-on one (292
+      px). Maps stop short of the outlines (designs paint them whole).'
+    evidence: 'kit maps side_l: i174 u 0.431-0.711 v 0-0.038 and its front tip i178 u 0.403-0.428; sim shots side_l/high_l;
+      mirror i045/i043. designs: eva-nerv SILL_STRIPS (i174, i178).'
+  sill_strip_r:
+    islands: [i045, i043]
+    side: right
+    confidence: sure
+    evidence: 'kit maps side_r: i045 u 0.431-0.733, i043 u 0.395-0.427; sim shots side_r/high_r; mirror i174/i178.'
+  side_intake_strip_l:
+    islands: [i173]
+    side: left
+    confidence: sure
+    note: Its rear half (u 0.52-0.61) is hidden from the high and three-quarter cameras by the intake's carbon blade.
+    evidence: 'kit maps side_l u 0.43-0.617 v 0.004-0.193: the strip above the sill strip, rising into the side
+      intake; sim shots side_l; mirror i039. designs: fireproof-v2/sponsor-roster/eva-unit01 ''the strip over the
+      side intake'' (i173/i039).'
+  side_intake_strip_r:
+    islands: [i039]
+    side: right
+    confidence: sure
+    evidence: kit maps side_r u 0.43-0.617 v 0.004-0.22; sim shots side_r; mirror i173.
+  door_shoulder_l:
+    islands: [i168]
+    side: left
+    confidence: sure
+    evidence: 'kit maps top map u 0.268-0.597 w -0.575..-0.515: the up-facing strip along the door top / beltline;
+      sim shots top/high_r; mirror i038.'
+  door_shoulder_r:
+    islands: [i038]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i168.
+  haunch_corner_l:
+    islands: [i154]
+    side: left
+    confidence: sure
+    evidence: 'kit maps side_l u 0.945-1.0 v 0.73-0.82 (+ top map); sim shots top/high_l/chase: the haunch''s rear
+      upper corner where it turns to the rear face; mirror i067.'
+  haunch_corner_r:
+    islands: [i067]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i154.
+  rear_bumper_side_l:
+    islands: [i160]
+    side: left
+    confidence: sure
+    evidence: 'kit maps side_l u 0.913-1.0 v 0.155-0.777; sim shots side_l/high_l: behind the rear wheel; mirror
+      i053.'
+  rear_bumper_side_r:
+    islands: [i053]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i160.
+  cover_gutter_l:
+    islands: [i131, i126]
+    side: left
+    confidence: unsure
+    evidence: 'sim shots high_r/top a few hundred px: thin strips between the engine cover and the left buttress;
+      mirror i096/i098.'
+  cover_gutter_r:
+    islands: [i096, i098]
+    side: right
+    confidence: unsure
+    evidence: 'sim shots high_l/top: as left (top u 0.70-0.79, w 0.33-0.43).'
+  mirror_shell_l:
+    islands: [i150]
+    side: left
+    confidence: sure
+    evidence: 'sim shots side_l/high/top/front: the left mirror; kit maps side_l u 0.352-0.39 v 0.966-1.0, top w
+      -0.67..-0.59; mirror i073. designs: MIRRORS in 3 designs.'
+  mirror_shell_r:
+    islands: [i073]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i150.
+  mirror_base_l:
+    islands: [i146]
+    side: left
+    confidence: sure
+    evidence: 'kit maps side_l u 0.355-0.391 v 0.89-0.966; sim shots side_l: the strip on the door under the mirror,
+      hidden from the high camera by the shell; mirror i076. designs: MIRROR_STRIPS/eva-nerv FEATURES.'
+  mirror_base_r:
+    islands: [i076]
+    side: right
+    confidence: sure
+    evidence: as left; mirror i146.
+  mirror_stalk_l:
+    islands: [i143]
+    side: left
+    confidence: unsure
+    evidence: sim shots side_l/high_l a few px beside the mirror; texture neighbour of i150.
+  mirror_stalk_r:
+    islands: [i074]
+    side: right
+    confidence: unsure
+    evidence: sim shots high_l (61 px) beside the right mirror; texture neighbour of i073.
+  window_strip_l:
+    islands: [i127]
+    side: left
+    confidence: unsure
+    evidence: sim shots high_l/side_l under 70 px along the side window's lower frame; mirror i091.
+  window_strip_r:
+    islands: [i091]
+    side: right
+    confidence: unsure
+    evidence: sim shots high_r/top a few px; mirror i127.
+  bonnet_skin:
+    islands: [i099]
+    side: centre
+    confidence: sure
+    evidence: sim shots top/front/high (64459 px top); kit maps own top map u 0-0.232 |w| < 0.44. Holds the bonnet
+      number.
+  bonnet_vent:
+    islands: [i004, i058, i152, i107]
+    side: centre
+    confidence: likely
+    note: The vent opening is u 0.10-0.18, |w| < 0.24 on top. i004 carries a template banner block.
+    evidence: 'sim shots top/front: i004 is the vent''s rear ramp (u 0.141-0.179 |w| < 0.23); high_l/high_r: i058
+      and i152 are its inner side walls (M pair); i107 is never seen (the vent floor; the kit''s linear top map
+      puts it at u 0.099-0.18 |w| < 0.24). designs: fireproof-v2 DUCT i004; eva-unit01 HUMP i107 ''no sim shot shows
+      it''.'
+  bonnet_pins:
+    islands: [i050]
+    side: both
+    confidence: likely
+    note: Painting it paints every pin.
+    evidence: 'sim shots top/high/front: small dark pads at the bonnet''s corners and on the engine cover; one island
+      drawn at every pin.'
+  windscreen_frame:
+    islands: [i064]
+    side: centre
+    confidence: likely
+    evidence: 'sim shots high/top a few hundred px along the A-pillars and windscreen edge; kit maps top-rest map;
+      designs: fireproof-v2 ''windscreen frame''.'
+  windscreen:
+    islands: [i103]
+    side: centre
+    confidence: unsure
+    evidence: 'Never seen in any shot; the kit''s linear top map puts it at u 0.202-0.265 |w| < 0.36, under the
+      windscreen glass. designs: fireproof-v2 calls it the cowl.'
+  roof:
+    islands: [i102, i078]
+    side: centre
+    confidence: likely
+    cut:
+      view: top
+      polygon:
+      - [0.2, -1.1]
+      - [0.605, -1.1]
+      - [0.605, 1.1]
+      - [0.2, 1.1]
+      islands: [i078]
+    note: i078 is cut at the roof/engine-cover seam; behind it i078 is the buttresses.
+    evidence: 'sim shots top/front/high: i102 is the roof''s front panel behind the windscreen header (own map u
+      0.36-0.42); i078 carries on to the engine cover seam at u ~0.605 and also forms the pillars and window frames.
+      designs: eva-unit01/eva-nerv ROOF = i102.'
+  buttress_l:
+    islands: [i078]
+    side: left
+    confidence: likely
+    cut:
+      view: top
+      polygon:
+      - [0.605, -1.1]
+      - [1.0, -1.1]
+      - [1.0, 0.0]
+      - [0.605, 0.0]
+    evidence: 'sim shots top/high_l/chase: i078 alongside the engine cover from the roof to the rear deck. designs:
+      eva-unit01 REAR_DECK = i078 ''the roof''s rear, around the cover and over the rear haunches''.'
+  buttress_r:
+    islands: [i078]
+    side: right
+    confidence: likely
+    cut:
+      view: top
+      polygon:
+      - [0.605, 0.0]
+      - [1.0, 0.0]
+      - [1.0, 1.1]
+      - [0.605, 1.1]
+    evidence: as left.
+  roof_dome:
+    islands: [i059]
+    side: right
+    confidence: unsure
+    evidence: 'sim shots top (489 px): a round piece on the roof right of the centreline (u 0.484-0.501, w 0.17-0.21);
+      the sim''s rear34 shot shows a dome there.'
+  roof_fin:
+    islands: [i044]
+    side: centre
+    confidence: unsure
+    evidence: sim shots side/high/front ~100-160 px at the roof's top centre (u 0.49-0.50).
+  engine_cover:
+    islands: [i104]
+    side: centre
+    confidence: sure
+    evidence: 'sim shots top (96272 px)/high/chase; kit maps own top map u 0.603-0.971 |w| < 0.34. Includes the
+      stepped louvres round the rear opening. designs: eva-unit01 COVER.'
+  engine_cover_scoop:
+    islands: [i114]
+    side: centre
+    confidence: likely
+    evidence: 'sim shots top/high/chase: the small slot on the cover''s centreline at u 0.67-0.68.'
+  rear_deck:
+    islands: [i092]
+    side: centre
+    confidence: sure
+    evidence: 'sim shots top/high/chase: the tail''s top behind the engine cover, carrying the swan necks; kit maps
+      own map u 0.915-1.0. designs: fireproof-v2 calls it the rear lip.'
+  rear_deck_lip:
+    islands: [i094]
+    side: centre
+    confidence: likely
+    evidence: 'sim shots chase (154 px): the thin strip under the rear deck''s trailing edge. designs: fireproof-v2
+      ''the piece under it''.'
+  rear_face:
+    islands: [i003]
+    side: centre
+    confidence: sure
+    evidence: 'sim shots chase (13069 px): the upper rear face round the tail lights; holds the rear number (keep_clear
+      [1755,77,1811,126], on the car''s right). designs: TAIL in 4 designs.'
+  rear_valance:
+    islands: [i017]
+    side: centre
+    confidence: sure
+    note: The diffuser itself is unpainted carbon.
+    evidence: 'sim shots chase (8051 px): the lower rear face under i003, with the centre notch, above the carbon
+      diffuser. designs: fireproof-v2; eva-unit01 calls it REAR_FACE ''above the bumper'', which is wrong: it is
+      below i003.'
+  tail_light_trim_l:
+    islands: [i011]
+    side: left
+    confidence: likely
+    evidence: 'sim shots chase/high_l: small crescent on the rear face''s left; mirror (by x) i012.'
+  tail_light_trim_r:
+    islands: [i012]
+    side: right
+    confidence: likely
+    evidence: sim shots chase/high_r.
+  wing_top:
+    islands: [i016]
+    side: centre
+    confidence: sure
+    evidence: 'sim shots top (63751 px)/high/chase. Holds a series_sponsor keep-clear block. designs: WING.'
+  wing_bottom:
+    islands: [i005]
+    side: centre
+    confidence: likely
+    evidence: 'Same size as i016; seen only as the trailing-edge band from behind (chase 3513 px) and above. designs:
+      WING = (i005, i016) ''the wing''s two surfaces''.'
+  wing_endplate_l:
+    islands: [i029, i028]
+    side: left
+    confidence: likely
+    evidence: 'sim shots side_l: i029 is the left endplate''s outer face (5583 px); i028 its inner face, seen from
+      the right side past the wing and from behind on the left. designs: ENDPLATES i027-i030.'
+  wing_endplate_r:
+    islands: [i030, i027]
+    side: right
+    confidence: likely
+    evidence: 'sim shots side_r: i030 outer (5331 px); i027 inner, seen from the left side and from behind on the
+      right.'
+  swan_neck_l:
+    islands: [i140]
+    side: left
+    confidence: likely
+    evidence: 'UI view (685 px): a wing upright; texture half lower texture half (left). designs: SWAN_NECKS (i055,
+      i140).'
+  swan_neck_r:
+    islands: [i055]
+    side: right
+    confidence: likely
+    evidence: UI view (734 px); texture half upper half.
+  swan_neck_tops:
+    islands: [i006]
+    side: both
+    confidence: likely
+    evidence: 'sim shots top/high/chase (~400 px each): the strips along both swan necks from the wing forward onto
+      the rear deck at |w| ~0.26; one island drawn on both necks.'
+  number_panels:
+    islands: [i170, i175]
+    side: unknown
+    confidence: unsure
+    note: Whatever they are, paint on them doesn't show in the preview cameras.
+    evidence: 'Never seen in any shot or the UI view; each holds a kit number and a series_small block. designs:
+      eva-nerv NUMBER_PLATES ''small number zones off the mapped views''.'
+groups:
+  front_panel_l: [front_fender_l, fender_nose_l, fender_slats_l]
+  front_panel_r: [front_fender_r, fender_nose_r, fender_slats_r]
+  front_bumper_l: [front_bumper_corner_l, intake_strake_upper_l, intake_strake_lower_l, intake_edge_l, intake_insert_l,
+    grille_upright_l, grille_side_l]
+  front_bumper_r: [front_bumper_corner_r, intake_bar_r, intake_strake_upper_r, intake_strake_lower_r, intake_edge_r,
+    intake_insert_r, grille_upright_r, grille_side_r]
+  splitter: [splitter_lip, splitter_top]
+  intake_strakes: [intake_strake_upper_l, intake_strake_lower_l, intake_strake_upper_r, intake_strake_lower_r]
+  sill_l: [sill_strip_l, side_intake_strip_l]
+  sill_r: [sill_strip_r, side_intake_strip_r]
+  mirror_l: [mirror_shell_l, mirror_base_l, mirror_stalk_l]
+  mirror_r: [mirror_shell_r, mirror_base_r, mirror_stalk_r]
+  mirrors: [mirror_shell_l, mirror_shell_r]
+  wing: [wing_top, wing_bottom]
+  wing_endplates: [wing_endplate_l, wing_endplate_r]
+  swan_necks: [swan_neck_l, swan_neck_r, swan_neck_tops]
+  rear_face_all: [rear_face, rear_valance, tail_light_trim_l, tail_light_trim_r]
+  tail: [rear_deck, rear_deck_lip, rear_face, rear_valance, tail_light_trim_l, tail_light_trim_r, rear_bumper_side_l,
+    rear_bumper_side_r, haunch_corner_l, haunch_corner_r]
+  side_l_skin: [fender_rear_l, door_l, rear_haunch_l, intake_duct_l]
+  side_r_skin: [fender_rear_r, door_r, rear_haunch_r, intake_duct_r]
+features:
+  front_arch_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.133, 0.0]
+    - [0.133, 0.2]
+    - [0.133, 0.4]
+    - [0.149, 0.6]
+    - [0.16, 0.7]
+    - [0.205, 0.767]
+    - [0.26, 0.7]
+    - [0.284, 0.6]
+    - [0.299, 0.4]
+    - [0.302, 0.2]
+    - [0.302, 0.0]
+    label: the front wheel arch
+    confidence: sure
+    note: the arch's outline, sill to top and back; the wheel's centre at u 0.21
+    evidence: lowest painted pixel per column in the side_l/side_r measurement shots (front edge, the bumper corner
+      is unmapped) and the kit's car-space atlas (rear edge u 0.302, top v 0.765-0.769 at u 0.202); both sides agree
+      within 0.004. eva-nerv front_step 0.27 'inside the arches' (inside); fireproof-v2 front_u 0.28 is inside the
+      opening at v 0, not behind it
+  front_arch_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.133, 0.0]
+    - [0.133, 0.2]
+    - [0.133, 0.4]
+    - [0.149, 0.6]
+    - [0.16, 0.7]
+    - [0.205, 0.767]
+    - [0.26, 0.7]
+    - [0.284, 0.6]
+    - [0.299, 0.4]
+    - [0.302, 0.2]
+    - [0.302, 0.0]
+    label: the front wheel arch
+    confidence: sure
+    note: the arch's outline, sill to top and back; the wheel's centre at u 0.21
+    evidence: lowest painted pixel per column in the side_l/side_r measurement shots (front edge, the bumper corner
+      is unmapped) and the kit's car-space atlas (rear edge u 0.302, top v 0.765-0.769 at u 0.202); both sides agree
+      within 0.004. eva-nerv front_step 0.27 'inside the arches' (inside); fireproof-v2 front_u 0.28 is inside the
+      opening at v 0, not behind it
+  rear_arch_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.776, 0.0]
+    - [0.776, 0.2]
+    - [0.776, 0.4]
+    - [0.792, 0.6]
+    - [0.813, 0.7]
+    - [0.859, 0.767]
+    - [0.913, 0.7]
+    - [0.933, 0.6]
+    - [0.951, 0.4]
+    - [0.952, 0.2]
+    - [0.951, 0.0]
+    label: the rear wheel arch
+    confidence: sure
+    note: the arch's outline, sill to top and back; the wheel's centre at u 0.86
+    evidence: kit car-space atlas (both sides) and the side_l shot (top v 0.774 at u 0.859); the side_r shot's 0.823
+      is a dark band at the arch top, not paint. eva-unit01 REAR_ARCH 0.88 and eva-nerv rear_step 0.86 are inside
+      the opening (verified)
+  rear_arch_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.776, 0.0]
+    - [0.776, 0.2]
+    - [0.776, 0.4]
+    - [0.792, 0.6]
+    - [0.813, 0.7]
+    - [0.859, 0.767]
+    - [0.913, 0.7]
+    - [0.933, 0.6]
+    - [0.951, 0.4]
+    - [0.952, 0.2]
+    - [0.951, 0.0]
+    label: the rear wheel arch
+    confidence: sure
+    note: the arch's outline, sill to top and back; the wheel's centre at u 0.86
+    evidence: kit car-space atlas (both sides) and the side_l shot (top v 0.774 at u 0.859); the side_r shot's 0.823
+      is a dark band at the arch top, not paint. eva-unit01 REAR_ARCH 0.88 and eva-nerv rear_step 0.86 are inside
+      the opening (verified)
+  door_shut_line_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.5521, 0.15]
+    - [0.5719, 0.3]
+    - [0.5874, 0.45]
+    - [0.5986, 0.6]
+    - [0.6056, 0.75]
+    - [0.6083, 0.9]
+    - [0.6052, 1.1]
+    label: the door's rear shut line
+    confidence: sure
+    note: u = -0.0951 v^2 + 0.1748 v + 0.528, v 0.15-0.94
+    evidence: kit overlays/shutlines.png mapped into car space through the kit; side_r agrees within 0.005 u
+  door_shut_line_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.5521, 0.15]
+    - [0.5719, 0.3]
+    - [0.5874, 0.45]
+    - [0.5986, 0.6]
+    - [0.6056, 0.75]
+    - [0.6083, 0.9]
+    - [0.6052, 1.1]
+    label: the door's rear shut line
+    confidence: sure
+    note: u = -0.0951 v^2 + 0.1748 v + 0.528, v 0.15-0.94
+    evidence: kit overlays/shutlines.png mapped into car space through the kit; side_r agrees within 0.005 u
+  intake_crease_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.555, 0.1629]
+    - [0.6, 0.2175]
+    - [0.65, 0.2781]
+    - [0.7, 0.3388]
+    - [0.75, 0.3994]
+    - [0.776, 0.4309]
+    label: the intake crease
+    confidence: sure
+    note: v = 1.2128 u - 0.5102, u 0.555-0.776
+    evidence: 'shutlines.png in car space: the shut line from the door''s foot (where it meets the door rear shut
+      line at (0.553, 0.15)) up to the rear arch''s front edge. eva-unit01 CREASE ((0.575, 0.165), (0.775, 0.445))
+      is this line (''door foot to rear arch''), 0.02 u behind it at the foot and 0.015 v high at the arch; it is
+      defined but never used. It is not a beltline.'
+  intake_crease_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.555, 0.1629]
+    - [0.6, 0.2175]
+    - [0.65, 0.2781]
+    - [0.7, 0.3388]
+    - [0.75, 0.3994]
+    - [0.776, 0.4309]
+    label: the intake crease
+    confidence: sure
+    note: v = 1.2128 u - 0.5102, u 0.555-0.776
+    evidence: 'shutlines.png in car space: the shut line from the door''s foot (where it meets the door rear shut
+      line at (0.553, 0.15)) up to the rear arch''s front edge. eva-unit01 CREASE ((0.575, 0.165), (0.775, 0.445))
+      is this line (''door foot to rear arch''), 0.02 u behind it at the foot and 0.015 v high at the arch; it is
+      defined but never used. It is not a beltline.'
+  door_front_edge_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.279, 0.76]
+    - [0.285, 0.69]
+    - [0.33, 0.563]
+    - [0.346, 0.5]
+    - [0.363, 0.44]
+    - [0.379, 0.378]
+    - [0.396, 0.317]
+    - [0.404, 0.225]
+    - [0.405, -0.1]
+    label: the door's front edge
+    confidence: likely
+    evidence: where i158 / i054 (the panel behind the front wheel) meets i128 / i046 in the side shots, per screen
+      row through the frame; above v 0.6, where i123 / i072 meets the door island. No shut line is drawn there in
+      the template
+  door_front_edge_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.279, 0.76]
+    - [0.285, 0.69]
+    - [0.33, 0.563]
+    - [0.346, 0.5]
+    - [0.363, 0.44]
+    - [0.379, 0.378]
+    - [0.396, 0.317]
+    - [0.404, 0.225]
+    - [0.405, -0.1]
+    label: the door's front edge
+    confidence: likely
+    evidence: where i158 / i054 (the panel behind the front wheel) meets i128 / i046 in the side shots, per screen
+      row through the frame; above v 0.6, where i123 / i072 meets the door island. No shut line is drawn there in
+      the template
+  window_line_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.28, 0.871]
+    - [0.3, 0.86]
+    - [0.32, 0.848]
+    - [0.34, 0.841]
+    - [0.36, 0.83]
+    - [0.38, 0.826]
+    - [0.4, 0.826]
+    - [0.42, 0.83]
+    - [0.44, 0.833]
+    - [0.46, 0.841]
+    - [0.48, 0.852]
+    - [0.5, 0.864]
+    - [0.52, 0.879]
+    - [0.54, 0.89]
+    - [0.56, 0.905]
+    - [0.58, 0.917]
+    - [0.6, 0.928]
+    - [0.62, 0.943]
+    - [0.64, 0.97]
+    - [0.66, 1.0]
+    label: the side window's lower edge
+    confidence: sure
+    evidence: 'top edge of i128 in the kit''s car-space atlas (i046 within 0.008 v): the side window''s lower edge,
+      lowest at u 0.38-0.40 (v 0.826; 0.818 on the right); from u 0.66 back the side reaches v 1. fireproof-v2 ''the
+      side window cuts the band''s top from v ~0.84 at the front of the door'' (agrees)'
+  window_line_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.28, 0.871]
+    - [0.3, 0.86]
+    - [0.32, 0.848]
+    - [0.34, 0.841]
+    - [0.36, 0.83]
+    - [0.38, 0.826]
+    - [0.4, 0.826]
+    - [0.42, 0.83]
+    - [0.44, 0.833]
+    - [0.46, 0.841]
+    - [0.48, 0.852]
+    - [0.5, 0.864]
+    - [0.52, 0.879]
+    - [0.54, 0.89]
+    - [0.56, 0.905]
+    - [0.58, 0.917]
+    - [0.6, 0.928]
+    - [0.62, 0.943]
+    - [0.64, 0.97]
+    - [0.66, 1.0]
+    label: the side window's lower edge
+    confidence: sure
+    evidence: 'top edge of i128 in the kit''s car-space atlas (i046 within 0.008 v): the side window''s lower edge,
+      lowest at u 0.38-0.40 (v 0.826; 0.818 on the right); from u 0.66 back the side reaches v 1. fireproof-v2 ''the
+      side window cuts the band''s top from v ~0.84 at the front of the door'' (agrees)'
+  fender_rear_edge_l:
+    view: side_l
+    kind: line
+    line:
+    - [0.285, 0.69]
+    - [0.279, 0.8]
+    label: the front fender's rear edge
+    confidence: sure
+    evidence: 'i123 / i072 meeting i128 / i046 in the side shots. eva-unit01 FENDER_EDGE 0.345 is a selection threshold,
+      not a body line: the islands that end ahead of it above v 0.4 are exactly the fender skin, the nose piece
+      and the five slats per side (parts group front_panel_l / front_panel_r); checked against the kit'
+  fender_rear_edge_r:
+    view: side_r
+    kind: line
+    line:
+    - [0.285, 0.69]
+    - [0.279, 0.8]
+    label: the front fender's rear edge
+    confidence: sure
+    evidence: 'i123 / i072 meeting i128 / i046 in the side shots. eva-unit01 FENDER_EDGE 0.345 is a selection threshold,
+      not a body line: the islands that end ahead of it above v 0.4 are exactly the fender skin, the nose piece
+      and the five slats per side (parts group front_panel_l / front_panel_r); checked against the kit'
+  roof_cover_seam:
+    view: top
+    kind: line
+    line:
+    - [0.605, -0.34]
+    - [0.605, 0.34]
+    label: the roof / engine cover seam
+    confidence: sure
+    evidence: shut line at u 0.610 on i104 (shutlines.png in car space); eva-nerv lane_gap 0.605 'the roof / engine
+      cover seam (i078 / i104)'
+  door_light_panel_l:
+    view: side_l
+    kind: keep_clear
+    box: [0.712, 0.45, 0.772, 0.7]
+    label: the sim's door light panel
+    confidence: sure
+    note: the sim draws an opaque dark box (two 7-segment digits and a green bar) on each rear haunch, over the
+      paint; measured u 0.722-0.764, v 0.467-0.666 on the left and u 0.719-0.767, v 0.458-0.686 on the right; the
+      zone pads both
+    evidence: 'the sim draws an opaque dark box (two 7-segment digits and a green bar) on each rear haunch; it is
+      a hole in both square-on measurement shots (screen, through the frame) and the patch of i128 / i046 texture
+      neither shot sees (kit atlas). A check against the fireproof-v2 sim side_l shot, scaled by the door number,
+      gives u 0.713-0.753, v 0.49-0.70. eva-nerv LIGHT (0.715, 0.55, 0.78, 0.745) is 0.07-0.09 v too high: its own
+      sim shot has an orange cell cut by the panel''s lower edge. fireproof-v2''s position display (u 0.70-0.74,
+      v 0.45-0.6) is the same panel, 0.02 u too far forward. eva-unit01 ''about u 0.73, v 0.5'' agrees'
+  door_light_panel_r:
+    view: side_r
+    kind: keep_clear
+    box: [0.712, 0.45, 0.772, 0.7]
+    label: the sim's door light panel
+    confidence: sure
+    note: the sim draws an opaque dark box (two 7-segment digits and a green bar) on each rear haunch, over the
+      paint; measured u 0.722-0.764, v 0.467-0.666 on the left and u 0.719-0.767, v 0.458-0.686 on the right; the
+      zone pads both
+    evidence: 'the sim draws an opaque dark box (two 7-segment digits and a green bar) on each rear haunch; it is
+      a hole in both square-on measurement shots (screen, through the frame) and the patch of i128 / i046 texture
+      neither shot sees (kit atlas). A check against the fireproof-v2 sim side_l shot, scaled by the door number,
+      gives u 0.713-0.753, v 0.49-0.70. eva-nerv LIGHT (0.715, 0.55, 0.78, 0.745) is 0.07-0.09 v too high: its own
+      sim shot has an orange cell cut by the panel''s lower edge. fireproof-v2''s position display (u 0.70-0.74,
+      v 0.45-0.6) is the same panel, 0.02 u too far forward. eva-unit01 ''about u 0.73, v 0.5'' agrees'
+  position_display_l: {same_as: door_light_panel_l, confidence: likely, note: fireproof-v2 notes call the same box
+      the position display; the sim draws one box per side (sim shots of three designs). Its LED matrix on the rear
+      quarter window (rear34) is on glass}
+  position_display_r: {same_as: door_light_panel_r, confidence: likely, note: fireproof-v2 notes call the same box
+      the position display; the sim draws one box per side (sim shots of three designs). Its LED matrix on the rear
+      quarter window (rear34) is on glass}
+  carbon_side_blade_l:
+    view: side_l
+    kind: occluder
+    box: [0.52, 0.08, 0.61, 0.21]
+    label: the carbon side blade
+    confidence: likely
+    note: 'unpainted carbon at the side intake''s mouth: it hides the paint under it from the high and three-quarter
+      views; square-on the paint shows'
+    evidence: 'unpainted carbon at the side intake''s mouth (fireproof-v2 front34 sim shot). Car-space paint the
+      square-on shot sees but the high shot doesn''t: i173 u 0.531-0.607 v 0.083-0.174, i039 u 0.516-0.601 v 0.095-0.208.
+      From straight side-on the strip shows. fireproof-v2: the i173 sponsor field (u 0.51-0.585, v 0.09) ''sits
+      under the unpainted carbon side blade'' (agrees)'
+  carbon_side_blade_r:
+    view: side_r
+    kind: occluder
+    box: [0.52, 0.08, 0.61, 0.21]
+    label: the carbon side blade
+    confidence: likely
+    note: 'unpainted carbon at the side intake''s mouth: it hides the paint under it from the high and three-quarter
+      views; square-on the paint shows'
+    evidence: 'unpainted carbon at the side intake''s mouth (fireproof-v2 front34 sim shot). Car-space paint the
+      square-on shot sees but the high shot doesn''t: i173 u 0.531-0.607 v 0.083-0.174, i039 u 0.516-0.601 v 0.095-0.208.
+      From straight side-on the strip shows. fireproof-v2: the i173 sponsor field (u 0.51-0.585, v 0.09) ''sits
+      under the unpainted carbon side blade'' (agrees)'
+  side_intake_l:
+    view: side_l
+    kind: opening
+    box: [0.573, 0.038, 0.65, 0.208]
+    label: the side intake
+    confidence: sure
+    note: the hole in the side islands
+    evidence: the hole in the side islands (no island there) in the kit atlas, both sides
+  side_intake_r:
+    view: side_r
+    kind: opening
+    box: [0.573, 0.038, 0.65, 0.208]
+    label: the side intake
+    confidence: sure
+    note: the hole in the side islands
+    evidence: the hole in the side islands (no island there) in the kit atlas, both sides
+  number_l:
+    view: side_l
+    kind: zone
+    box: [0.408, 0.288, 0.471, 0.53]
+    label: the template's number box
+    confidence: sure
+    note: kit.yaml keep_clear [839, 1792, 933, 1864] in car space; 85% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  series_nose_l:
+    view: side_l
+    kind: zone
+    box: [0.016, 0.534, 0.041, 0.644]
+    label: the template's series sponsor box
+    confidence: sure
+    note: kit.yaml keep_clear [195, 1027, 321, 1387] in car space; 1% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  series_door_l:
+    view: side_l
+    kind: zone
+    box: [0.484, 0.246, 0.754, 0.777]
+    label: the template's series sponsor box
+    confidence: sure
+    note: kit.yaml keep_clear [953, 1733, 1349, 1874] in car space; 88% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  banner_l:
+    view: side_l
+    kind: zone
+    box: [0.753, 0.769, 0.925, 0.973]
+    label: the template's banner box
+    confidence: sure
+    note: kit.yaml keep_clear [1355, 1660, 1597, 1736] in car space; 64% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  number_r:
+    view: side_r
+    kind: zone
+    box: [0.408, 0.295, 0.47, 0.534]
+    label: the template's number box
+    confidence: sure
+    note: kit.yaml keep_clear [839, 550, 932, 621] in car space; 84% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  series_door_r:
+    view: side_r
+    kind: zone
+    box: [0.484, 0.258, 0.754, 0.777]
+    label: the template's series sponsor box
+    confidence: sure
+    note: kit.yaml keep_clear [953, 540, 1349, 680] in car space; 87% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  series_nose_r:
+    view: side_r
+    kind: zone
+    box: [0.015, 0.542, 0.04, 0.652]
+    label: the template's series sponsor box
+    confidence: sure
+    note: kit.yaml keep_clear [195, 1027, 321, 1387] in car space; 1% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  banner_r:
+    view: side_r
+    kind: zone
+    box: [0.753, 0.773, 0.925, 0.973]
+    label: the template's banner box
+    confidence: sure
+    note: kit.yaml keep_clear [1355, 678, 1597, 753] in car space; 63% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  number_top:
+    view: top
+    kind: zone
+    box: [0.108, 0.255, 0.168, 0.427]
+    label: the template's number box
+    confidence: sure
+    note: kit.yaml keep_clear [349, 958, 439, 1062] in car space; 72% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  series_bonnet_top:
+    view: top
+    kind: zone
+    box: [0.01, -0.324, 0.091, 0.32]
+    label: the template's series sponsor box
+    confidence: sure
+    note: kit.yaml keep_clear [195, 1027, 321, 1387] in car space; 72% of it lands on mapped paint
+    evidence: 'kit.yaml keep_clear boxes, each texture pixel of the box mapped to car space through the kit (share_mapped:
+      how much of the box lands on mapped islands); the sim''s own ''451'' glyphs measured as holes in the side
+      and top shots sit inside them'
+  mirror_base_l:
+    view: side_l
+    kind: place
+    box: [0.355, 0.89, 0.391, 0.966]
+    label: the mirror's base
+    confidence: sure
+    note: the strip i146 on the door under the mirror; seen [0.359, 0.924, 0.39, 0.966]
+    evidence: kit maps of i146 / i076 / i150 / i073 and their pixels in the square-on shots through the frame; the
+      shell hides the strip from the high cameras
+  mirror_shell_l:
+    view: side_l
+    kind: place
+    box: [0.358, 0.966, 0.389, 1.037]
+    label: the mirror
+    confidence: sure
+    note: the shell i150 as the square-on shot sees it
+    evidence: kit maps of i146 / i076 / i150 / i073 and their pixels in the square-on shots through the frame; the
+      shell hides the strip from the high cameras
+  mirror_base_r:
+    view: side_r
+    kind: place
+    box: [0.355, 0.894, 0.39, 0.97]
+    label: the mirror's base
+    confidence: sure
+    note: the strip i076 on the door under the mirror; seen [0.36, 0.922, 0.392, 0.96]
+    evidence: kit maps of i146 / i076 / i150 / i073 and their pixels in the square-on shots through the frame; the
+      shell hides the strip from the high cameras
+  mirror_shell_r:
+    view: side_r
+    kind: place
+    box: [0.359, 0.975, 0.392, 1.035]
+    label: the mirror
+    confidence: sure
+    note: the shell i073 as the square-on shot sees it
+    evidence: kit maps of i146 / i076 / i150 / i073 and their pixels in the square-on shots through the frame; the
+      shell hides the strip from the high cameras
+  bonnet_vent:
+    view: top
+    kind: opening
+    box: [0.1, -0.24, 0.18, 0.24]
+    label: the bonnet vent
+    confidence: likely
+    note: the vent's opening; its floor (i107) is never seen
+    evidence: 'top shot: i004 (the vent''s rear ramp) at u 0.141-0.179, |w| < 0.23, the floor unseen; the kit''s
+      linear top map puts the unseen i107 at u 0.099-0.18, |w| < 0.243'
+  unseen_side_l:
+    view: side_l
+    kind: unseen
+    boxes:
+    - [0.286, 0.023, 0.402, 0.542]
+    - [0.727, 0.481, 0.761, 0.655]
+    - [0.008, 0.087, 0.04, 0.299]
+    - [0.945, 0.727, 0.999, 0.822]
+    - [0.001, 0.511, 0.074, 0.708]
+    - [0.451, 0.0, 0.511, 0.011]
+    - [0.931, 0.799, 0.946, 0.875]
+    - [0.079, 0.761, 0.115, 0.822]
+    - [0.533, 0.0, 0.577, 0.019]
+    - [0.117, 0.777, 0.134, 0.845]
+    label: paint the side_l shot never sees
+    confidence: sure
+    note: i128 u 0.286-0.402; i128 u 0.727-0.761; i147 u 0.008-0.04; i154 u 0.945-0.999; i120 u 0.001-0.074; i174
+      u 0.451-0.511; i128 u 0.931-0.946; i123 u 0.079-0.115; i174 u 0.533-0.577; i123 u 0.117-0.134
+    evidence: texture the square-on measurement shot never shows, mapped into car space through the kit
+  unseen_side_r:
+    view: side_r
+    kind: unseen
+    boxes:
+    - [0.284, 0.03, 0.402, 0.538]
+    - [0.727, 0.489, 0.761, 0.659]
+    - [0.006, 0.087, 0.034, 0.307]
+    - [0.0, 0.496, 0.077, 0.72]
+    - [0.946, 0.723, 1.0, 0.818]
+    - [0.649, 0.023, 0.733, 0.03]
+    - [0.573, 0.023, 0.632, 0.034]
+    - [0.926, 0.807, 0.948, 0.883]
+    - [0.119, 0.78, 0.151, 0.871]
+    label: paint the side_r shot never sees
+    confidence: sure
+    note: i046 u 0.284-0.402; i046 u 0.727-0.761; i069 u 0.006-0.034; i086 u 0.0-0.077; i067 u 0.946-1.0; i045 u
+      0.649-0.733; i045 u 0.573-0.632; i046 u 0.926-0.948; i072 u 0.119-0.151
+    evidence: texture the square-on measurement shot never shows, mapped into car space through the kit
+  unseen_top:
+    view: top
+    kind: unseen
+    boxes:
+    - [0.202, -0.364, 0.265, 0.362]
+    - [0.101, -0.243, 0.179, 0.238]
+    - [0.0, 0.349, 0.138, 0.736]
+    - [0.0, -0.738, 0.138, -0.36]
+    - [0.194, -0.515, 0.286, 0.395]
+    - [0.127, -0.998, 0.428, -0.575]
+    - [0.123, 0.563, 0.426, 0.856]
+    - [0.841, -0.084, 0.867, 0.082]
+    - [0.84, -0.13, 0.886, 0.138]
+    - [0.276, -0.253, 0.289, 0.264]
+    - [0.26, 0.738, 0.334, 0.998]
+    - [0.346, -0.201, 0.397, 0.408]
+    - [0.299, -0.525, 0.403, -0.203]
+    - [0.35, 0.529, 0.372, 0.636]
+    - [0.35, -0.636, 0.372, -0.536]
+    - [0.998, -0.418, 1.0, 0.416]
+    - [0.573, 0.672, 0.603, 0.766]
+    - [0.572, -0.766, 0.602, -0.674]
+    - [0.0, -0.416, 0.023, -0.261]
+    - [0.0, 0.261, 0.023, 0.408]
+    - [0.197, -0.644, 0.329, -0.569]
+    - [0.134, -0.015, 0.153, 0.034]
+    - [0.186, 0.638, 0.259, 0.736]
+    - [0.304, 0.41, 0.371, 0.513]
+    - [0.54, -0.573, 0.597, -0.531]
+    - [0.244, 0.397, 0.286, 0.506]
+    - [0.117, 0.079, 0.128, 0.165]
+    - [0.485, 0.169, 0.501, 0.209]
+    - [0.117, -0.09, 0.119, 0.048]
+    - [0.145, 0.134, 0.159, 0.167]
+    - [0.547, 0.529, 0.599, 0.563]
+    - [0.42, -0.23, 0.424, -0.077]
+    - [0.42, 0.069, 0.424, 0.224]
+    - [0.415, 0.268, 0.419, 0.366]
+    - [0.835, -0.088, 0.837, 0.08]
+    - [0.415, -0.358, 0.419, -0.276]
+    - [0.431, -0.017, 0.441, 0.01]
+    - [0.335, 0.824, 0.365, 0.835]
+    - [0.0, 0.188, 0.006, 0.257]
+    - [0.0, -0.031, 0.003, 0.025]
+    label: paint the top shot never sees
+    confidence: sure
+    note: i103 u 0.202-0.265; i107 u 0.101-0.179; i080 u 0.0-0.138; i080 u 0.0-0.138; i064 u 0.194-0.286; i064 u
+      0.127-0.428; i064 u 0.123-0.426; i115 u 0.841-0.867; i112 u 0.84-0.886; i106 u 0.276-0.289; i064 u 0.26-0.334;
+      i064 u 0.346-0.397; i064 u 0.299-0.403; i078 u 0.35-0.372; i078 u 0.35-0.372; i092 u 0.998-1.0; i078 u 0.573-0.603;
+      i078 u 0.572-0.602; i083 u 0.0-0.023; i083 u 0.0-0.023; i064 u 0.197-0.329; i118 u 0.134-0.153; i064 u 0.186-0.259;
+      i064 u 0.304-0.371; i168 u 0.54-0.597; i064 u 0.244-0.286; i111 u 0.117-0.128; i078 u 0.485-0.501; i117 u
+      0.117-0.119; i110 u 0.145-0.159; i038 u 0.547-0.599; i064 u 0.42-0.424; i064 u 0.42-0.424; i064 u 0.415-0.419;
+      i112 u 0.835-0.837; i064 u 0.415-0.419; i078 u 0.431-0.441; i064 u 0.335-0.365; i083 u 0.0-0.006; i099 u 0.0-0.003
+    evidence: texture the square-on measurement shot never shows, mapped into car space through the kit
+unnamed: {i106: 'thin top strip (linear top map u 0.276-0.289), under the windscreen; never seen', i109: thin top
+    strip at the nose's front edge; a few px from the front, i110: 'tiny, on the bonnet vent (top-rest)', i111: 'tiny,
+    on the bonnet vent (top-rest)', i112: inside the engine cover's rear opening (linear top map u 0.834-0.886);
+    never seen from above, i113: 'pair i119, slat column; not seen', i115: inside the engine cover's rear opening
+    (u 0.841-0.867); never seen, i116: thin top strip; not seen, i117: 'tiny, on the bonnet vent', i118: 'tiny,
+    on the bonnet vent', i119: 'pair i113, slat column; not seen', i001: upper band by the duct ramp; not seen,
+  i002: 'small, rear-face band; a few UI pixels only', i007: 'small, rear-face band; a few UI pixels only', i008: 'small,
+    rear-face band; a few UI pixels only', i009: 'small, rear-face band; not seen', i010: 'wide piece inside the
+    rear-face band; 23 px from behind: inside the tail', i013: rear-face band; not seen, i014: rear-face band; not
+    seen, i015: rear-face band; not seen, i018: rear-face band; not seen, i019: rear-face band; not seen, i022: 'under
+    the duct ramp in the texture, never seen (fireproof-v2 guessed i004''s partner)', i023: tiny strip; not seen,
+  i025: tiny strip; not seen, i031: tiny strip; not seen, i034: 'tiny, bumper band; not seen', i035: centred under
+    the grille header; not seen, i036: 'tiny, bumper band; not seen', i037: 'tiny, bumper band; 5 UI px', i040: tiny;
+    pair i177, i041: long thin vertical strip at the texture's left edge; not seen, i042: tiny; not seen, i047: small;
+    not seen, i048: '17k px, pair i165, never seen (wheel-arch liner or duct inside?); fireproof-v2 paints it black',
+  i051: small; not seen, i052: thin strip; not seen, i057: small; not seen, i060: 'small, near the swan necks in
+    the texture; not seen', i061: 'tiny, by the strakes; pair i164', i063: 'tiny, by the strakes; pair i162', i065: 'tiny,
+    by the strakes; pair i161', i068: 'pair i153; 11 px. fireproof-v2 paints it as a lower-nose accent ''by size'',
+    but it barely shows', i071: 'pair i151; eva-unit01 calls i151/i071 the door-top strip, but neither shows in
+    any shot', i075: pair i148; 21 px. fireproof-v2 lower-nose accent 'by size'; barely shows, i077: 'pair i133,
+    nose band; not seen', i079: 'pair i136, nose band; 34 px from the front by the intake bar', i081: pair i144;
+    not seen, i082: pair i142; not seen, i084: tiny; not seen, i087: 'pair i139, nose band; not seen', i088: 'pair
+    i141, nose band; not seen', i089: 'pair i135, in the slat column of the texture (slat side faces?); not seen',
+  i090: 'pair i134, nose band; not seen', i093: 'pair i132, slat column; not seen', i097: 'pair i129, slat column;
+    not seen', i101: 'pair i124, slat column; not seen', i124: pair i101; not seen, i129: pair i097; not seen, i132: pair
+    i093; not seen, i133: pair i077; not seen, i134: pair i090; not seen, i135: pair i089; not seen, i136: pair
+    i079; not seen, i139: pair i087; not seen, i141: pair i088; not seen, i142: pair i082; 14 px from above, i144: pair
+    i081; not seen, i145: 'tiny, by the left bumper corner; a few px', i148: pair i075; 2 px, i149: 'small, near
+    the swan necks in the texture; not seen', i151: pair i071; a few px, i153: pair i068; 1 px, i155: tiny; not
+    seen, i161: pair i065; not seen, i162: pair i063; a few px, i163: small; not seen, i164: pair i061; not seen,
+  i165: 'pair i048, never seen', i166: small; not seen, i167: 'the left twin of the pin pad i050 (IoU 0.36); not
+    seen: the sim draws every pin from i050', i169: tiny; a few px, i171: tiny; not seen, i176: tiny; not seen,
+  i177: tiny; pair i040, i179: tiny; a few UI px, i180: tiny; not seen, i181: tiny; not seen, i182: tiny; not seen}

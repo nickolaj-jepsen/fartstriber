@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "UV_NO_SYNC": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv run livery *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run pyrefly *)",
+      "Bash(uv sync*)",
+      "PowerShell(uv run livery *)",
+      "PowerShell(uv run pytest *)",
+      "PowerShell(uv run ruff *)",
+      "PowerShell(uv run pyrefly *)",
+      "PowerShell(uv sync*)"
+    ],
+    "ask": [
+      "Bash(git add -A*)",
+      "Bash(git add --all*)",
+      "Bash(git add . *)",
+      "Bash(git commit -a*)",
+      "Bash(git commit --all*)",
+      "Bash(git stash *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "PowerShell(git add -A*)",
+      "PowerShell(git add --all*)",
+      "PowerShell(git add . *)",
+      "PowerShell(git commit -a*)",
+      "PowerShell(git commit --all*)",
+      "PowerShell(git stash *)",
+      "PowerShell(git reset --hard *)",
+      "PowerShell(git clean *)",
+      "PowerShell(git push *--force*)",
+      "PowerShell(git push -f*)",
+      "PowerShell(git push * -f*)"
+    ],
+    "deny": [
+      "Edit(/kits/**)",
+      "Edit(/.cache/**)",
+      "Edit(/designs/*/approved.json)",
+      "Edit(~/Documents/iRacing/**)",
+      "Edit(//c/Program Files (x86)/iRacing/**)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/session_status.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/protect.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.venv/Scripts/python.exe",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/format_on_edit.py"],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

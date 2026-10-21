@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Livery review</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e2e0db;
+    --accent: #f46200; --ok: #2f8f4e; --edit: #c28a00; --no: #c0392b; --skip: #8a8a8f; --mix: #6a4fc0; --park: #3a7ca5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+    }
+  }
+  :root[data-theme="dark"] { --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+  .bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.apply { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .banner { display: none; padding: 8px 20px; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  .banner.show { display: block; }
+  main { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 57px); }
+  nav { border-right: 1px solid var(--line); overflow: auto; max-height: calc(100vh - 57px); position: sticky; top: 57px; }
+  nav a { display: flex; gap: 8px; align-items: center; padding: 8px 14px; color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); font-size: 13px; }
+  nav a.on { background: var(--bg); font-weight: 600; }
+  .ghead { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .glabel { display: flex; gap: 6px; align-items: center; font-weight: 600; font-size: 13px; word-break: break-all; }
+  .tag { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; flex: none; }
+  .group.stale .tag, .group.failed .tag { color: var(--no); border-color: var(--no); }
+  .group.applied .tag { color: var(--ok); border-color: var(--ok); }
+  .gmeta { font-size: 12px; color: var(--muted); word-break: break-all; }
+  .gres { font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
+  .gacts { display: flex; gap: 6px; margin-top: 6px; }
+  .gacts button { padding: 3px 10px; font-size: 13px; }
+  .empty { padding: 14px; color: var(--muted); font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  .accept { background: var(--ok); } .edit { background: var(--edit); } .reject { background: var(--no); } .skip { background: var(--skip); } .mix { background: var(--mix); } .park { background: var(--park); }
+  nav .r { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  section { padding: 20px 24px 120px; max-width: 1400px; }
+  .kind { text-transform: uppercase; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
+  h2 { margin: 4px 0 10px; font-size: 22px; }
+  .body { white-space: pre-wrap; color: var(--ink); max-width: 80ch; margin-bottom: 16px; }
+  .body.mono { font: 13px/1.5 ui-monospace, monospace; max-width: 110ch; }
+  .imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+  .imgs img { width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #222; cursor: zoom-in; display: block; }
+  .imgs figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+  .decide { position: fixed; bottom: 0; left: 280px; right: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 24px; display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+  .decide textarea { flex: 1 1 340px; min-height: 38px; max-height: 140px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .decide button.sel { outline: 2px solid var(--accent); }
+  .mixwith { display: none; gap: 8px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--muted); }
+  .mixwith.show { display: flex; }
+  .rate { display: none; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--muted); }
+  .rate.show { display: flex; }
+  .hint { width: 100%; font-size: 13px; color: var(--no); }
+  .hint:empty { display: none; }
+  .rate button { padding: 4px 10px; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: none; align-items: center; justify-content: center; z-index: 5; cursor: zoom-out; }
+  .lightbox.show { display: flex; }
+  .lightbox img { max-width: 96vw; max-height: 94vh; }
+  .done { padding: 60px; text-align: center; font-size: 18px; color: var(--muted); }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; }
+    nav { display: none; }
+    .decide { left: 0; padding: 10px 16px; }
+    section { padding: 16px 16px 200px; }
+    .imgs { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Livery review</h1>
+  <div class="bar"><div id="bar"></div></div>
+  <span class="count" id="count"></span>
+  <button class="apply" id="apply" title="Write this review's decisions back in its session's checkout and return them to its agent">Apply</button>
+</header>
+<div class="banner" id="banner">No review is waiting right now. This page picks up the next one by itself.</div>
+<main>
+  <nav id="nav"></nav>
+  <section id="item"></section>
+</main>
+<div class="decide" id="decide">
+  <button data-d="accept"><kbd>A</kbd> Accept</button>
+  <button data-d="edit"><kbd>E</kbd> Edit</button>
+  <button data-d="reject"><kbd>R</kbd> Reject</button>
+  <button data-d="skip"><kbd>S</kbd> Skip</button>
+  <button data-d="mix" id="mixbtn"><kbd>M</kbd> Mix</button>
+  <button data-d="park" id="parkbtn" title="Stop iterating: not approved, not installed"><kbd>P</kbd> Park</button>
+  <button id="allbtn" title="Accept every item of this kind in this review that has no decision yet"><kbd>Shift+A</kbd> Accept the rest</button>
+  <textarea id="note" placeholder="Note, in your words: saved as you type (E and M open this; Ctrl+Enter moves on, Esc takes back an empty edit)"></textarea>
+  <div class="hint" id="hint"></div>
+  <div class="mixwith" id="mixwith"></div>
+  <div class="rate" id="rate"></div>
+</div>
+<div class="lightbox" id="lightbox"><img alt=""></div>
+<script>
+// Every session's waiting reviews, one group each. A group's decisions are stored here; Apply hands them to
+// the session that queued it, which writes them in its own checkout.
+let groups = [];
+let ratings = {};
+let cur = null;           // { g, id }: the item on screen
+let shown;                // the key of the item whose body and pictures are drawn
+let wanted = decodeURIComponent(location.hash.slice(1)) || null;  // the review the URL opens at
+let polling = null;
+let typing = null;
+let saving = Promise.resolve(true);
+let epoch = 0;            // counts the page's writes: a poll that started before one may not show it
+// What the page has that the server doesn't yet, by key(group, id): a decision with its note as typed, or a
+// rating pressed before any decision. An edit or a mix goes to the server only once it has a note.
+const draft = {};
+const $ = (id) => document.getElementById(id);
+const key = (gid, id) => `${gid} ${id}`;
+const needsNote = (d) => d.decision === "edit" || d.decision === "mix";
+const open = (g) => !["applying", "applied"].includes(g.status);  // its decisions can still change
+const groupOf = (gid) => groups.find((g) => g.id === gid);
+const label = (g) => g.branch || g.root.split(/[\\/]/).pop();
+
+function rows() { return groups.filter(open).flatMap((g) => g.items.map((it) => ({ g, it }))); }
+
+function here() {
+  const g = cur && groupOf(cur.g);
+  const it = g && open(g) && g.items.find((i) => i.id === cur.id);
+  return it ? { g, it } : null;
+}
+
+function current(gid, id) { const g = groupOf(gid); return draft[key(gid, id)] || (g && g.decisions[id]) || null; }
+function decisionOf(gid, id) { return (current(gid, id) || {}).decision; }
+function blocked(gid, id) { const d = draft[key(gid, id)]; return !!d && needsNote(d) && !d.note.trim(); }
+function change(gid, id, patch) { draft[key(gid, id)] = { note: "", mix_of: [], rating: null, ...current(gid, id), ...patch, group: gid, id }; }
+function checked() { return [...$("mixwith").querySelectorAll("input:checked")].map((i) => i.value); }
+function hint(text) { $("hint").textContent = text; }
+function ratingOf(g, it) { return it.rate ? (current(g.id, it.id) || {}).rating || null : null; }
+
+async function poll() {
+  clearTimeout(polling);
+  const since = epoch;
+  try {
+    const r = await fetch("/api/state");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const s = await r.json();
+    if (since === epoch) { groups = s.groups; ratings = s.ratings; }  // a poll older than a write waits for the next
+    $("banner").classList.remove("show");
+  } catch {
+    $("banner").classList.add("show");  // the review that served the page is gone; another may take over
+  }
+  if (!here()) pick();
+  render(false);
+  polling = setTimeout(poll, since !== epoch ? 100 : groups.some((g) => g.status === "applying") ? 300 : 2000);
+}
+
+function pick() {
+  const all = rows();
+  const mine = wanted ? all.filter(({ g }) => g.id === wanted) : [];
+  if (mine.length) wanted = null;
+  const list = mine.length ? mine : all;
+  const r = list.find(({ g, it }) => !decisionOf(g.id, it.id)) || list[0];
+  cur = r ? { g: r.g.id, id: r.it.id } : null;
+}
+
+function render(local = true) {
+  const all = rows();
+  const decided = all.filter(({ g, it }) => decisionOf(g.id, it.id)).length;
+  $("bar").style.width = all.length ? `${(100 * decided) / all.length}%` : "0";
+  $("count").textContent = `${decided} / ${all.length}`;
+  document.title = all.length > decided ? `(${all.length - decided}) Livery review` : "Livery review";
+  renderNav();
+  const h = here();
+  $("apply").style.display = h && h.g.status === "waiting" ? "" : "none";
+  const k = h ? key(h.g.id, h.it.id) : null;
+  if (k !== shown) {
+    renderItem(h);
+    shown = k;
+    local = true;
+  }
+  if (local && h) renderDecide(h);  // a poll leaves the mix boxes and the rating alone
+}
+
+function result(g) {
+  if (g.result) return g.result.error ? `Apply failed: ${g.result.error}` : `Applied.${g.result.written.length ? " Wrote:\n" + g.result.written.join("\n") : ""}`;
+  if (g.status === "stale") return "Its session stopped waiting. Decisions made here apply when it reviews again.";
+  if (g.status === "applying") return "Applying in its checkout…";
+  return "";
+}
+
+function renderNav() {
+  const order = [...groups.filter(open), ...groups.filter((g) => !open(g))];  // done ones at the bottom
+  $("nav").innerHTML = order.map((g) => {
+    const decided = g.items.filter((i) => decisionOf(g.id, i.id)).length;
+    const acts = [];
+    if (g.status === "waiting") acts.push(`<button class="apply" data-apply="${esc(g.id)}">Apply</button>`);
+    if (!g.alive || g.status === "applied") acts.push(`<button data-clear="${esc(g.id)}">Clear</button>`);
+    const items = open(g) ? g.items.map((it) => {
+      const r = ratingOf(g, it);
+      const on = cur && cur.g === g.id && cur.id === it.id;
+      return `<a href="#" data-g="${esc(g.id)}" data-id="${esc(it.id)}" class="${on ? "on" : ""}"><span class="dot ${decisionOf(g.id, it.id) || ""}"></span>${esc(it.title)}${r ? `<span class="r" title="${esc(ratings[r])}">${r}</span>` : ""}</a>`;
+    }).join("") : "";
+    const res = result(g);
+    return `<div class="group ${g.status}"><div class="ghead">
+      <div class="glabel">${esc(label(g))}<span class="tag">${esc(g.status)}</span></div>
+      <div class="gmeta" title="${esc(g.root)}">${esc(g.root.split(/[\\/]/).pop())} · ${decided}/${g.items.length} decided</div>
+      ${res ? `<div class="gres">${esc(res)}</div>` : ""}
+      ${acts.length ? `<div class="gacts">${acts.join("")}</div>` : ""}
+    </div>${items}</div>`;
+  }).join("") || '<div class="empty">No reviews waiting.</div>';
+}
+
+function renderItem(h) {
+  $("decide").style.display = h ? "" : "none";
+  hint("");
+  if (!h) {
+    $("item").innerHTML = '<div class="done">Nothing to review. New reviews show up here by themselves.</div>';
+    return;
+  }
+  const { g, it } = h;
+  const src = (p) => `/img?g=${encodeURIComponent(g.id)}&p=${encodeURIComponent(p)}`;
+  const caption = (p) => (it.captions && it.captions[p]) || p.split("/").slice(-2).join("/");
+  $("item").innerHTML = `
+    <div class="kind">${esc(it.kind)}${it.current ? " · currently " + esc(it.current) : ""} · ${esc(label(g))}</div>
+    <h2>${esc(it.title)}</h2>
+    <div class="body${it.kind === "proposal" ? " mono" : ""}">${esc(it.body || "")}</div>
+    <div class="imgs">${it.images.map((p) => `<figure style="margin:0"><img loading="lazy" src="${src(p)}" alt="${esc(p)}"><figcaption>${esc(caption(p))}</figcaption></figure>`).join("")}</div>`;
+  $("item").querySelectorAll("img").forEach((img) => img.onclick = () => { $("lightbox").querySelector("img").src = img.src; $("lightbox").classList.add("show"); });
+  $("note").value = (current(g.id, it.id) || {}).note || "";
+}
+
+function renderDecide({ g, it }) {
+  const d = current(g.id, it.id) || {};
+  if (document.activeElement !== $("note") && $("note").value !== (d.note || "")) $("note").value = d.note || "";
+  document.querySelectorAll(".decide button[data-d]").forEach((b) => b.classList.toggle("sel", b.dataset.d === d.decision));
+  $("mixbtn").style.display = it.mix ? "" : "none";
+  $("parkbtn").style.display = it.park ? "" : "none";
+  $("allbtn").style.display = it.bulk ? "" : "none";
+  $("rate").innerHTML = "Rating: " + Object.entries(ratings).map(([n, text]) => `<button data-r="${n}" class="${ratingOf(g, it) === +n ? "sel" : ""}"><kbd>${n}</kbd> ${esc(text)}</button>`).join("");
+  $("rate").querySelectorAll("button").forEach((b) => b.onclick = () => rate(+b.dataset.r));
+  $("rate").classList.toggle("show", !!it.rate);
+  const others = g.items.filter((o) => o.kind === it.kind && o.id !== it.id);
+  $("mixwith").innerHTML = "Mix with: " + others.map((o) => `<label><input type="checkbox" value="${esc(o.id)}" ${(d.mix_of || []).includes(o.id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("");
+  $("mixwith").classList.toggle("show", it.mix && d.decision === "mix");
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// A POST to the page's server: its answer, or null after saying why in the hint.
+async function post(path, body, failed) {
+  try {
+    const r = await fetch(path, { method: "POST", body: JSON.stringify(body) });
+    const out = await r.json();
+    if (r.ok) return out;
+    hint(`${failed}: ${out.error || `HTTP ${r.status}`}`);
+  } catch {
+    hint(`${failed}: no review is serving the page right now; it reconnects by itself, so try again in a moment`);
+  }
+  return null;
+}
+
+// Every change to a decision goes through here, one request at a time so the last one typed lands last.
+function save(gid, id) {
+  clearTimeout(typing);
+  saving = saving.then(() => send(gid, id));
+  return saving;
+}
+
+const body = (d) => ({ group: d.group, id: d.id, decision: d.decision, note: d.note, mix_of: d.mix_of, rating: d.rating });
+
+// Whether the server has the item's decision as the page shows it (true when there is none to send yet).
+async function send(gid, id) {
+  const k = key(gid, id);
+  const d = draft[k];
+  if (!d || !d.decision) return true;
+  if (blocked(gid, id)) return false;
+  if (!(await post("/api/decide", body(d), "Not saved"))) return false;
+  epoch++;
+  const g = groupOf(gid);
+  if (g) g.decisions[id] = body(d);
+  if (draft[k] === d) delete draft[k];  // else typed since, and saved next
+  render();
+  return true;
+}
+
+// An edit or a mix with no note yet keeps the owner on its item, in the note.
+function stay() {
+  hint("Edit and mix say what to change: write it here, or press Esc to take the decision back.");
+  $("note").focus();
+}
+
+// Whether the owner may leave the item on screen: only once the server has what it shows.
+async function leave() {
+  const h = here();
+  if (!h) return true;
+  if (blocked(h.g.id, h.it.id)) { stay(); return false; }
+  return save(h.g.id, h.it.id);
+}
+
+async function moveTo(gid, id) {
+  if (!(await leave())) return;
+  cur = { g: gid, id };
+  render();
+  window.scrollTo(0, 0);
+}
+
+function go(delta) {
+  const all = rows();
+  if (!all.length) return;
+  const at = all.findIndex(({ g, it }) => cur && g.id === cur.g && it.id === cur.id);
+  const r = all[Math.max(0, Math.min(all.length - 1, at + delta))];
+  moveTo(r.g.id, r.it.id);
+}
+
+function onward() {
+  const all = rows();
+  const at = all.findIndex(({ g, it }) => cur && g.id === cur.g && it.id === cur.id);
+  const next = all.find(({ g, it }, k) => k > at && !decisionOf(g.id, it.id));
+  if (next) moveTo(next.g.id, next.it.id);
+}
+
+function rate(n) {
+  const h = here();
+  if (!h || !h.it.rate) return;
+  const { g, it } = h;
+  change(g.id, it.id, { rating: ratingOf(g, it) === n ? null : n });  // the same key again clears it
+  render();
+  save(g.id, it.id);
+}
+
+async function decide(decision, advance = true) {
+  const h = here();
+  if (!h) return;
+  const { g, it } = h;
+  if ((decision === "mix" && !it.mix) || (decision === "park" && !it.park)) return;
+  hint("");
+  change(g.id, it.id, { decision, note: $("note").value, mix_of: checked() });
+  render();
+  if (needsNote(draft[key(g.id, it.id)]) && !advance) {
+    save(g.id, it.id);
+    $("note").focus();
+    return;
+  }
+  if (blocked(g.id, it.id)) return stay();
+  if (await save(g.id, it.id)) onward();
+}
+
+// Esc on an edit or a mix that has no note yet: back to the decision before it.
+function takeBack() {
+  const h = here();
+  if (!h || !blocked(h.g.id, h.it.id)) return;
+  const { g, it } = h;
+  const { rating } = draft[key(g.id, it.id)];
+  delete draft[key(g.id, it.id)];
+  if (ratingOf(g, it) !== rating) { change(g.id, it.id, { rating }); save(g.id, it.id); }
+  hint("");
+  render();
+}
+
+// Catalog items only (references, roster rows, drawn brands), within one review: designs and kits are judged
+// one at a time.
+async function acceptRest() {
+  const h = here();
+  if (!h || !h.it.bulk) return;
+  const { g, it } = h;
+  const rest = g.items.filter((o) => o.kind === it.kind && !decisionOf(g.id, o.id));
+  if (!rest.length || !confirm(`Accept the ${rest.length} ${it.kind} items in ${label(g)} that have no decision?`)) return;
+  for (const o of rest) {
+    change(g.id, o.id, { decision: "accept" });
+    if (!(await save(g.id, o.id))) break;
+  }
+  render();
+  onward();
+}
+
+async function apply(gid) {
+  const g = groupOf(gid);
+  if (!g || g.status !== "waiting") return;
+  const h = here();
+  if (h && h.g.id === gid && blocked(gid, h.it.id)) return stay();
+  for (const d of Object.values(draft)) if (d.group === gid && !(await save(gid, d.id))) return;
+  const left = g.items.filter((i) => !g.decisions[i.id]).length;
+  const ask = left ? `${left} items in ${label(g)} have no decision. Apply anyway?` : `Apply the decisions on ${label(g)}?`;
+  if (!confirm(ask) || !(await post("/api/apply", { group: gid }, "Not applied"))) return;
+  epoch++;
+  g.status = "applying";
+  render();
+  poll();
+}
+
+async function clear(gid) {
+  const g = groupOf(gid);
+  if (!g) return;
+  if (g.status !== "applied" && !confirm(`Take ${label(g)} off the page? Its decisions are dropped.`)) return;
+  if (!(await post("/api/clear", { group: gid }, "Not cleared"))) return;
+  epoch++;
+  for (const [k, d] of Object.entries(draft)) if (d.group === gid) delete draft[k];
+  groups = groups.filter((o) => o.id !== gid);
+  if (!here()) pick();
+  render();
+}
+
+$("nav").onclick = (e) => {
+  const a = e.target.closest("a[data-id]");
+  const ap = e.target.closest("[data-apply]");
+  const cl = e.target.closest("[data-clear]");
+  if (a) { e.preventDefault(); moveTo(a.dataset.g, a.dataset.id); }
+  else if (ap) apply(ap.dataset.apply);
+  else if (cl) clear(cl.dataset.clear);
+};
+document.querySelectorAll(".decide button[data-d]").forEach((b) => b.onclick = () => decide(b.dataset.d, !["edit", "mix"].includes(b.dataset.d)));
+$("allbtn").onclick = acceptRest;
+$("lightbox").onclick = () => $("lightbox").classList.remove("show");
+$("mixwith").addEventListener("change", () => {
+  const h = here();
+  if (!h) return;
+  change(h.g.id, h.it.id, { mix_of: checked() });
+  save(h.g.id, h.it.id);
+});
+$("note").addEventListener("input", () => {
+  const h = here();
+  if (!h) return;
+  const { g, it } = h;
+  change(g.id, it.id, { note: $("note").value, decision: decisionOf(g.id, it.id) || "edit" });  // a note alone asks for an edit
+  if (!blocked(g.id, it.id)) hint("");
+  render();
+  clearTimeout(typing);
+  typing = setTimeout(() => save(g.id, it.id), 500);
+});
+$("note").addEventListener("blur", () => { const h = here(); if (h) save(h.g.id, h.it.id); });
+$("note").addEventListener("keydown", (e) => {
+  const h = here();
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && h) {
+    e.preventDefault();
+    decide(decisionOf(h.g.id, h.it.id) || "edit", true);
+  }
+  if (e.key === "Escape") { takeBack(); $("note").blur(); }
+});
+addEventListener("pagehide", () => {
+  const h = here();
+  const d = h && draft[key(h.g.id, h.it.id)];
+  if (d && d.decision && !blocked(h.g.id, h.it.id)) navigator.sendBeacon("/api/decide", JSON.stringify(body(d)));
+});
+$("apply").onclick = () => { const h = here(); if (h) apply(h.g.id); };
+document.addEventListener("keydown", (e) => {
+  if (document.activeElement === $("note") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if ($("lightbox").classList.contains("show")) { if (e.key === "Escape") $("lightbox").classList.remove("show"); return; }
+  const map = { a: "accept", r: "reject", s: "skip", p: "park" };
+  if (e.shiftKey && e.key.toLowerCase() === "a") acceptRest();
+  else if (map[e.key]) decide(map[e.key]);
+  else if (Object.hasOwn(ratings, e.key)) rate(+e.key);
+  else if (e.key === "e" || e.key === "m") {
+    e.preventDefault();  // they focus the note, which would take the key too
+    decide(e.key === "e" ? "edit" : "mix", false);
+  }
+  else if (e.key === "ArrowRight" || e.key === "j") go(1);
+  else if (e.key === "ArrowLeft" || e.key === "k") go(-1);
+});
+poll();
+</script>
+</body>
+</html>

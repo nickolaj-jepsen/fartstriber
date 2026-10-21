@@ -1,0 +1,42 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "",
+ "design_hash": "0d0395fdcfe7eb2f0219c1ec086604da5433d5904aece27a5c9cf80b23499f04",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "aa4b9957e1b6534e4ce980578c2aff3c4c13dd9ba1c0cf07c33d77e8deaf636a",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "1191e8fb64556aeac884ddf6e884244bd76310a14c8dcd92485d45884602cece",
+  "car_spec.tga": "045fd57e07c0ac7eed0d124005abb2f1aa7de13d34b4289f782a03f61a43a361",
+  "layers.svg": "fe8e1181be36f9ac86fee6df4d5cad514f3237499c79f7ca8873131c57bb8952",
+  "paint.png": "34fadf00fa347cbe933efe413d0903e50a65dfae173b3e988592c503f815114f",
+  "spec.png": "e6d94501ee2ab9eb4a91df6cf7450a483d129a5bac3a4c704d7308d71ee78686",
+  "spec.svg": "9f9b271ae7a8e23e8ee8e834741b0de1faa59f4c05025ddcad13036057b6ef40"
+ },
+ "waivers": [],
+ "sponsors": [
+  "altmere/mark",
+  "avelor/lockup",
+  "bellcrest/wordmark",
+  "brandvik/mark",
+  "corbaux/wordmark",
+  "drexa/wordmark",
+  "fireproof/lockup",
+  "grivant/lockup",
+  "hexmoor/mark",
+  "hexmoor/wordmark",
+  "huilec/wordmark",
+  "norvane/wordmark",
+  "ostrand/mark",
+  "rigmount/mark",
+  "telvio/lockup",
+  "zentiq/mark"
+ ],
+ "marks": []
+}

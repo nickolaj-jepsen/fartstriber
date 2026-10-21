@@ -1,0 +1,725 @@
+{
+  "errors": [
+    {
+      "column": 58,
+      "path": "livery/approvals.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `LANCZOS` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 67,
+      "path": "livery/approvals.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `NEAREST` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 38,
+      "path": "livery/approvals.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `bool | list[str] | Unknown` is not assignable to parameter `digests` with type `dict[str, str]` in function `compare`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "livery/check.py",
+      "name": "bad-assignment",
+      "concise_description": "`str` is not assignable to dict key `design_hash` with type `None`",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "livery/check.py",
+      "name": "bad-assignment",
+      "concise_description": "`str` is not assignable to dict key `toolchain_hash` with type `None`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "livery/check.py",
+      "name": "bad-assignment",
+      "concise_description": "`str` is not assignable to dict key `policy_hash` with type `None`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "livery/check.py",
+      "name": "bad-assignment",
+      "concise_description": "`dict[str, str]` is not assignable to dict key `digests` with type `bool | list[str] | list[Unknown] | str | None`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "livery/kit_extract.py",
+      "name": "unsupported-operation",
+      "concise_description": "`>` is not supported between `tuple[Any, ...]` and `Literal[6]`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "livery/kit_extract.py",
+      "name": "unsupported-operation",
+      "concise_description": "`>` is not supported between `None` and `Literal[6]`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "livery/kit_extract.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "livery/kit_fit.py",
+      "name": "missing-module-attribute",
+      "concise_description": "Could not import `cKDTree` from `scipy.spatial`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "livery/kit_fit.py",
+      "name": "unbound-name",
+      "concise_description": "`coef` may be uninitialized",
+      "severity": "error"
+    },
+    {
+      "column": 18,
+      "path": "livery/kit_fit.py",
+      "name": "unbound-name",
+      "concise_description": "`err` may be uninitialized",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "livery/kit_fit.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 47,
+      "path": "livery/kit_fit.py",
+      "name": "bad-argument-count",
+      "concise_description": "Expected 3 positional arguments, got 4 in function `_residual_grid`",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "livery/kit_fit.py",
+      "name": "bad-assignment",
+      "concise_description": "`dict[str, dict[str, list[float] | Any]]` is not assignable to dict key `islands` with type `float`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "livery/kit_fit.py",
+      "name": "bad-assignment",
+      "concise_description": "`dict[Any | Unknown, dict[Unknown, Unknown]]` is not assignable to dict key `sides` with type `float`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "livery/kit_measure.py",
+      "name": "unsupported-operation",
+      "concise_description": "`&=` is not supported between `None` and `ndarray[tuple[Any, ...], dtype[numpy.bool]]`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "livery/kit_measure.py",
+      "name": "unsupported-operation",
+      "concise_description": "`|=` is not supported between `None` and `ndarray[tuple[Any, ...], dtype[signedinteger]]`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "livery/kit_measure.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `numpy._core.fromnumeric.nonzero` called with arguments: (ndarray | Unknown | None)",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "livery/kit_measure.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "livery/kit_measure.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 71,
+      "path": "livery/kit_measure.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `shape`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "livery/kit_review.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `dict.get` called with arguments: (Literal['top'] | Unknown | None, tuple[Literal[150], Literal[150], Literal[150]])",
+      "severity": "error"
+    },
+    {
+      "column": 89,
+      "path": "livery/lint/output.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `BOX` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 77,
+      "path": "livery/lint/output.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `NEAREST` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 89,
+      "path": "livery/lint/output.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `NEAREST` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "livery/lint/source.py",
+      "name": "unbound-name",
+      "concise_description": "`value` may be uninitialized",
+      "severity": "error"
+    },
+    {
+      "column": 56,
+      "path": "livery/metrics.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `str` has no attribute `items`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "livery/paintfolder.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `float`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "livery/paintfolder.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `str`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "livery/preview_flat.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `FLIP_LEFT_RIGHT` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 70,
+      "path": "livery/preview_flat.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `LANCZOS` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 46,
+      "path": "livery/preview_flat.py",
+      "name": "missing-attribute",
+      "concise_description": "No attribute `LANCZOS` in module `PIL.Image`",
+      "severity": "error"
+    },
+    {
+      "column": 10,
+      "path": "livery/primitives.py",
+      "name": "unsupported-operation",
+      "concise_description": "`*` is not supported between `None` and `float`",
+      "severity": "error"
+    },
+    {
+      "column": 87,
+      "path": "livery/primitives.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | None` is not assignable to parameter `height` with type `float` in function `_too_small`",
+      "severity": "error"
+    },
+    {
+      "column": 50,
+      "path": "livery/primitives.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `float | None` is not assignable to parameter `height` with type `float` in function `_place_svg`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "livery/raster.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "livery/review/items.py",
+      "name": "bad-assignment",
+      "concise_description": "`dict[Unknown, Unknown]` is not assignable to dict key `pin` with type `bool | list[str] | str`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "livery/review/server.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Handler.log_message` overrides parent class `BaseHTTPRequestHandler` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 57,
+      "path": "livery/sponsors.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "livery/sponsors.py",
+      "name": "unsupported-operation",
+      "concise_description": "`<=` is not supported between `tuple[Any, ...]` and `int`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "livery/sponsors.py",
+      "name": "unsupported-operation",
+      "concise_description": "`<=` is not supported between `None` and `int`",
+      "severity": "error"
+    },
+    {
+      "column": 58,
+      "path": "livery/sponsors.py",
+      "name": "unsupported-operation",
+      "concise_description": "`>` is not supported between `tuple[Any, ...]` and `int`",
+      "severity": "error"
+    },
+    {
+      "column": 58,
+      "path": "livery/sponsors.py",
+      "name": "unsupported-operation",
+      "concise_description": "`>` is not supported between `None` and `int`",
+      "severity": "error"
+    },
+    {
+      "column": 34,
+      "path": "livery/sponsors.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of type `tuple[Any, ...] | Any | None` has no attribute `max`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "livery/sponsors.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of type `tuple[Any, ...] | Any | None` has no attribute `max`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "livery/typeset.py",
+      "name": "bad-override",
+      "concise_description": "Class member `_Rings._qCurveToOne` overrides parent class `BasePen` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "livery/ui_preview.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_compile.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `attrib`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_compile.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `attrib`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_compile.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `attrib`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_compile.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `attrib`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_compile.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `attrib`",
+      "severity": "error"
+    },
+    {
+      "column": 18,
+      "path": "tests/test_fonts.py",
+      "name": "bad-specialization",
+      "concise_description": "`str | None` is not assignable to upper bound `SupportsDunderGT[Any] | SupportsDunderLT[Any]` of type variable `SupportsRichComparisonT`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_kit.py",
+      "name": "unsupported-operation",
+      "concise_description": "`+=` is not supported between `str` and `Literal[12]`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_lint.py",
+      "name": "not-iterable",
+      "concise_description": "Type `None` is not iterable",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "tests/test_params.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `DesignParams` has no attribute `width`",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "tests/test_params.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `DesignParams` has no attribute `count`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "tests/test_params.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `DesignParams` has no attribute `palette`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_params.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `DesignParams` has no attribute `gap`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "tests/test_pick_frame.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `list[int]`",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "tests/test_simsession.py",
+      "name": "bad-assignment",
+      "concise_description": "`int | str | None` is not assignable to dict key `CamCarIdx` with type `int`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `paint_folder` with type `str | None` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `groups` with type `Iterable[str]` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `groups_fix` with type `str` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `sim` with type `Literal['any-replay', 'none', 'optional', 'replay']` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `replay` with type `Replay | None` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `log` with type `(str) -> object` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `lock_timeout` with type `float` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `ready_timeout` with type `float | None` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_simsession.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `((object: str, /) -> None) | int | list[str] | str | Unknown` is not assignable to parameter `checkout` with type `Path | None` in function `livery.simsession.SimSession.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 33,
+      "path": "tests/test_sponsors.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `None` is not assignable to parameter `path` with type `Path` in function `livery.sponsors.Variant.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `svg_path` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `background` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `skip_system_fonts` with type `bool` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `log_information` with type `bool` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `width` with type `int | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `height` with type `int | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `zoom` with type `float | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `dpi` with type `float` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `style_sheet` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `resources_dir` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `languages` with type `list[str] | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `font_size` with type `float` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `font_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `serif_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `sans_serif_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `cursive_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `fantasy_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `monospace_family` with type `str | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `font_files` with type `list[str] | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `font_dirs` with type `list[str] | None` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `shape_rendering` with type `Literal['crisp_edges', 'geometric_precision', 'optimize_speed']` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `text_rendering` with type `Literal['geometric_precision', 'optimize_legibility', 'optimize_speed']` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "tests/test_typeset.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `bool | list[str]` is not assignable to parameter `image_rendering` with type `Literal['optimize_quality', 'optimize_speed']` in function `resvg_py.svg_to_bytes`",
+      "severity": "error"
+    },
+    {
+      "column": 83,
+      "path": "tests/test_ui_preview.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Layers | None` is not assignable to parameter `layers` with type `Layers` in function `livery.ui_preview.render`",
+      "severity": "error"
+    },
+    {
+      "column": 74,
+      "path": "tests/test_ui_preview.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Layers | None` is not assignable to parameter `layers` with type `Layers` in function `livery.ui_preview.render`",
+      "severity": "error"
+    },
+    {
+      "column": 10,
+      "path": "tests/test_ui_preview.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `uv`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "tests/test_ui_preview.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `base`",
+      "severity": "error"
+    },
+    {
+      "column": 60,
+      "path": "tests/test_ui_preview.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `base`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "tests/test_ui_preview.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `base`",
+      "severity": "error"
+    },
+    {
+      "column": 64,
+      "path": "tests/test_ui_preview.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `base`",
+      "severity": "error"
+    }
+  ]
+}

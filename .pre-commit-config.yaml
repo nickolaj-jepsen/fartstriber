@@ -1,0 +1,34 @@
+# prek (or pre-commit) runs these on every commit; README.md says how to install it.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --no-sync ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run --no-sync ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: pyrefly
+        name: pyrefly check
+        entry: uv run --no-sync pyrefly check --summary=none
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+      - id: no-build-output
+        name: no build output or sim files
+        entry: build output and sim files stay out of git (livery build writes them to .cache/)
+        language: fail
+        files: (^|/)\.cache/|\.(tga|mip)$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: mixed-line-ending
+        args: [--fix=lf]

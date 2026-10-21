@@ -1,0 +1,23 @@
+source = "owned"
+large_only = false
+
+[variants.lockup]
+aspect = 4.2
+stroke = 0.06
+counter = 0.06
+ink = 0.273
+approved = "2026-10-19"
+
+[variants.wordmark]
+aspect = 4.1538
+stroke = 0.0733
+counter = 0.0733
+ink = 0.3071
+approved = "2026-10-19"
+
+[variants.mark]
+aspect = 0.5
+stroke = 0.08
+counter = 1.5333
+ink = 0.5972
+approved = "2026-10-18"

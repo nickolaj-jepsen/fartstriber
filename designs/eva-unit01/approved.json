@@ -1,0 +1,25 @@
+{
+ "by": "Nickolaj",
+ "date": "2026-10-21",
+ "note": "",
+ "design_hash": "0ad6f76397ce359d4b15575979fdfb124b3cc757a45eb363d7692bcbe06b9bb9",
+ "toolchain_hash": "362dfd8b62c323cc5eb179454347032a00629f773d2b4a59791623ce3aab3120",
+ "policy_hash": "441b8cf0db209b522c3b282901bca496e115cfed53066aa20462aab7fff0e5e2",
+ "inputs": {
+  "script": "ea9daf64d6de70b157fd8eb6e114b1e18dbaebd587eb53d0ae8f0424b78e7c86",
+  "kit": "eb24248d99f59a6b663aff28b8adce2806c132bb69ddc82c9d1c47c75a589122",
+  "assets": "be22b3464105a2ebb9644f7705effd68914fc8b2b6b49cdb1fc01c955adf387a",
+  "design_sponsors": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "digests": {
+  "car.tga": "0eee92e30b43c0b7308a11c7ee2ada6ca2d394d3c621d48f2c031f4890f412e4",
+  "car_spec.tga": "5660de213386be2c4e90a505ebda5b0569f5cba92cf13e270a5b0d14c64add97",
+  "layers.svg": "67f949b385ce979493f0ec5691225c9c8c9d074321779a8a2fc311045b63b720",
+  "paint.png": "1db0b994a89ed799f62fdf1d47ceb45b42e97b9f36334a16d83b713d2060c508",
+  "spec.png": "0e73560a635a82c5a04a36c5784d4e668f9b6733acd745e3832c66e8ca8cc1f2",
+  "spec.svg": "e971bda3abdb5941ff75aa99218d96bd43302105f838bc18bddca77f3fbbff8c"
+ },
+ "waivers": [],
+ "sponsors": [],
+ "marks": []
+}

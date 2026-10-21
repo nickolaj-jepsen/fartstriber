@@ -1,0 +1,35 @@
+# How the sim shows this car on the preview replay; written by the kit commands. Each view is a camera
+# group and its camera's pose in the car's frame: x forward, y left, z up in metres from the car's origin,
+# yaw, pitch (down positive) and FOV in radians; a preview camera's aim raises its aim point (field 9).
+
+replay = 84333072
+frame = 2917
+
+[preview.front34]
+group = "Preview Front34"
+pose = [18.96473378144105, 15.913301121382489, 3.979327524001636, -2.443460952792061, 0.13962634015954636, 0.24]
+aim = 0.0
+
+[preview.side_l]
+group = "Preview Side L"
+pose = [0.0, 25.0, 0.5, -1.5707963267948966, 0.0, 0.2]
+aim = 0.27
+
+[preview.side_r]
+group = "Preview Side R"
+pose = [0.0, -25.0, 0.5, 1.5707963267948966, 0.0, 0.2]
+aim = 0.27
+
+[preview.rear34]
+group = "Preview Rear34"
+pose = [-16.58534870422346, -13.916759980660489, 12.999999999999998, 0.698131700797732, 0.5235987755982988, 0.24]
+aim = 0.0
+
+[preview.top]
+group = "Preview Top"
+pose = [0.0, -2.1788935686914543, 25.40486745229364, 1.5707963267948966, 1.4835298641951802, 0.2]
+aim = 0.0
+
+[crops]
+beltline = ["side_l", 520, 430, 1360, 600]
+nose = ["front34", 290, 380, 850, 650]

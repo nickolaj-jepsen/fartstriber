@@ -1,0 +1,21 @@
+# Your own settings. Copy this file to %LOCALAPPDATA%\fartstriber\config.toml (every worktree reads that
+# one) and put in your values. Every key is needed unless it says optional.
+
+owner = "Alex"                                  # optional: your first name, whose decisions the review records
+customer_id = 123456                            # your iRacing customer ID: paints are car_<id>.tga
+team_id = 654321                                # optional: the team whose sessions you race (car_team_<id>.tga)
+archive_dir = "~/Documents/Fartstriber/archive" # optional: where final spec .mips are kept; else .cache/archive
+
+[iracing]
+documents = "~/Documents/iRacing"               # holds paint\, replay\, cameras\ and camera.ini
+install = 'C:\Program Files (x86)\iRacing'      # holds httproot\cars, the UI's car previews
+process = "iRacingSim64DX11.exe"                # the sim's process, whose window is shot
+
+# The replay every sim run shows: a replay of your car, saved under <documents>\replay. Each kit's
+# profile.toml holds the frame and cameras for it.
+[replay]
+file = "preview.rpy"
+sha256 = "<sha256 of the file>"                 # `livery sim status` checks the file against it
+subsession = 12345678                           # SubSessionID, as the SDK names the replay: sim runs refuse another
+track_name = "daytona 2011 road"                # TrackName, as the SDK names it
+track = 'daytona\2011\road'                     # the track's path in camera.ini: its camera set

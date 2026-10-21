@@ -1,0 +1,21 @@
+# Sponsor roster
+
+The brands designs place with `sponsor` and `sponsor_group`, one row each. Voice is the lettering, chosen so no two brands look like one company; the fonts are OFL families in `assets/fonts`. Checked is the name check and what it found: the web searched for the name alone and with its category (+), and the US trademark register through Trademarkia ("US"). None of it is a legal clearance, and the EU and WIPO registers were not reachable. The owner marks each row yes or no in `livery review --roster`; a yes row is then drawn in `assets/sponsors/<brand>/`.
+
+| Brand | Name | Category | Voice | Mark | Colours | Checked | Status |
+|---|---|---|---|---|---|---|---|
+| fireproof | Fireproof | headline, Nickolaj's own | lowercase pixel letters on the flame's grid, 2 px stems with notched corners (his design system) | pixel flame on a 6×12 grid | #f46200, #ff8000, #ffd500; "proof" #DAD8CE | owned. 2026-10-20: a common word; US: 33 marks (live: Fireproof Studios games, furniture, metal goods, business services), none in motoring | yes |
+| grivant | Grivant | tyres | wide extended heavy caps (Michroma) | a chevron of three tread blocks | yellow #ffcc00 on black | 2026-10-20: web, +tyres: nothing; US: GRIVANTOR (artificial plants, live) | yes |
+| huilec | Huilec | lubricants | heavy italic grotesk caps (Barlow Black Italic) | an oil drop cut by one speed line | green #00843d, red #e4002b | 2026-10-20: web, +oil, +lubricant, +motor: nothing (nearest Hilco, Huiles Berliet); US: nothing | yes |
+| ostrand | Ostrand | brakes | condensed bold caps (Barlow Condensed ExtraBold) | a quarter of a slotted disc | red #d0021b | 2026-10-20: web: Östrand & Hansen AB (Swedish machinery); +brakes: nothing; US: OSTRANDS (kitchen gloves, live) | yes |
+| zentiq | Zentiq | energy drink | squared techno lowercase (Orbitron Black) | an angular bolt shaped like a Z | acid green #b6ff00 on black | 2026-10-20: web, +energy drink: nothing (nearest Zeltiq, Zentiva); US: nothing | yes |
+| corbaux | Corbaux | watches | high-contrast didone caps, wide tracking (Playfair Display) | none | gold #b8975a on black | 2026-10-20: web, +watches: nothing (nearest Corbeaux base layers, Corum); US: nothing | yes |
+| telvio | Telvio | telemetry | monospace lowercase (Space Mono Bold) | three rising bars | blue #1f6feb | 2026-10-20: web, +telemetry: nothing (nearest Televio streaming, Telio); US: nothing | yes |
+| rigmount | Rigmount | sim rigs | stencil caps (Big Shoulders Stencil) | an aluminium-profile cross-section | orange #ff6a13, grey #6b6b6b | 2026-10-20: web: RigMount, a RigWheels camera mount; +sim rig: nothing; US: nothing | yes |
+| brandvik | Brandvik Freight | logistics | slab serif caps (Zilla Slab Bold) | an arrow through a box | navy #12284c | 2026-10-20: web, +logistics: nothing (nearest Bruvik watches); US: nothing | yes |
+| hexmoor | Hexmoor | tools | condensed caps knocked out of a solid bar (Barlow Condensed Bold) | a hex socket | red #e10600 | 2026-10-20: web, +tools: nothing (nearest Hex MCR, HexClad); US: nothing | yes |
+| avelor | Avelor | fuel | geometric medium caps, wide tracking (Jost Medium) | a circle cut by a horizon line | blue #0055a4, orange #ff8200 | 2026-10-20: web, +fuel: nothing (nearest Avelo Airlines, Shell's Avelia aviation fuel); US: AVELOR (cushions, pending) | yes |
+| bellcrest | Bellcrest | coffee | brush script (Kaushan Script) | none | brown #4b2e1e, cream #f3e6cf | 2026-10-20: web: Bellcrest Solutions UK (consultancy); +coffee: nothing; US: nothing | yes |
+| norvane | Norvane | helmets | italic caps with cut letters (Titillium Web Black, slanted) | a visor outline | white, blue #0a3d91 | 2026-10-20: web, +helmets: nothing (nearest Arc'teryx's Norvan line); US: NORVANE (kitchenware, pending) | yes |
+| drexa | Drexa | wheels | blocky letters built from rectangles and quarter circles (drawn, no font) | a five-spoke star | bronze #a0703c | 2026-10-20: web, +wheels: nothing (nearest Durex); US: nothing | yes |
+| altmere | Altmere | insurance | geometric bold lowercase (Jost Bold) | a lowercase a in a circle | dark green #0b4d3b | 2026-10-20: web, +insurance: nothing (nearest Ashmere Insurance, Almere Ltd); US: nothing | yes |

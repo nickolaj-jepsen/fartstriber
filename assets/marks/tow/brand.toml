@@ -1,0 +1,16 @@
+source = "marking"
+large_only = false
+
+[variants.right]
+aspect = 2.1667
+stroke = 0.3133
+counter = 0.14
+ink = 0.792
+approved = "2026-10-21"
+
+[variants.left]
+aspect = 2.1667
+stroke = 0.3133
+counter = 0.14
+ink = 0.7904
+approved = "2026-10-21"

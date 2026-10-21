@@ -1,0 +1,23 @@
+source = "fictional"
+large_only = false
+
+[variants.lockup]
+aspect = 10.171
+stroke = 0.14
+counter = 0.1467
+ink = 0.491
+approved = "2026-10-19"
+
+[variants.wordmark]
+aspect = 7.454
+stroke = 0.14
+counter = 0.1533
+ink = 0.5223
+approved = "2026-10-19"
+
+[variants.mark]
+aspect = 2.367
+stroke = 0.1533
+counter = 0.1467
+ink = 0.4676
+approved = "2026-10-19"
