@@ -10,6 +10,7 @@ What holds:
 - Palette: his Fireproof desktop theme (Flexoki-based). Neutrals: black #100F0F, bg #1C1B1A, bgAlt #282726, ui #343331, uiAlt #403E3C, muted #878580, fgAlt #B7B5AC, paper #DAD8CE, bright paper #F2F0E5. Accent #CF6A4C (terracotta) with its dark container #6B3528. The theme's identity is its warm dark greys, the paper and the terracotta accent.
 - Cool-looking first. No wordmark-led layout and no big type: Fireproof is optional, at most one small discreet mark in one palette colour. The design leads. Small roster sponsors as the raced-car ecosystem, one colour per field.
 - Number zones clear, on one solid field with contrast for the white number; edges clearly cross or avoid seams and shut lines.
+- 21 Oct, at the concept pick: "I'm not sure i like the side-pod \"info-box\" but otherwise it's quite cool". The info-box is the FP-03 / GT3 EVO / T-2048 label plate on the haunch: drop it or make it something he'd want.
 
 ## Concept
 

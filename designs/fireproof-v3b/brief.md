@@ -9,6 +9,8 @@ What holds:
 - Cool-looking first. No wordmark-led layout and no big type: Fireproof is optional, at most one small discreet mark in one palette colour (he disliked the pixel wordmark on the car, 19 Oct). The design leads. Small roster sponsors as the raced-car ecosystem, one colour per field.
 - Number zones clear, on one solid field with contrast for the white number; edges clearly cross or avoid seams and shut lines.
 
+- 21 Oct, at the concept pick: "I like the concept, but not the execution, and not really the cyan either, i get there has to be a \"contrast\" color, but maybe try another?" Asked which, he chose to let the builder try a few from the theme side by side (yellow #D0A215, paper #F2F0E5, purple #8B7EC8, magenta #CE5D97) and pick. No cyan.
+
 References: 34, 32
 
 ## The concept
