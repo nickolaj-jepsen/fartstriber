@@ -155,13 +155,13 @@ Defaults chosen without a question:
 7. **Finishes** (decision 21) — done: `livery kit spec` writes per-preset lookups from the capture's ladders, the lint warns above a finish's reach, and satin is clearcoat 64 (with a full clearcoat it read as gloss).
 8. **Rewrite eva-unit01, eva-nerv and fireproof-v2** on v2. Then `build --all`, the kit review, and re-approval of the finals. Done up to the owner's part: all three pass check on kit v2 (critic v2: eva-unit01 8 and fireproof-v2 8 on baked renders, eva-nerv 7 with its nose waiting on the owner's decision). Left: a sim-shot ship round each when the sim is free, then the kit review and the re-approval.
 
-## Phase 6: Publish
+## Phase 6: Publish — done
 
 - [x] LICENSE (GPL-3.0) and a NOTICE for the Fireproof brand.
 - [x] The owner name from user config everywhere 'Nickolaj' is written today, in code, skills and docs (`livery config show`).
 - [x] Ondura renamed Huilec (awaiting the owner's sponsor review), and name-check evidence in roster.md. Sponsor approval now gates the final review and install, not placement.
 - [x] A README and fork guide: setup, your own replay with `livery sim pick-frame`, kit add, and what to replace in a fork.
-- [ ] A final docs pass, then a new public repo nickolaj-jepsen/fartstriber with the cleaned tree as its root commit. The private repo becomes fartstriber-archive. Checked on 20 Oct: no secrets, iRacing IDs or local paths in the tracked files. Held until no other session works on the current history (the switch replaces main's history), then:
+- [x] A final docs pass, then a new public repo nickolaj-jepsen/fartstriber with the cleaned tree as its root commit. The private repo becomes fartstriber-archive. Checked on 20 Oct: no secrets, iRacing IDs or local paths in the tracked files. Held until no other session works on the current history (the switch replaces main's history), then:
   1. Merge or close every other branch and worktree; `git status` clean on main, CI green.
   2. `gh repo rename fartstriber-archive` (the private repo keeps the full history); `git remote rename origin archive`.
   3. `git checkout --orphan public && git commit -m "Fartstriber v0"` with the GitHub noreply address as the author email (`git config user.email <id>+<login>@users.noreply.github.com`, the id from `gh api user --jq .id`).
