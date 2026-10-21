@@ -31,7 +31,7 @@ max_hidden_detail_share = 0.5            # of a pattern's area where no view see
 # The sim's graphics settings every sim run needs, by section of its rendererDX11Monitor.ini (a replay
 # overrides [Graphics Options] with [Replay Graphics]); a run waits, naming each that differs. Nothing that
 # blurs or shifts the paint on screen, and the car's detail pinned: below the FPS target the LOD percentages
-# let the sim swap in a coarser car mid-capture.
+# let the sim swap in a coarser car mid-capture (the options' Car and World LOD Behavior Off write 100).
 [renderer."Graphics Options"]
 AntiAliasMethod = 0
 Sharpening = 0
@@ -43,6 +43,10 @@ MipLODBias = 0
 CompressTexturesCars = 1
 CarPaint2048x2048 = 1
 EnableHDR = 1
+ShaderQuality = 1                        # as the owner races: shared with driving
+BrightnessAdj = 0
+ContrastAdj = 0
+GammaAdj = 0
 
 [renderer."Replay Graphics"]
 Sharpening = 0
