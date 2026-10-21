@@ -100,3 +100,18 @@ Installed: fireproof-v2, replacing eva-nerv on the car.
 
 ## 2026-10-20: Ondura renamed Huilec
 Context: the lubricants brand he accepted as Ondura is renamed Huilec, because ONDURA is a live registered building-materials mark of Onduline (Ondura Group) and the roster must hold invented names before paints go public (plan decision 6). Same voice, mark idea and colours; the letters are now Barlow's own, and its variants wait for his `livery review --sponsors`.
+
+## 2026-10-21: kit v2, Huilec, race markings, and the v2 finals
+Accepted: kit:mclaren-720s-gt3-evo (v2, refitted from the calibration capture), sponsor:huilec, and the race markings air, e-switch, extinguisher, fuel, jack and tow — no notes.
+Accepted: final:sponsor-roster — no note.
+Accepted: final:eva-unit01, rated 2 — no note. Critic 8/10 (iterate) on sim shots; the adversary's top finding was the flat acid-green plates.
+Accepted: final:eva-nerv, rated 3 — no note. The critic's open fix was the nose, still not the hex display, put to him as his call.
+Accepted: final:fireproof-v2, rated 1 — no note. Critic 8/10 (iterate) on baked renders; the plain yellow front fender stayed, as a kit limit (its islands are too small for a dissolve cell).
+Context: these were re-approvals after the port to library v2 and kit v2.
+
+## 2026-10-21: Zentiq concepts (bolt split, mamba, pixel blocks)
+Context: the brief is the agent's, drawn from his notes and ratings so far, for a new livery through both checkpoints; he had not asked for this car. Six concepts; the critic ranked zentiq-c first, then e, b, d, f and a, and the top three were shown.
+Chosen: concept:zentiq-c, rated 3 — no note. The black and white fields swap sides across the Zentiq Z bolt, traced by an acid-green pinline.
+Chosen: concept:zentiq-b, rated 3 — no note. Paul Miller's dissolve in Zentiq colours, built only from horizontal blocks.
+Edit: concept:zentiq-e, rated 2 — "The line across the top is a bit to straight compare to the more "natural" curves found elsewhere in the design". The acid-green mamba coiled round a black car.
+Context: he took forward every concept shown, so all three are refined: c and b as they are, e with his note.
