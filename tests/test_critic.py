@@ -13,9 +13,9 @@ from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 from tests.conftest import OWNER, TASTE_IDS, checked, sim_run, write_design
-from tests.test_review_critic import verdict
+from tests.test_review_critic import suggestion, verdict
 
-FIX = {"text": "the bonnet is one plain field", "optional": False}
+FIX = suggestion("the bonnet is one plain field")
 
 
 def _digests(ws: Workspace, name: str) -> dict:
@@ -173,7 +173,7 @@ def _two_rounds(ws, *, first=None, second=None, compare=("A", "B"), top_optional
     _run(ws, "d", "20260102-000000")
     critic.pack(ws, ["d"])
     resolved = [{"status": "resolved", "evidence": "front34.png"}]
-    critic.record(ws, "d", second or verdict(previous=resolved, fixes=[{"text": "polish", "optional": True}]))
+    critic.record(ws, "d", second or verdict(previous=resolved, fixes=[suggestion("polish", optional=True)]))
     critic.pack_compare(ws, "d")
     critic.record_compare(ws, "d", {"better": compare[0]}, {"better": compare[1]})
     critic.pack(ws, ["d"], mode="adversary")
@@ -270,7 +270,7 @@ def test_a_round_judges_the_owners_latest_note_until_they_accept_the_final(ws):
 def test_a_design_ships_only_once_the_owners_note_is_resolved_and_the_final_shows_the_judgement(ws, status):
     checked(ws, "d")
     _decide(ws, "edit", NOTE)
-    polish = [{"text": "polish", "optional": True}]
+    polish = [suggestion("polish", optional=True)]
     _two_rounds(
         ws,
         first=verdict(fixes=[FIX], owner_note=_judged("not")),
@@ -297,6 +297,68 @@ def test_a_note_after_the_last_round_keeps_the_design_from_shipping_until_a_roun
     assert not critic.status(ws, "d")["ship"]
     _decide(ws, "accept")
     assert critic.status(ws, "d")["ship"]
+
+
+def test_the_critics_own_fixes_never_hold_the_car_back_from_the_owner(ws):
+    _decide(ws, "edit", NOTE)
+    _two_rounds(
+        ws,
+        first=verdict(fixes=[FIX], owner_note=_judged("not")),
+        second=verdict(
+            previous=RESOLVED, fixes=[suggestion("a fix that matters")], owner_note=_judged("resolved")
+        ),
+    )
+
+    got = critic.status(ws, "d")
+    assert got["ready"]
+    assert not got["holds"]
+    assert not got["ship"]
+    assert got["why"]  # status keeps reporting the critic's own fix
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        verdict(previous=RESOLVED, fixes=[], owner_note=_judged("partly")),
+        verdict(previous=RESOLVED, fixes=[], owner_note=_judged("resolved"), taste=_failing("front-as-back")),
+        verdict(previous=RESOLVED, fixes=[], owner_note=_judged("resolved"), blocked=["the beltline steps"]),
+    ],
+)
+def test_the_owners_note_every_taste_row_and_anything_blocked_hold_the_car_back(ws, second):
+    _decide(ws, "edit", NOTE)
+    _two_rounds(ws, first=verdict(fixes=[FIX], owner_note=_judged("not")), second=second)
+
+    got = critic.status(ws, "d")
+    assert not got["ready"]
+    assert got["holds"]
+    assert set(got["holds"]) <= set(got["why"])
+
+
+ENDORSED = "Mirror marks don't read from any camera"
+
+
+def test_a_suggestion_the_owner_endorsed_is_judged_every_round_until_it_is_resolved(ws):
+    _run(ws, "d", "20260101-000000")
+    item = {"id": "final:d", "kind": "final", "title": "d", "body": "", "images": [], "mix": False}
+    review_apply.apply(ws, [item], {"final:d": {"decision": "edit", "note": "", "endorsed": [ENDORSED]}})
+
+    folder = critic.pack(ws, ["d"])
+
+    entry = json.loads((folder / "manifest.json").read_text())["designs"]["d"]
+    assert json.loads((folder / entry["owner_note"]).read_text())["endorsed"] == [ENDORSED]
+    with pytest.raises(critic.BadVerdict):  # one judgement per endorsed suggestion
+        critic.record(ws, "d", verdict(fixes=[]))
+    with pytest.raises(critic.BadVerdict):  # no note in their words, only the suggestion
+        critic.record(
+            ws, "d", verdict(fixes=[], owner_note=_judged("resolved"), endorsed=[_judged("partly")])
+        )
+    recorded = critic.record(ws, "d", verdict(fixes=[], endorsed=[_judged("partly")]))
+    assert recorded["endorsed"][0]["suggestion"] == ENDORSED
+    assert not critic.status(ws, "d")["ready"]
+
+    critic.pack(ws, ["d"])
+    critic.record(ws, "d", verdict(fixes=[], endorsed=[_judged("resolved")]))
+    assert critic.status(ws, "d")["ready"]
 
 
 def test_bradley_terry_orders_a_tournament_with_an_upset_and_a_tie():

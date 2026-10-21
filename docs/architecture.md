@@ -134,7 +134,7 @@ Outputs go to `.cache/designs/<name>/`: `layers.svg`, `spec.svg`, `paint.png`, `
 - A baked pixel (`livery/bake_render.py`) samples paint and spec at its texel from mips box-filtered in the paint's sRGB values, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder and mixed in linear light, and the sim's number shows from the background frame.
 - A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options, car model, the sim's executable and the track's files), and only after `livery bake check <kit> [designs]` has passed with this renderer. A capture shot before the sim's build was recorded is held against the build its last bake check recorded.
 - Bake check compares baked renders with one real sim run per design, per view in a band within 1.5 px of paint edges and in the rest, overall and per finish. It gates on the p95 per channel, looser along edges; the limits live in `livery.bake`. It covers the finishes of the designs that passed in every view; a design that fails covers none of its finishes, since a metal's glare spreads over its neighbours whatever their finish. A check of other designs adds to the last one's while the renderer and the sim's build are the same. It takes the sim, so it is the session's step, not a builder's.
-- Baked views stand in for a design's sim shots where the capture is checked and fresh and the check covered every finish the build uses: rounds judged on them ship, and the review shows them. `livery bake status --design <name>` says whether they do.
+- Baked views stand in for a design's sim shots where the capture is checked and fresh and the check covered every finish the build uses: rounds judged on them can go back to the owner and ship, and the review shows them. `livery bake status --design <name>` says whether they do.
 - Every `preview sim` of a build they stand in for renders it baked, records the error per view in the run's manifest and telemetry, and warns when it fails the gate.
 
 ## Kits
@@ -282,7 +282,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Pack | Holds |
 |---|---|
-| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note. It refuses a stale check, sim runs of another build and unanswered fixes |
+| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed. It refuses a stale check, sim runs of another build and unanswered fixes |
 | `--baked` | the same, from baked renders, for rounds judged without the sim |
 | `--compare` | this round and the last, as A/B and as B/A, unlabelled |
 | `--adversary` | a round without history or note, for a critic hunting the most boring part |
@@ -290,21 +290,18 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Command | Records in `verdicts.jsonl` |
 |---|---|
-| `critic record` | a round: each of the last round's fixes and the owner's note marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); up to three fixes; iterate or rework; `lint_missed` and `blocked` |
+| `critic record` | a round: each of the last round's fixes, the owner's note and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
 | `critic compare` | better or worse where both orders agree, else same |
 | `critic adversary` | up to three findings, the most boring first |
 | `critic rank --pairs <dir>` | a Bradley-Terry ranking of concepts |
 | `critic answer` | the builder's reply to each fix: done, blocked or skipped |
 
-`critic status` says a design ships only when all of these hold:
+`critic status` computes two bars from the records:
 
-- the last round was judged on sim shots, or on baked renders that stand in for them
-- no fix that isn't optional is open, and nothing is blocked
-- every taste row passes
-- the owner's latest note is resolved
-- the compare with the round before isn't worse
-- the adversary's top finding is optional
-- the design hasn't changed since
+| Bar | Holds when | Means |
+|---|---|---|
+| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
+| `ship` (what fails: `why`) | ready, and no fix that isn't optional is open, the compare with the round before isn't worse, and the adversary's top finding is optional | the critic's whole bar, reported beside the decision |
 
 Two compares in a row that come out the same are a plateau.
 
@@ -314,17 +311,24 @@ Two compares in a row that come out the same are a plateau.
 flowchart TD
   brief["the owner's brief"] --> concepts["livery-concepts<br/>sketches ranked pairwise,<br/>top 3 built, shot in the sim or baked"]
   concepts --> pick{{"concept pick<br/>livery review"}}
-  pick --> refine["livery-refine<br/>builder, sim or bake, critics"]
-  refine -- "not shipped, budget left" --> refine
+  pick -- "each pick, one after another" --> refine["livery-refine<br/>builder, sim or bake, critics"]
+  refine -- "full: not ready, budget left" --> refine
   refine --> final{{"final review<br/>livery review"}}
-  final -- edit --> refine
+  final -- "change: quick or full" --> refine
   final -- accept --> install["install, export"]
   final -- park --> stop["stop"]
 ```
 
 - The owner decides twice, at the concept pick and at the final; the `livery-iterate` skill runs the session.
 - `livery-concepts` (in `.claude/workflows/`) writes concept briefs from different sources and a sketch for each. Critics judge every pair in both orders, and the top three are built and shot in the sim, or baked where the bake stands in.
-- `livery-refine` runs rounds of a fresh builder, the sim and fresh critics until the design ships, or its budget (4 rounds), a blocked fix or a plateau stops it.
+- Each picked concept, a revived sketch included, refines on its own, one after another, and lands as its own final review.
+- `livery-refine` takes the strategy of the owner's Change (a pick is a full round):
+
+  | Strategy | Runs | Stops |
+  |---|---|---|
+  | quick | one builder round on exactly the owner's note and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
+  | full | rounds of a fresh builder (the note first, then the critic's fixes), the sim and fresh critics, a compare from round 2 | at the first of: `critic status` ready, a plateau the fork doesn't break, the budget (4 rounds), a block |
+
   - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.
   - A plateau or a rework call forks three variants once, ranked pairwise against the design. A winning variant is adopted.
 - Both workflows stop before `livery review`, because a workflow takes no input mid-run. Workflow scripts have no shell, so the CLI steps between agents run in small agents.

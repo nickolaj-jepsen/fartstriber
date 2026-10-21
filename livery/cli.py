@@ -864,7 +864,8 @@ def critic_record(design: Design, verdict: Json, as_json: AsJson = False) -> Non
     """Validate a round verdict against the last round and the pack it judged, and record it.
 
     It goes to the design's verdicts.jsonl with its round, the pack's design hash, shots, rubric version
-    and critic model. Ship is computed afterwards, by `critic status`.
+    and critic model. Its fixes are suggestions, {title, detail, where, optional}, the most important
+    first. Whether it goes back to the owner, and whether it ships, are computed by `critic status`.
     """
     from livery import metrics
     from livery.critic import record
@@ -902,12 +903,14 @@ def critic_adversary(design: Design, verdict: Json, as_json: AsJson = False) -> 
 
 @critic_app.command("status")
 def critic_status(design: Design, as_json: AsJson = False) -> None:
-    """Print whether the design ships, and why not, as JSON.
+    """Print whether the design goes back to the owner and whether it ships, and why not, as JSON.
 
-    Ship: the last round has no open fix that isn't optional, nothing blocked, every taste row passing
-    and the owner's latest note resolved, it isn't worse than the round before, and the adversary's top
-    finding is optional.
-    Otherwise the critic's call (iterate or rework) stands.
+    Ready: the last round, on sim shots or baked renders that stand in for them, judged the owner's
+    latest note and every critic suggestion they endorsed resolved, nothing is blocked and every taste
+    row passes; `holds` says what keeps it from that. The critic's own fixes never hold it back.
+    Ship, on top: no open fix that isn't optional, not worse than the round before, and the adversary's
+    top finding optional; `why` lists every reason it doesn't. Otherwise the critic's call (iterate or
+    rework) stands.
     """
     from livery.critic import status
 

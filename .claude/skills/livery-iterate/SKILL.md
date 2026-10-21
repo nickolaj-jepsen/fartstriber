@@ -29,9 +29,13 @@ Send has written every decision to the owner's `prefs/<person>/decisions.jsonl` 
 
 ## 5. Refine
 
-Start `livery-refine` with `{design, budget, note}` for each picked design, one after another: their note verbatim, then each critic suggestion they ticked (`endorsed`) as a line starting `Endorsed from the critic:`. The budget is 1 for a `quick` change and 4 for a `full` one or a pick. Its `stop` says what next:
+Start `livery-refine` with `{design, strategy, note, endorsed}`: their note verbatim, the decision's `strategy` (`quick` or `full`; a pick has none, which is `full`) and the critic suggestions they ticked (`endorsed`), as the review JSON gives them. A quick fix is one round on exactly their note and those suggestions, then back to them; a full round works the critic's fixes too, and goes back to them once their note and every endorsed suggestion are judged resolved and every taste row passes, or at a plateau, four rounds or a block. The critic's own fixes never hold the car back.
 
-- `ship`, or `budget` (four rounds without ship): 6.
+Several picks (a revived sketch among them) refine one after another, each on its own note. As each stops at a review, start that review in the background and go straight on to the next pick's refine: every pick lands as its own final. A Change on one of them refines it after the refine that is running.
+
+Its `stop` says what next:
+
+- `ready`, `quick` (a quick fix whose note isn't resolved yet; give them its `for_owner` lines) or `budget` (four rounds and not ready): 6.
 - `blocked` or `kit`: tell them each `for_owner` line at once, as a proposed kit fix (`kit-calibrate`) or library change. First look for the same fault in the calibration shots in `.cache/kit-review/<kit>/`: if the calibration design shows it too, the kit or the renderer is at fault, not the design. Refine again once they have decided.
 - `character` or `sim`: theirs to answer; refine again after.
 - `plateau`: its `review` is the design beside the fork's variants (a pick, as in 3) or the design alone (a final, as in 6). Refine again with their note (and `adopt: <variant>` when they picked one), unless they race, park or stop it.
@@ -41,7 +45,7 @@ Delete the variant folders it lists under `remove`, and an adopted variant's onc
 
 ## 6. Final review
 
-`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They race it (maybe as a favourite), change it, park it (not now, worth coming back to) or stop it (not worth more work); log it as in 4. A final review needs a checked build, and racing pins exactly that build. On a change, refine again with their note, its strategy and what they ticked. On park or stop, stop; a parked design is picked up again only when they ask.
+`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They race it (maybe as a favourite), change it, park it (not now, worth coming back to) or stop it (not worth more work); log it as in 4. A final review needs a checked build, and racing pins exactly that build. On a change, refine again (5) with their note, its strategy and what they ticked. On park or stop, stop; a parked design is picked up again only when they ask.
 
 ## 7. Install and export
 

@@ -10,7 +10,7 @@ Read before designing:
 1. `references.md`, the rows marked **yes**: the owner's taste anchors. Look at the pictures of the rows your brief names in `.cache/references/<#>/` (`livery references fetch` caches them).
 2. All of the owner's `log.md` (`prefs/<person>/`): what they picked and rejected, in their words.
 3. `rubric.md` next to this file: how every round is judged.
-4. The taste table, `uv run livery taste show`: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design ships only when all of them pass.
+4. The taste table, `uv run livery taste show`: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design goes back to the owner only when all of them pass.
 
 ## The concept brief
 
