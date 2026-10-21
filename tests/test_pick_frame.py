@@ -33,6 +33,8 @@ class Lap(World):
         self.from_group: int | None = None  # the group the camera was on before the last switch
         self.order_matters = False  # the top view frames the car differently after another group
         self.yaw_known = True
+        self.shares: dict[str, float] = {}  # groups that show the car at another share, by name
+        self.shade: list[tuple[str, range]] = []  # groups whose car is in shade, on a range of frames
 
     def group(self) -> str:
         num = self.vars["CamGroupNumber"]
@@ -65,11 +67,15 @@ class Lap(World):
         img = np.zeros((H, W, 3), np.uint8)
         img[:] = (self.vars["CamGroupNumber"] * 20 % 256, 120, 200)
         img[:, ::7] = 30
-        length, height = round(W * self.share), round(W * self.share * 360 / 1507)
+        share = self.shares.get(self.group(), self.share)
+        length, height = round(W * share), round(W * share * 360 / 1507)
         x0, y0 = (W - length) // 2, (H - height) // 2
         if self.order_matters and self.group() == "Top" and self.from_group != self.vars["CamGroupNumber"]:
             x0 += 3
-        img[y0 : y0 + height, max(0, x0) : x0 + length] = (128, 128, 128) if self.grey_left else self.shown
+        frame = self.vars["ReplayFrameNum"]
+        light = 0.6 if any(g == self.group() and frame in f for g, f in self.shade) else 1.0
+        car = (128, 128, 128) if self.grey_left else tuple(round(c * light) for c in self.shown)
+        img[max(0, y0) : y0 + height, max(0, x0) : x0 + length] = car
         self.grey_left = max(0, self.grey_left - 1)
         for group, frames in self.fences:
             if group in self.group() and self.vars["ReplayFrameNum"] in frames:
@@ -144,6 +150,40 @@ def test_the_straightest_frame_every_camera_sees_clearly_is_written_with_the_rep
     assert lap.vars == before  # the replay and camera put back
     assert {name for name, _ in lap.sent} <= ALLOWED
     assert lap.shown == (60, 60, 60)  # and the sim shows the car's own paint again
+
+
+def with_group(lap: Lap, tiny, view: str, group: str) -> None:
+    """The view on a camera group of its own."""
+    lap.info["CameraInfo"]["Groups"].append(
+        {"GroupName": group, "GroupNum": 20 + len(lap.info["CameraInfo"]["Groups"])}
+    )
+    prof = kits.profile(tiny)
+    kits.write_profile(tiny.dir, replace(prof, preview=prof.preview | {view: kits.View(group, ())}))
+
+
+def test_a_close_up_that_shows_part_of_the_car_still_gets_a_frame(lap, ws, tiny):
+    close = next(iter(kits.CLOSE_VIEWS & set(ws.policy.preview)))
+    with_group(lap, tiny, close, "Close")
+    lap.shares["Close"] = 1.4  # the car runs off every side
+
+    report = pick_frame.pick(lap.cfg, ws, tiny, log=lap.logs.append)
+
+    assert "resized" not in report
+    assert kits.profile(tiny).frame in STRAIGHTS[0]
+
+
+def test_a_view_in_another_light_gets_the_clear_frame_that_lights_it_most(lap, ws, tiny):
+    lit = next(iter(pick_frame.LIT & set(ws.policy.preview)))
+    with_group(lap, tiny, lit, "Lit")
+    lap.shade.append(("Lit", STRAIGHTS[0]))
+
+    pick_frame.pick(lap.cfg, ws, tiny, log=lap.logs.append)
+
+    prof = kits.profile(tiny)
+    assert prof.frame in STRAIGHTS[0]
+    assert prof.preview[lit].frame in STRAIGHTS[1]
+    assert prof.shot(lit).frame == prof.preview[lit].frame
+    assert prof.shot("side_l").frame == prof.frame
 
 
 def test_without_a_turn_rate_the_frame_checks_still_pick_a_clear_frame(lap, ws, tiny):

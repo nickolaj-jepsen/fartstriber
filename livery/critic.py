@@ -336,7 +336,7 @@ def _anchors(files: list[Path], dest: Path, folder: Path) -> list[str]:
 
 
 def _shot_set(run: Path, folder: Path, d: Path, crops: dict, views: list[str] | None = None) -> dict:
-    """A sim run's shots copied into d, each with its distance image, and the close crops."""
+    """A sim run's shots copied into d, each whole-car one with its distance image, and the close crops."""
     d.mkdir(parents=True, exist_ok=True)
     rel = d.relative_to(folder).as_posix()
     entry: dict = {"shots": [], "distance": [], "crops": {}}
@@ -345,9 +345,10 @@ def _shot_set(run: Path, folder: Path, d: Path, crops: dict, views: list[str] | 
             continue
         img = Image.open(shot).convert("RGB")
         img.save(d / shot.name)
-        _distance(img).save(d / f"{shot.stem}-distance.png")
         entry["shots"].append(f"{rel}/{shot.name}")
-        entry["distance"].append(f"{rel}/{shot.stem}-distance.png")
+        if shot.stem not in kits.CLOSE_VIEWS:
+            _distance(img).save(d / f"{shot.stem}-distance.png")
+            entry["distance"].append(f"{rel}/{shot.stem}-distance.png")
     for crop_name, (shot, *box) in crops.items():
         src = run / f"{shot}.png"
         if src.exists() and (views is None or shot in views):

@@ -26,7 +26,7 @@ from PIL import Image
 from scipy import ndimage
 
 from livery import graycode, state
-from livery.kit import Kit
+from livery.kit import CLOSE_VIEWS, Kit
 
 PROBE = 8  # texels between the three points of the crease measure: a stroke's width, a letter's stem
 MIN_STEP = 2.0  # screen px: a probe step shorter than this is too foreshortened to show a crease
@@ -130,10 +130,11 @@ def capture_dir(kit_name: str) -> Path | None:
 
 
 def capture_views(run: Path) -> list[str]:
-    """The views a capture decoded, in the order its manifest lists them."""
+    """The views a capture decoded, in the order its manifest lists them, but the close-ups: they would count
+    detail as seen well that every whole-car view blurs."""
     ident = (state.read_json(run / "manifest.json") or {}).get("identity", {})
     views = list(ident.get("views", {})) or sorted(p.parent.name for p in run.glob("*/geometry.npz"))
-    return [v for v in views if (run / v / "geometry.npz").exists()]
+    return [v for v in views if (run / v / "geometry.npz").exists() and v not in CLOSE_VIEWS]
 
 
 def islands(kit: Kit, scale: int) -> np.ndarray:

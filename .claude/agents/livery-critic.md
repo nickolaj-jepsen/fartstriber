@@ -13,8 +13,8 @@ Read the pack folder's `manifest.json` first, then every file it lists, and noth
 
 The images:
 
-- `shots`: sim shots from fixed cameras (front34 low from the front left, side_l and side_r square-on, rear34 high from the rear right, top from above). Judge seams, strokes and type here and in the `crops` (beltline, nose).
-- `distance`: each shot shrunk to 200 px and blown back up: what survives at distance and speed. Judge the 50 m read here and in the `squint`.
+- `shots`: sim shots from fixed cameras, named by view: front34 low from the front left, side_l and side_r square-on, side_r_lit the right side in sunlight, side_high the left side from above, rear34 high from the rear right, top from above, front and rear_chase straight on as a car ahead or behind sees it, and the close-ups door_close and nose_close. Judge seams, strokes and type here, closest in the close-ups and the `crops` (beltline, nose).
+- `distance`: each whole-car shot shrunk to 200 px and blown back up: what survives at distance and speed. Judge the 50 m read here and in the `squint`.
 - `anchors`: pictures of the favourites the brief names. `boring`: shots of two retired designs the owner called "just too boring". Hold the car against both: plainer than its favourites is not done however clean it is, and as plain as the boring ones fails `boring`.
 
 The car carries the sim's own number (451), its door light panel and fixed series decals; `kit.md`, when a design has one, says where the sim draws over this car and what hides its paint. Don't judge those as the design; do judge whether the design leaves them readable and isn't cut by them.

@@ -116,7 +116,15 @@ def identity(cfg: Config, ws: Workspace, kit: Kit, prof: kits.Profile) -> dict:
         "canvas": kit.canvas,
         "paint_folder": kit.paint_folder,
         "frame": prof.frame,
-        "views": {n: {"group": v.group, "pose": list(v.pose), "aim": v.aim} for n, v in prof.preview.items()},
+        "views": {
+            n: {
+                "group": v.group,
+                "pose": list(v.pose),
+                "aim": v.aim,
+                **({"frame": v.frame} if v.frame else {}),
+            }
+            for n, v in prof.preview.items()
+        },
         "replay": {
             "file": r.file,
             "sha256": r.sha256,

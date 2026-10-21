@@ -56,6 +56,10 @@ REPEAT_PCT = 0.5  # percent of a shot that may differ: animated foliage, the win
 # The critic's close crops as shares of the car's box in a view: the beltline along the left side and the
 # nose in the front three-quarter view, as they sit on the McLaren.
 CROPS = {"beltline": ("side_l", (0.26, 0.22, 0.83, 0.80)), "nose": ("front34", (-0.03, 0.34, 0.47, 0.98))}
+MEASURE = ("side_l", "side_r")  # the square-on side views, which measure the car
+# Views shot in another light: at the passing candidate whose white car is brightest in them, not the kit's
+# frame (at the McLaren's frame the sun leaves its right side in shade).
+LIT = frozenset({"side_r_lit"})
 
 
 class NoClearFrame(LiveryError):
@@ -163,6 +167,7 @@ class Seen:
     area: int
     width: int
     height: int
+    bright: float = 0.0  # the white car's median brightness: how much light the view sees on it
 
     @property
     def margin(self) -> float:
@@ -185,25 +190,28 @@ class Seen:
         )
 
 
-def seen(mask: np.ndarray) -> Seen:
+def seen(mask: np.ndarray, white: np.ndarray | None = None) -> Seen:
     h, w = mask.shape
     ys, xs = np.nonzero(mask)
     if not len(xs):
         return Seen(None, 0, w, h)
-    return Seen((int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())), int(mask.sum()), w, h)
+    bright = float(np.median(white[mask].mean(axis=1))) if white is not None else 0.0
+    return Seen((int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())), int(mask.sum()), w, h, bright)
 
 
 def judge(views: dict[str, dict[int, Seen]]) -> dict[int, dict[str, str | None]]:
-    """Per candidate frame and view, what is wrong with the shot, or None."""
+    """Per candidate frame and view, what is wrong with the shot, or None. A close-up shows part of the car,
+    so only whether something covers it counts."""
     out: dict[int, dict[str, str | None]] = {}
     for view, by_frame in views.items():
         clearest = max(x.area for x in by_frame.values())
+        close = view in kits.CLOSE_VIEWS
         for frame, x in by_frame.items():
             if x.box is None or clearest == 0:
                 problem = "the car isn't in the shot"
-            elif x.margin < MARGIN:
+            elif not close and x.margin < MARGIN:
                 problem = "the car runs off the frame"
-            elif x.off_centre > CENTRE:
+            elif not close and x.off_centre > CENTRE:
                 problem = "the car is off-centre"
             elif x.area < CLEAR * clearest:
                 problem = f"something covers {100 * (1 - x.area / clearest):.0f}% of the car"
@@ -213,12 +221,23 @@ def judge(views: dict[str, dict[int, Seen]]) -> dict[int, dict[str, str | None]]
     return out
 
 
+def lit_frame(
+    view: str,
+    frames: list[int],
+    problems: dict[int, dict[str, str | None]],
+    by_view: dict[str, dict[int, Seen]],
+) -> int | None:
+    """The candidate frame that shows `view`'s white car brightest of those that show it clearly."""
+    clear = [f for f in frames if problems[f][view] is None]
+    return max(clear, key=lambda f: by_view[view][f].bright) if clear else None
+
+
 def measured(views: dict[str, View], seen_by_view: dict[str, list[Seen]]) -> CarSize | None:
     """The car's size from the side views' shots, the median over the frames given."""
     sizes = [
         cameras.size_seen(x.box[2] - x.box[0] + 1, x.box[3] - x.box[1] + 1, x.width, views[v].pose)
         for v, xs in seen_by_view.items()
-        if v in views and v.startswith("side_")
+        if v in views and v in MEASURE
         for x in xs
         if x.box is not None
     ]
@@ -257,7 +276,9 @@ def resized(kit: Kit, prof: kits.Profile, size: CarSize) -> kits.Profile:
     for name, v in prof.preview.items():
         if name in old_preview and (not v.pose or _same(v, *old_preview[name])):
             pose, aim = new_preview[name]
-            preview[name] = View(cameras.group_name(kit.name, name, pose, aim), pose, aim)
+            preview[name] = replace(
+                v, group=cameras.group_name(kit.name, name, pose, aim), pose=pose, aim=aim
+            )
         else:
             preview[name] = v
     return replace(prof, preview=preview, car=size)
@@ -317,14 +338,15 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
             s.reload(Shot(picked[0][0].frame, views[names[0]].group))
             for x, _ in picked:
                 for name in names:
-                    img = s.shoot(f"{x.frame}_{name}", Shot(x.frame, views[name].group), check_ui=True)
+                    shot = Shot(x.frame, views[name].group, name not in kits.FILLED_VIEWS)
+                    img = s.shoot(f"{x.frame}_{name}", shot, check_ui=True)
                     if colour:
                         white[x.frame, name] = img
                         continue
-                    lit = white.pop((x.frame, name))
-                    mask = paint_mask(lit, img)
-                    by_view[name][x.frame] = seen(mask)
-                    _half(lit).save(s.out / f"{x.frame}_{name}.png")
+                    shown = white.pop((x.frame, name))
+                    mask = paint_mask(shown, img)
+                    by_view[name][x.frame] = seen(mask, shown)
+                    _half(shown).save(s.out / f"{x.frame}_{name}.png")
                     Image.fromarray(mask).save(s.out / f"{x.frame}_{name}_paint.png")
             log(f"shot the {'white' if colour else 'black'} car")
     problems = judge(by_view)
@@ -335,8 +357,9 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         }
         for x, sc in picked
     }
-    passing = [(x, sc) for x, sc in picked if not any(problems[x.frame].values())]
-    sides = [n for n in names if n.startswith("side_")]
+    main = [n for n in names if n not in LIT]
+    passing = [(x, sc) for x, sc in picked if not any(problems[x.frame][n] for n in main)]
+    sides = [n for n in names if n in MEASURE]
     size = measured(views, {n: [by_view[n][x.frame] for x, _ in (passing or picked)] for n in sides})
     cut = any(all(problems[x.frame][n] == "the car runs off the frame" for x, _ in picked) for n in names)
     current = cameras.car_size(prof)
@@ -357,7 +380,7 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
     elif not passing:
         _save(s.out, report)
         reasons = "; ".join(
-            f"{x.frame}: " + ", ".join(f"{n} {p}" for n, p in problems[x.frame].items() if p)
+            f"{x.frame}: " + ", ".join(f"{n} {p}" for n, p in problems[x.frame].items() if p and n in main)
             for x, _ in picked
         )
         raise NoClearFrame(f"no candidate frame shows the car clearly from every camera ({reasons}); {s.out}")
@@ -365,9 +388,12 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         best, _ = min(passing, key=lambda c: (c[1], sum(by_view[n][c[0].frame].off_centre for n in sides)))
         report["frame"] = best.frame
         log(f"frame {best.frame} on replay {sub} at {track}")
+        lit = {n: lit_frame(n, [x.frame for x, _ in picked], problems, by_view) for n in names if n in LIT}
+        for n, f in lit.items():
+            report.setdefault("lit", {})[n] = f
+            log(f"{n}: frame {f}" if f else f"{n}: no candidate shows it clearly; leave it out of the views")
         if write:
             prof = kits.profile(kit)
-            crops = prof.crops or _crops({n: by_view[n][best.frame] for n in names})
             kits.write_profile(
                 kit.dir,
                 replace(
@@ -375,7 +401,8 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
                     replay=int(sub),
                     frame=best.frame,
                     track_name=None if sub == cfg.replay.subsession else track,
-                    crops=crops,
+                    crops=_crops({n: by_view[n][best.frame] for n in names}),
+                    preview={n: replace(v, frame=lit[n]) if n in lit else v for n, v in prof.preview.items()},
                 ),
             )
             report["written"] = str(kit.dir / kits.PROFILE)

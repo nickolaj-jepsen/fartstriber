@@ -30,6 +30,36 @@ group = "Preview Top"
 pose = [0.0, -2.1788935686914543, 25.40486745229364, 1.5707963267948966, 1.4835298641951802, 0.2]
 aim = 0.0
 
+[preview.rear_chase]
+group = "mclaren-720 Rear Chase 0d64"
+pose = [-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157]
+aim = 0.1744
+
+[preview.front]
+group = "mclaren-720s-gt3 Front f067"
+pose = [12.0, 0.0, 0.587, -3.141592653589793, 0.0489, 0.2114]
+aim = 0.179
+
+[preview.side_high]
+group = "mclaren-720s Side High 0ecb"
+pose = [1.3873836630459428e-15, 22.657694675916247, 11.065456543517486, -1.5707963267948968, 0.4363323129985824, 0.188]
+aim = 0.1227
+
+[preview.door_close]
+group = "mclaren-720 Door Close 5c54"
+pose = [2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367]
+aim = 0.0
+
+[preview.nose_close]
+group = "mclaren-720 Nose Close 152d"
+pose = [6.45, 0.0, 0.237, -3.141592653589793, 0.0367, 0.4581]
+aim = -0.031
+
+[preview.side_r_lit]
+group = "mclaren-720 Side R Lit 8fc1"
+pose = [0.0, -25.0, 0.5, 1.5707963267948966, 0.0, 0.2]
+aim = 0.27
+
 [crops]
 beltline = ["side_l", 520, 430, 1360, 600]
 nose = ["front34", 290, 380, 850, 650]

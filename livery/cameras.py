@@ -70,6 +70,7 @@ def preview_poses(size: CarSize = REF) -> dict[str, tuple[tuple[float, ...], flo
     car. The top view leans to the right, so the car lies along the screen, nose right; front34 is low from the front
     left, rear34 high from the rear right."""
     d, z, aim = _rig(size)
+    s, up = scale(size), size.height / REF.height
     return {
         "side_l": ((0.0, d, z, -math.pi / 2, 0.0, FOV), aim),
         "side_r": ((0.0, -d, z, math.pi / 2, 0.0, FOV), aim),
@@ -79,7 +80,25 @@ def preview_poses(size: CarSize = REF) -> dict[str, tuple[tuple[float, ...], flo
         ),
         "front34": (_around(40, 8, 0.24, d, z), 0.0),
         "rear34": (_around(-140, 30, 0.24, d, z), 0.0),
+        "side_high": (_around(90, 25, 0.188, d, z), 0.1227 * up),
+        "side_r_lit": ((0.0, -d, z, math.pi / 2, 0.0, FOV), aim),
+        **{name: (_scaled(pose, s), a * up) for name, (pose, a) in NEAR.items()},
     }
+
+
+# Views nearer than D, posed on the McLaren's geometry from its capture (docs/sim.md, Camera sets): behind
+# and ahead at a driver's eye height, and close-ups of the left door and the nose. Their aims sit between
+# the field's two readings (a raised aim point, or a tilt), so either frames the car.
+NEAR = {
+    "rear_chase": ((-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157), 0.1744),
+    "front": ((12.0, 0.0, 0.587, -math.pi, 0.0489, 0.2114), 0.179),
+    "door_close": ((2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367), 0.0),
+    "nose_close": ((6.45, 0.0, 0.237, -math.pi, 0.0367, 0.4581), -0.031),
+}
+
+
+def _scaled(pose: tuple[float, ...], s: float) -> tuple[float, ...]:
+    return (*(c * s for c in pose[:3]), *pose[3:])
 
 
 PREVIEW = preview_poses()
@@ -107,7 +126,7 @@ def _filled(views: dict[str, View], defaults: dict[str, tuple[tuple[float, ...],
         if v.pose:
             out[name] = v
         elif name in defaults:
-            out[name] = View(v.group, *defaults[name])
+            out[name] = replace(v, pose=defaults[name][0], aim=defaults[name][1])
         else:
             raise CameraSetError(f"the {name} view has no pose, and there is no default one")
     return out
@@ -382,10 +401,16 @@ def armed(docs: Path, track: str, running: Callable[[], bool], log=print, poll_s
 def preview_views(kit: Kit, names: Sequence[str]) -> dict[str, View]:
     """The kit's preview views `names` (the policy's), each with its pose and aim."""
     prof = kits.profile(kit)
-    missing = [n for n in names if n not in prof.preview]
+    defaults = preview_poses(car_size(prof))
+    missing = [n for n in names if n not in prof.preview and n not in defaults]
     if missing:
-        raise kits.KitError(f"{kit.name}'s profile has no preview view {', '.join(missing)}")
-    views = _filled({n: prof.preview[n] for n in names}, preview_poses(car_size(prof)))
-    if any(views[n] != prof.preview[n] for n in names):
+        raise kits.KitError(
+            f"{kit.name}'s profile has no preview view {', '.join(missing)}, nor a default one"
+        )
+    new = {
+        n: View(group_name(kit.name, n, *defaults[n]), *defaults[n]) for n in names if n not in prof.preview
+    }
+    views = _filled({n: prof.preview.get(n) or new[n] for n in names}, defaults)
+    if any(views[n] != prof.preview.get(n) for n in names):
         kits.write_profile(kit.dir, replace(prof, preview=prof.preview | views))
     return views

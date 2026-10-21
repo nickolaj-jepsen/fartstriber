@@ -31,6 +31,20 @@ def test_a_profile_without_poses_is_filled_with_the_defaults(ws):
     assert cameras.preview_views(kit, ws.policy.preview)["side_l"] == moved  # a pose the profile has is used
 
 
+def test_a_view_the_profile_lacks_is_added_on_its_default_pose_in_a_group_of_its_own(ws):
+    kit = kits.load(ws, "tiny")
+    prof = kits.profile(kit)
+    kits.write_profile(kit.dir, replace(prof, preview={"side_l": View("Side", ())}))
+
+    views = cameras.preview_views(kit, ["side_l", "rear_chase"])
+
+    assert views["rear_chase"].pose
+    assert views["rear_chase"].group not in {"Side", ""}
+    assert kits.profile(kit).preview["rear_chase"] == views["rear_chase"]
+    with pytest.raises(kits.KitError):
+        cameras.preview_views(kit, ["side_l", "no_such_view"])
+
+
 def track_camera_set(groups: dict[str, list[tuple[str, int]]]) -> bytes:
     """A track set with these groups, each a list of (camera name, type)."""
     recs = []

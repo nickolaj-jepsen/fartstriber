@@ -548,6 +548,18 @@ def test_a_shot_with_the_replay_ui_over_the_car_is_taken_again_then_refused(worl
     run(world, lambda s: s.shoot("side", SIDE, check_ui=True), log=cursor_leaves)  # gone by the retake
 
 
+def test_a_view_whose_car_fills_the_ui_bands_is_judged_by_the_cursor_alone(world):
+    filled = replace(SIDE, bands_clear=False)
+    run(world, lambda s: s.shoot("side", filled, check_ui=True))
+    world.ui = True  # the bands change, as a new paint changes them where the car fills them
+
+    run(world, lambda s: s.shoot("side", filled, check_ui=True))
+
+    world.cursor = True
+    with pytest.raises(simsession.UIOverCar):
+        run(world, lambda s: s.shoot("side", filled, check_ui=True))
+
+
 def test_without_a_reference_a_shot_is_refused_while_the_cursor_is_over_the_sim(world):
     world.cursor = True
 

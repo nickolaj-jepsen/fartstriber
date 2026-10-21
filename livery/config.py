@@ -34,6 +34,8 @@ class ConfigError(LiveryError):
 class Shot:
     frame: int  # replay frame from the start of the file: exact, unlike a session-time search
     group: str
+    # The car stays out of the replay UI's bands, so a clean shot's bands show whether the UI is up.
+    bands_clear: bool = True
 
 
 @dataclass(frozen=True)

@@ -41,6 +41,10 @@ MAPS = "maps.json"
 PROFILE = "profile.toml"
 APPROVAL = "approved.json"
 REVIEW = "review.yaml"
+# Preview views that show part of the car, close up: the frame pick judges them clear, not whole.
+CLOSE_VIEWS = frozenset({"door_close", "nose_close"})
+# Preview views whose car reaches into the replay UI's bands: their UI check watches the cursor instead.
+FILLED_VIEWS = CLOSE_VIEWS | {"front", "rear_chase"}
 FIT_REPORT = "fit-report.json"
 NOT_INPUTS = (
     PROFILE,
@@ -198,6 +202,7 @@ class View:
     group: str
     pose: tuple[float, ...]  # x forward, y left, z up (metres from the car's origin), yaw, pitch, FOV (rad)
     aim: float = 0.0  # a preview camera's field 9: how far its aim point is raised
+    frame: int | None = None  # a replay frame of its own (another light), else the profile's
 
 
 @dataclass(frozen=True)
@@ -223,7 +228,8 @@ class Profile:
             raise KitError(f"the kit's profile has no preview view {view}")
         if self.frame is None:
             raise KitError("the kit's profile has no frame yet: livery sim pick-frame <kit> picks one")
-        return Shot(self.frame, self.preview[view].group)
+        v = self.preview[view]
+        return Shot(self.frame if v.frame is None else v.frame, v.group, view not in FILLED_VIEWS)
 
     def shots(self, views) -> dict[str, Shot]:
         return {v: self.shot(v) for v in views}
@@ -232,7 +238,12 @@ class Profile:
 def _views(raw: dict) -> dict[str, View]:
     """Views by name; one without a pose gets the default one `preview cameras` sizes for the car."""
     return {
-        name: View(str(v["group"]), tuple(float(x) for x in v.get("pose", ())), float(v.get("aim", 0.0)))
+        name: View(
+            str(v["group"]),
+            tuple(float(x) for x in v.get("pose", ())),
+            float(v.get("aim", 0.0)),
+            int(v["frame"]) if "frame" in v else None,
+        )
         for name, v in raw.items()
     }
 
@@ -300,6 +311,8 @@ def write_profile(kit_dir: Path, prof: Profile) -> None:
         lines += ["", f"[preview.{name}]", f"group = {_toml(v.group)}"]
         if v.pose:
             lines += [f"pose = {_toml(list(v.pose))}", f"aim = {_toml(v.aim)}"]
+        if v.frame is not None:
+            lines.append(f"frame = {v.frame}")
     if prof.crops:
         lines += ["", "[crops]", *(f"{k} = {_toml(list(v))}" for k, v in prof.crops.items())]
     (kit_dir / PROFILE).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")

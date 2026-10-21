@@ -415,16 +415,17 @@ class SimSession:
 
     def _clear_of_ui(self, name: str, shot: Shot, img: np.ndarray) -> np.ndarray:
         """The UI is up when the bands differ from this view's clean reference; without a reference yet,
-        when the cursor is over the sim window. The first clean shot becomes the reference."""
-        path = self._reference(shot, img)
-        ref = np.asarray(Image.open(path).convert("RGB")) if path.exists() else None
+        when the cursor is over the sim window. The first clean shot becomes the reference. A view whose car
+        reaches into the bands changes them with every paint, so there only the cursor tells."""
+        path = self._reference(shot, img) if shot.bands_clear else None
+        ref = np.asarray(Image.open(path).convert("RGB")) if path and path.exists() else None
         for retake in (False, True):
             if ref is not None:
                 ui = capture.changed_share(ui_bands(img), ref) > UI_SHARE
             else:
                 ui = bool(self.window.cursor_over())
             if not ui:
-                if ref is None:
+                if ref is None and path:
                     path.parent.mkdir(parents=True, exist_ok=True)
                     Image.fromarray(ui_bands(img)).save(path)
                 return img
