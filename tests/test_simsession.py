@@ -21,7 +21,7 @@ from livery.config import Shot
 from livery.iracing import SimNotReady
 from livery.preview_sim import preview_sim
 from livery.raster import tga_bytes
-from tests.conftest import write_design
+from tests.conftest import SIM_WINDOW, write_design
 
 ALLOWED = {
     "cam_set_state",
@@ -32,7 +32,7 @@ ALLOWED = {
 }
 FOLDER = "tiny"  # the conftest kit's paint folder
 SIDE, TOP = Shot(100, "Side"), Shot(100, "Top")
-H, W = 90, 160
+W, H = SIM_WINDOW
 STOCK = (60, 60, 60)  # what the car shows without a paint file
 
 
@@ -86,6 +86,10 @@ class World:
         self.violations: list[str] = []  # broadcasts sent while the sim was in front
         self.logs: list[str] = []
         self.grabs = 0
+        self.size = (W, H)  # the window's client size, which the frames have
+        self.unsizable: str | None = None  # why the window can't be resized: maximised, fullscreen
+        self.takes_size = True
+        self.resizes: list[tuple[int, int]] = []
         self.on_grab = lambda n: None
         self.grey_left = 0
         self.shown = self.on_disk()
@@ -113,7 +117,7 @@ class World:
     def render(self) -> np.ndarray:
         self.grabs += 1
         self.on_grab(self.grabs)
-        img = np.zeros((H, W, 3), np.uint8)
+        img = np.zeros((self.size[1], self.size[0], 3), np.uint8)
         img[:] = (self.vars["CamGroupNumber"] * 20 % 256, 120, 200)  # what each camera sees around the car
         img[:, ::7] = 30
         img[30:60, 40:120] = (128, 128, 128) if self.grey_left else self.shown
@@ -178,6 +182,19 @@ class FakeWindow:
 
     def cursor_over(self):
         return self.world.cursor
+
+    def client_size(self):
+        return self.world.size
+
+    def unsizable(self, width, height):
+        return self.world.unsizable
+
+    def set_client_size(self, width, height):
+        if self.world.front:
+            self.world.violations.append("resize")
+        self.world.resizes.append((width, height))
+        if self.world.takes_size:
+            self.world.size = (width, height)
 
 
 class FakeCapture:
@@ -395,6 +412,94 @@ def test_a_sim_that_stays_in_front_is_never_driven(world):
     assert world.sent == []
 
 
+OTHER = (W + 20, H)  # the owner's window size, not the run's
+
+
+def test_a_run_gives_the_sim_window_its_size_and_puts_the_owners_back(world):
+    world.size = OTHER
+    shots = []
+
+    run(world, lambda s: shots.append(s.shoot("side", SIDE)), window=(W, H))
+
+    assert shots[0].shape[:2] == (H, W)
+    assert world.size == OTHER
+    assert world.violations == []
+
+
+def test_the_owners_window_size_comes_back_when_a_run_fails(world):
+    world.size = OTHER
+
+    def body(s):
+        s.shoot("side", SIDE)
+        raise RuntimeError("the run broke")
+
+    with pytest.raises(RuntimeError):
+        run(world, body, window=(W, H))
+
+    assert world.size == OTHER
+
+
+def test_a_window_that_cant_be_resized_is_refused_and_left_alone(world):
+    world.size, world.unsizable = OTHER, "it is maximised"
+
+    with pytest.raises(SimNotReady, match=f"{W}x{H}"):
+        run(world, window=(W, H))
+
+    assert world.resizes == []
+    assert world.sent == []
+
+
+def test_a_window_that_doesnt_take_the_size_is_tried_once_and_waited_for(world):
+    world.size, world.takes_size = OTHER, False
+
+    with pytest.raises(SimNotReady):
+        run(world, window=(W, H), ready_timeout=0.1)
+
+    assert world.resizes == [(W, H)]
+    assert world.sent == []
+
+
+def test_a_window_the_owner_brought_forward_keeps_the_runs_size(world):
+    world.size = OTHER
+
+    def body(s):
+        s.shoot("side", SIDE)
+        world.front = True
+
+    run(world, body, window=(W, H))
+
+    assert world.size == (W, H)
+    assert world.violations == []
+
+
+def test_a_window_resized_during_a_run_stops_it_and_keeps_the_new_size(world):
+    world.size = OTHER
+
+    def body(s):
+        s.shoot("side", SIDE)
+        world.size = (W + 40, H)
+        s.shoot("top", TOP)
+
+    with pytest.raises(capture.CaptureError):
+        run(world, body, window=(W, H))
+
+    assert world.size == (W + 40, H)
+    assert world.resizes == [(W, H)]
+
+
+def test_a_preview_never_shoots_at_another_window_size(world, ws, monkeypatch):
+    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
+    run_build(ws, "d")
+    monkeypatch.setattr(simsession, "READY_WAIT_S", 0.0)
+    world.size, world.unsizable = OTHER, "it is fullscreen"
+
+    with pytest.raises(SimNotReady):
+        preview_sim(world.cfg, ws, "d", log=world.logs.append)
+
+    assert world.grabs == 0
+    assert list(world.folder.iterdir()) == []
+
+
 def test_the_sim_is_left_as_it_was_found(world):
     before = dict(world.vars)
 
@@ -537,8 +642,13 @@ def test_the_window_is_only_ever_read(monkeypatch):
     w.minimised()
     w.cursor_over()
     w.client_box(100, 50)
+    w.unsizable(100, 50)
 
     reads = {
+        "IsZoomed",
+        "GetWindowLongW",
+        "MonitorFromWindow",
+        "GetMonitorInfoW",
         "GetForegroundWindow",
         "GetWindowThreadProcessId",
         "IsIconic",
@@ -551,3 +661,89 @@ def test_the_window_is_only_ever_read(monkeypatch):
     }
     assert rec.calls
     assert set(rec.calls) <= reads
+
+
+class Desktop:
+    """user32 and dwmapi for one window on a 2560x1440 monitor, with a frame 8 px wide and a 31 px title bar."""
+
+    FRAME = (8, 31, 8, 8)  # left, top, right, bottom
+
+    def __init__(self, x=100, y=100, w=1600, h=900, style=capture.WS_CAPTION, zoomed=False):
+        self.pos, self.client, self.style, self.zoomed = (x, y), (w, h), style, zoomed
+        self.flags: list[int] = []
+
+    @staticmethod
+    def _fill(rect, l, t, r, b):  # noqa: E741
+        rect.left, rect.top, rect.right, rect.bottom = l, t, r, b
+
+    def _outer(self, ref):
+        (x, y), (w, h), (fl, ft, fr, fb) = self.pos, self.client, self.FRAME
+        self._fill(ref._obj, x, y, x + fl + w + fr, y + ft + h + fb)
+        return 1
+
+    def GetClientRect(self, hwnd, ref):
+        self._fill(ref._obj, 0, 0, *self.client)
+        return 1
+
+    def GetWindowRect(self, hwnd, ref):
+        return self._outer(ref)
+
+    def DwmGetWindowAttribute(self, hwnd, attr, ref, size):
+        self._outer(ref)
+        return 0
+
+    def SetWindowPos(self, hwnd, after, x, y, cx, cy, flags):
+        self.flags.append(flags)
+        fl, ft, fr, fb = self.FRAME
+        self.client = (cx - fl - fr, cy - ft - fb)
+        return 1
+
+    def GetWindowThreadProcessId(self, hwnd, ref):
+        return 1
+
+    def IsIconic(self, hwnd):
+        return 0
+
+    def IsZoomed(self, hwnd):
+        return int(self.zoomed)
+
+    def GetWindowLongW(self, hwnd, index):
+        return self.style
+
+    def MonitorFromWindow(self, hwnd, flags):
+        return 1
+
+    def GetMonitorInfoW(self, monitor, ref):
+        self._fill(ref._obj.rcMonitor, 0, 0, 2560, 1440)
+        return 1
+
+
+def on_desktop(monkeypatch, **kw) -> tuple[Desktop, capture.Window]:
+    d = Desktop(**kw)
+    monkeypatch.setattr(capture, "user32", d)
+    monkeypatch.setattr(capture, "dwmapi", d)
+    return d, capture.Window(1)
+
+
+def test_a_resize_keeps_the_window_where_it_is_and_behind_other_windows(monkeypatch):
+    d, w = on_desktop(monkeypatch)
+
+    assert w.unsizable(1780, 992) is None
+    w.set_client_size(1780, 992)
+
+    assert w.client_size() == (1780, 992)
+    assert d.pos == (100, 100)
+    no_move, no_zorder, no_activate, no_owner_zorder = 0x0002, 0x0004, 0x0010, 0x0200
+    assert d.flags
+    assert all(f & no_move and f & no_zorder and f & no_activate and f & no_owner_zorder for f in d.flags)
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [{"zoomed": True}, {"style": 0}, {"x": 900}, {"x": 0, "y": 0, "w": 2544, "h": 1401}],
+    ids=["maximised", "borderless", "wouldn't fit", "fullscreen"],
+)
+def test_only_a_normal_window_that_fits_may_be_resized(monkeypatch, kw):
+    _d, w = on_desktop(monkeypatch, **kw)
+
+    assert w.unsizable(1780, 992)
