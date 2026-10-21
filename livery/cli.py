@@ -771,7 +771,7 @@ def critic_pack(
         bool,
         typer.Option(
             "--baked",
-            help="A middle round: baked renders of the checked build in place of sim shots. Never ships.",
+            help="Baked renders of the checked build in place of sim shots.",
         ),
     ] = False,
     as_json: AsJson = False,
@@ -788,8 +788,8 @@ def critic_pack(
 
     --baked, with a round, --compare or --adversary, packs baked renders of the checked build from the kit's
     calibration capture (once it passed livery bake check) in place of sim shots, marked as baked in the
-    manifest and in the verdict: a middle round of the autonomous loop. `critic status` never ships a round
-    judged on them.
+    manifest and in the verdict. `critic status` ships a round judged on them only where they stand in for
+    sim shots: that check covered every finish the build uses (`livery bake status --design`).
     """
     from livery import critic
 
@@ -929,18 +929,24 @@ def references_fetch(as_json: AsJson = False) -> None:
 @bake_app.command("check")
 def bake_check(
     car: Annotated[str, typer.Argument(help="The kit whose calibration capture is checked.")],
-    design: Annotated[
-        str | None, typer.Argument(help="A design to check as well as the kit's calibration fixture.")
+    designs: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Designs to check as well as the kit's calibration fixture, such as one per finish."
+        ),
     ] = None,
     as_json: AsJson = False,
 ) -> None:
-    """Hold the bake against the sim: render the calibration fixture (and a design) baked, shoot each build
-    with one real preview sim run, and compare them outside a 2 px band along the silhouette.
+    """Hold the bake against the sim: render the calibration fixture (and the designs) baked, shoot each
+    build with one real preview sim run, and compare them outside a 2 px band along the silhouette.
 
-    Prints the median and p95 per channel at each view, writes a side by side and an error picture per
-    design into the capture's check/ folder, and records the result in the capture's manifest. Fails if any
-    view's p95 is over 12. Builders and middle critic rounds use baked views only after a check passed.
-    Queues behind any other sim run; never takes focus.
+    Prints the median and p95 per channel at each view, along paint edges and away from them, writes a side
+    by side and an error picture per design into the capture's check/ folder, and records the result in the
+    capture's manifest with the sim's build and the finishes it covers (those of the designs that passed),
+    beside an earlier check's other designs. Fails if any view is over the
+    gate (livery.bake: MAX_P95 away from edges, MAX_EDGE_P95 along them). Baked views stand in for a
+    design's sim shots only after a check with this renderer passed and covered every finish the design
+    uses. Queues behind any other sim run; never takes focus.
     """
     from livery import bake, config, kit
     from livery.designs import kit_name, script
@@ -948,24 +954,28 @@ def bake_check(
     ws = Workspace()
     k = kit.load(ws, car)
     fixture = "calibration"  # designs/calibration: the calibration livery, for the kit it names
-    designs = (
+    names = (
         [fixture]
         if (ws.design_dir(fixture) / "design.py").exists() and kit_name(script(ws, fixture)) == car
         else []
     )
-    designs += [design] if design and design not in designs else []
-    if not designs:
+    names += [d for d in dict.fromkeys(designs or []) if d not in names]
+    if not names:
         raise typer.BadParameter(f"the calibration fixture is drawn for another kit: name a design on {car}")
-    result = bake.check(config.load(), ws, k, designs, log=_progress(as_json))
+    result = bake.check(config.load(), ws, k, names, log=_progress(as_json))
     text = [
-        f"{name} {view}: median {s['median']}, p95 {s['p95']}"
+        f"{name} {view}: p95 {s['p95']}, along edges {s['edge']['p95']}, away {s['rest']['p95']}"
         for name, r in result["designs"].items()
         for view, s in r["views"].items()
     ]
     text += [f"pictures: {r['pictures']['side_by_side']}" for r in result["designs"].values()]
     worst = result["worst"]
     verdict = "passed" if result["passed"] else "failed"
-    text.append(f"{verdict}: the worst p95 is {worst['p95']} ({worst.get('design')} {worst.get('view')})")
+    text.append(
+        f"{verdict}: worst {worst.get('design')} {worst.get('view')}, p95 {worst['p95']} away from edges "
+        f"(gate {bake.MAX_P95}), {worst['edge_p95']} along them (gate {bake.MAX_EDGE_P95})"
+    )
+    text.append(f"finishes covered: {', '.join(result['covered']) or 'none'}")
     _emit(as_json, result, text)
     if not result["passed"]:
         raise typer.Exit(1)
@@ -977,16 +987,17 @@ def bake_status(
     design: Annotated[str | None, typer.Option(help="The kit this design is drawn for.")] = None,
     as_json: AsJson = False,
 ) -> None:
-    """Whether the kit's calibration capture can bake previews: what changed since it was shot, and its last
-    bake check. `checked` is true when baked views may be used."""
+    """Whether the kit's calibration capture can bake previews: what changed since it was shot, its last
+    bake check and the finishes it covered. `checked` is true when baked views may be used in a builder's
+    loop. With --design, `usable` is true when that design's checked build may be judged and reviewed on
+    baked views instead of sim shots: the check covered every finish it uses."""
     from livery import bake, config, kit
-    from livery.designs import kit_name, script
 
     ws = Workspace()
     if (car is None) == (design is None):
         raise typer.BadParameter("name a kit, or pass --design")
-    k = kit.load(ws, car or kit_name(script(ws, str(design))))
-    found = bake.status(config.load(), ws, k)
+    cfg = config.load()
+    found = bake.design_status(cfg, ws, design) if design else bake.status(cfg, ws, kit.load(ws, str(car)))
     check = found["check"] or {}
     text = [
         f"capture: {found['capture'] or 'none'}",
@@ -998,8 +1009,16 @@ def bake_status(
             if check
             else "none"
         ),
-        f"baked views usable: {'yes' if found['checked'] else 'no'}",
+        f"finishes covered: {', '.join(found['covered']) or 'none'}",
+        f"baked views usable: {'yes' if found['checked'] else 'no'}"
+        + (f" ({found['why']})" if found["why"] else ""),
     ]
+    if design:
+        why = "; ".join(found["usable_why"])
+        text.append(f"{design} uses: {', '.join(found['finishes'] or []) or 'unknown'}")
+        text.append(
+            f"baked views stand in for {design}'s sim shots: {'yes' if found['usable'] else f'no ({why})'}"
+        )
     _emit(as_json, found, text)
 
 

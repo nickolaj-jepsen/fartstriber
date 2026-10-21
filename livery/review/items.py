@@ -25,13 +25,35 @@ def _rel(ws: Workspace, p: Path) -> str:
     return p.resolve().relative_to(ws.root.resolve()).as_posix()
 
 
+def _baked(ws: Workspace, name: str, built: dict[str, str] | None) -> Path | None:
+    """A baked run of the design's checked build (the one with these digests, for a final), where baked
+    views stand in for its sim shots (`livery.bake.run_usable`); else None."""
+    from livery import bake
+    from livery.check import checked_build
+
+    try:
+        out, stored = checked_build(ws, name)
+        if built and any(stored["digests"].get(k) != built.get(k) for k in stamps.SHOWN):
+            return None
+        kit = kits.load(ws, kit_name(script(ws, name)))
+        cfg = config.load()
+        if bake.usable(cfg, ws, kit, []):
+            return None
+        outputs = {f: (out / f).read_bytes() for f in stamps.SHOWN}
+        run = bake.baked_run(cfg, ws, name, kit, outputs)
+        return None if bake.run_usable(cfg, ws, kit, run) else run
+    except LiveryError:
+        return None
+
+
 def _previews(
     ws: Workspace, name: str, built: dict[str, str] | None
-) -> tuple[dict[Path, str], str, Path | None]:
-    """The sim shots, in policy.toml's view order, then the flat pictures, of the build with these digests (a
+) -> tuple[dict[Path, str], str, Path | None, Path | None]:
+    """The shots, in policy.toml's view order, then the flat pictures, of the build with these digests (a
     final) or of the design as it stands (a concept, maybe unchecked), each with its caption; a line for the
-    body when the sim shots are of something else; and the sim run shown. A stale flat preview is rendered
-    again; sim shots can't be, so they are shown and marked."""
+    body when the shots are of something else; and the sim run and the baked run shown. Sim shots of the
+    build come first; without them, baked views where they stand in for sim shots, captioned as baked. A
+    stale flat preview is rendered again; sim shots can't be, so they are shown and marked."""
     from livery import preview_flat
 
     if built:
@@ -43,20 +65,29 @@ def _previews(
         if not stamps.of_version(stamps.read(folder / stamps.STAMP), now):
             preview_flat.flat(ws, name)
         run = stamps.latest_of_version(ws, name, now)
+    baked = _baked(ws, name, built) if run is None else None
     note = ""
-    if run is None and (runs := stamps.runs(ws, name)):
+    if baked is not None:
+        note = (
+            f"The car shots are baked from {kit_name(script(ws, name))}'s calibration capture, not shot in "
+            f"the sim; livery preview sim {name} shoots this build.\n\n"
+        )
+    elif run is None and (runs := stamps.runs(ws, name)):
         run = runs[-1]
         note = (
             f"The sim shots ({run.name}) are of another build than this one; livery preview sim {name} "
             "shoots this one.\n\n"
         )
     views = ws.policy.preview
+    shown = baked or run
     shots = sorted(
-        run.glob("*.png") if run else [],
+        (p for p in shown.glob("*.png") if not baked or p.stem in views) if shown else [],
         key=lambda p: (views.index(p.stem) if p.stem in views else len(views), p.stem),
     )
+    kind = "baked" if baked else "sim"
     flat = {"views.png": "flat views", "car.png": "iRacing UI car", "squint.png": "flat squint"}
-    return {p: f"{p.stem} · sim" for p in shots} | {folder / f: c for f, c in flat.items()}, note, run
+    pictures = {p: f"{p.stem} · {kind}" for p in shots} | {folder / f: c for f, c in flat.items()}
+    return pictures, note, run, baked
 
 
 THEN_AND_NOW = Path("diff") / "reviewed-vs-now.png"  # in the design's .cache folder
@@ -68,7 +99,7 @@ def _when(at: str) -> str:
 
 
 def _then_and_now(ws: Workspace, name: str, then: Path, now: Path) -> Path | None:
-    """The sim shots of run `then` beside run `now`'s at half size, a row per view both shot."""
+    """The shots of run `then` beside run `now`'s (sim or baked) at half size, a row per view both shot."""
     views = [v for v in ws.policy.preview if (then / f"{v}.png").exists() and (now / f"{v}.png").exists()]
     if not views:
         return None
@@ -111,8 +142,9 @@ def _last_time(
     ws: Workspace, name: str, run: Path | None, design_hash: str | None
 ) -> tuple[str, Path | None, dict]:
     """What opens a design's item when the ledger has a decision on it: that decision (date, decision, the
-    note verbatim), their latest note if it had none, the critic's judgement of that note, and the sim
-    shots they saw then beside the ones shown now (none once the old run is gone from .cache)."""
+    note verbatim), their latest note if it had none, the critic's judgement of that note, and the car
+    shots (sim or baked) they saw then beside the ones shown now (none once the old run is gone from
+    .cache)."""
     from livery.review.apply import decisions_on, latest_note
 
     lines = decisions_on(ws, name)
@@ -121,7 +153,9 @@ def _last_time(
     last, note = lines[-1], latest_note(ws, name)
     said = f", with the note:\n{last['note']}" if last.get("note", "").strip() else ", with no note"
     text = f"{config.owner()}'s last decision, {_when(last['at'])}: {last['decision']}{said}\n\n"
-    fields: dict = {"last_decision": {k: last.get(k) for k in ("at", "decision", "note", "runs")}}
+    fields: dict = {
+        "last_decision": {k: last.get(k) for k in ("at", "decision", "note", "runs", "baked_run")}
+    }
     if note:
         if note["at"] != last["at"]:
             text += f"Their latest note, {_when(note['at'])} ({note['decision']}):\n{note['note']}\n\n"
@@ -136,12 +170,14 @@ def _last_time(
             text += "No critic round has judged that note yet.\n\n"
         fields["owner_note"] = {k: note.get(k) for k in ("at", "decision", "note")} | {"judged": judged}
     then = next((ws.out(name) / "sim" / r for r in last.get("runs") or []), None)
+    if then is None and last.get("baked_run"):
+        then = ws.out(name) / "baked-runs" / last["baked_run"]
     picture = None
     if run is not None and then is not None and then.is_dir():
-        if then.name == run.name:
-            text += "The sim shots are the ones they saw then.\n\n"
+        if then == run:
+            text += "The car shots are the ones they saw then.\n\n"
         elif picture := _then_and_now(ws, name, then, run):
-            text += "The first picture is the sim shots they saw then | now, a view per row.\n\n"
+            text += "The first picture is the car shots they saw then | now, a view per row.\n\n"
     return text, picture, fields
 
 
@@ -163,7 +199,7 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
         if kind == "final" and pin:
             kits.require_approved(ws, kit_name(script(ws, name)))
         shown = approvals.pin_of(ws, name) if kind == "final" and pin else None
-        pictures, note, run = _previews(ws, name, shown["digests"] if shown else None)
+        pictures, note, run, baked = _previews(ws, name, shown["digests"] if shown else None)
         brief = ws.design_dir(name) / "brief.md"
         body = note + (brief.read_text(encoding="utf-8") if brief.exists() else "")
         if shown:
@@ -196,9 +232,9 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
                     + body
                 )
         design_hash = shown["design_hash"] if shown else (stamps.hashes(ws, name) or {}).get("design_hash")
-        since, picture, fields = _last_time(ws, name, run, design_hash)
+        since, picture, fields = _last_time(ws, name, baked or run, design_hash)
         if picture:
-            pictures = {picture: "sim then | now"} | pictures
+            pictures = {picture: "then | now"} | pictures
         captions = {_rel(ws, p): c for p, c in pictures.items() if p.exists()}
         item = {
             "id": f"{kind}:{name}",
@@ -211,6 +247,7 @@ def design_items(ws: Workspace, names: list[str], pin: bool = True) -> list[dict
             "park": True,
             "rate": True,
             "runs": [run.name] if run else [],
+            "baked_run": baked.name if baked else None,
             **fields,
         }
         if shown:

@@ -124,8 +124,8 @@ def _design_record(ws: Workspace, name: str, item: dict) -> dict:
 
 
 def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], review: str) -> str:
-    """Appends every decision to the ledger, the owner's note verbatim, and for a design the sim runs its
-    item showed."""
+    """Appends every decision to the ledger, the owner's note verbatim, and for a design the sim runs (or
+    the baked run) its item showed."""
     lines = []
     for item_id, d in decisions.items():
         kind, _, key = item_id.partition(":")
@@ -143,6 +143,8 @@ def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], r
             line["title"] = by_id.get(item_id, {}).get("title")
         if kind in DESIGNS:
             line["runs"] = by_id.get(item_id, {}).get("runs", [])
+            if baked := by_id.get(item_id, {}).get("baked_run"):
+                line["baked_run"] = baked
             line |= _design_record(ws, key, by_id.get(item_id, {}))
         lines.append(json.dumps(line) + "\n")
     path = ws.root / LEDGER

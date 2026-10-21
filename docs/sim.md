@@ -148,18 +148,29 @@ The McLaren's PSD is 2048×2048, RGB, 8-bit, with 51 layers. The top view sits i
 
 - A capture of the five preview views (`kit capture`: 18 geometry and 35 ladder paints, each a sim run with its own reload) takes about 12 minutes, 11–18 s a paint. It keeps 114 MB once decoded.
 - A bake renders the five views in about 5 s (3.5 s with one isotropic sample), after 5 s to load the capture.
-- Baked against one preview sim run of the same build, outside a 2 px silhouette band, p95 per view (R/G/B):
+- Baked against one preview sim run of the same build (eva-unit01 20261020-230326, fireproof-v2 20261020-222516, both pure gloss), outside a 2 px silhouette band, p95 per view (R/G/B), within 1.5 px of a paint edge (17–35% of the pixels compared) and away from edges:
 
-  | View | calibration fixture | fireproof-v2 | fireproof-v2, isotropic | materials |
+  | View | eva-unit01, edge | eva-unit01, away | fireproof-v2, edge | fireproof-v2, away |
   |---|---|---|---|---|
-  | front34 | 2/2/2 | 7/8/2 | 22/14/2 | 13/12/11 |
-  | side_l | 2/1/2 | 6/8/2 | 8/8/2 | 35/33/60 |
-  | side_r | 1/1/1 | 3/2/1 | 4/3/1 | 3/4/4 |
-  | rear34 | 1/1/1 | 5/3/1 | 10/6/2 | 5/5/5 |
-  | top | 2/2/2 | 6/6/2 | 6/7/2 | 11/9/8 |
+  | front34 | 17/10/4 | 4/7/3 | 16/11/3 | 5/7/2 |
+  | side_l | 14/10/4 | 4/7/4 | 19/12/3 | 5/8/2 |
+  | side_r | 6/4/2 | 2/2/2 | 8/6/2 | 2/2/1 |
+  | rear34 | 9/6/3 | 3/4/3 | 11/7/2 | 4/3/1 |
+  | top | 10/8/4 | 4/6/4 | 13/8/3 | 5/4/1 |
 
-- The median error is 0 on the fixture and 1–2 on fireproof-v2 (dense pixel-block dissolves) and on the materials fixture in every view. Two sim runs of each of the first two builds gave the same numbers.
-- The `materials` fixture puts every spec preset on black, grey, white, red and blue fields, each with thin bars, pinstripes and type. Per finish, p95 per view (R/G/B):
+- The median error is 1–2 per channel; the calibration fixture's wide flat bands bake to a p95 of 1–2. Two sim runs of one build differ by a p95 of 1. Almost every error over 24 levels sits within 1.5 px of a paint edge: per-pixel registration noise of up to a texel, which no uniform sub-texel shift of the uv removes (the best shift is 0). On metallic and chrome, soft halos around highlights remain; dense metallic patterns of random colour are the worst case.
+- The sim filters its paint in the texture's own sRGB values, not in linear light. Mips box-filtered and sampled in sRGB against linear light, within 1.5 px of a paint edge, p95 (R/G/B) and the share of pixels more than 24 levels off; away from edges nothing changes:
+
+  | View | eva-unit01, linear | eva-unit01, sRGB | fireproof-v2, linear | fireproof-v2, sRGB |
+  |---|---|---|---|---|
+  | front34 | 27/18/5, 8.7% | 17/10/4, 4.1% | 31/20/3, 7.9% | 16/11/3, 3.6% |
+  | side_l | 21/16/5, 6.0% | 14/10/4, 2.1% | 27/17/3, 6.1% | 19/12/3, 3.4% |
+  | side_r | 10/6/3, 1.3% | 6/4/2, 1.1% | 12/8/2, 1.4% | 8/6/2, 1.4% |
+  | rear34 | 17/11/4, 3.5% | 9/6/3, 1.8% | 22/12/2, 4.4% | 11/7/2, 1.9% |
+  | top | 17/13/5, 3.9% | 10/8/4, 1.3% | 26/13/3, 5.7% | 13/8/3, 1.7% |
+
+- Rounding the paint to RGB565 (the sim's BC1 compression keeps its endpoint colours at 16 bits) doesn't model the sim. Away from edges it cuts fireproof-v2's mean error 1.3 to 1.0, but raises eva-unit01's blue p95 from 3–4 to 5–6 in four views. Per flat colour it moves some away from what the sim shows: blue 63 (eva-unit01's green) rounds to 57 and bakes 4.4 levels too dark against 0.8 unrounded, and grey 71 rounds to 66, 4.3 against 0.8 too dark. BC1 holds those exactly between two 565 endpoints (63 is 57 + 2/3 of the step to 66). An approximate BC1 block encoder didn't help either.
+- With linear-light mips, the `materials` fixture (every spec preset on black, grey, white, red and blue fields, each with thin bars, pinstripes and type) baked to these p95 per finish and view (R/G/B):
 
   | View | gloss | satin | matte | metallic | chrome |
   |---|---|---|---|---|---|
@@ -178,8 +189,7 @@ The McLaren's PSD is 2048×2048, RGB, 8-bit, with 51 layers. The top view sits i
 
 - Away from edges, gloss, satin and matte fields match to a p95 of 1–6 in every view but side_l, and metallic and chrome fields to 2–5 in side_r and rear34.
 - The rest is the sun's highlights on metal: the left door (side_l), the bonnet and roof edge (top), the front wing (front34). The sim spreads their glare over the cells around them, whatever their finish: a gloss red field beside the left door's highlight is p95 39 too blue. A white metallic field, itself a ladder step, shows 32 levels darker (R) in the sim than baked there, where the ladder's all-white car lit glare of its own. The bake reads each pixel's light from its own texel, so it can't show light that depends on the paint around it.
-- Thin lines along paint edges remain on every finish.
-- One isotropic sample at the mip of the footprint's long axis blurs the oblique three-quarter views. Filtering as a GPU does (the short axis's mip, taps along the long axis) brings them in line with the rest.
+- One isotropic sample at the mip of the footprint's long axis blurs the oblique three-quarter views (fireproof-v2 front34 p95 22/14/2 against 7/8/2 filtered as a GPU does). Filtering as a GPU does (the short axis's mip, taps along the long axis) brings them in line with the rest.
 
 ## Fitting from the preview views
 
@@ -200,6 +210,7 @@ From a fit of the McLaren's capture (`kit fit`, 20261020-100748):
 | TV cameras | a camera's aim depends on the view before, even on the exact frame, so shots don't repeat |
 | Session-time seeks | they drift by up to 12 frames |
 | One colour model for the whole car (output = B + A·h(albedo), A and B from white and black paints per material) | p95 about 20 overall and 36–41 on metallic |
+| The sun's glare on metal in the offline bake: Gaussian blurs (σ 2–256 px) of each metal's highlight energy, the ladder's own glare taken out (McLaren capture 20261020-100748, `materials` fixture shots) | The glare is per channel and centres on a few sun glints, but the ladder can't give their energy. The hottest clip at every step, black metal included. A uniform paint's glare scales with its grey like its shading does, so the kernel can't be fitted on the ladder. Fitted on the fixture's own shots, side_l's far-field metallic p95 rose from 74 to 77–94, and side_r's metallic (p95 2) broke to 26–60. Measuring it would take a capture that paints one glint's island metal over matte black, per glint and view |
 | Extra camera names in the car set | rejected, and the pointer cleared |
 | Levelling car-locked side shots on the sill | the sill is already level to within its own noise (about 0.5°); a fitted line adds that noise as a tilt, so the two sides disagree by 6–14 px instead of 0.6–1.5 |
 | The customer ID in the replay file's header | it has no fixed offset |

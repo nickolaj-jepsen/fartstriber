@@ -5,7 +5,8 @@ legacy concept ranking. `pack_compare` puts this round's shots beside the last r
 and `pack_pairs` puts concepts side by side two at a time in both orders, because a judge compares far
 more reliably than it scores and favours whichever comes first. A pack shows only shots of the checked
 build: sim shots, or with `baked` renders from the kit's calibration capture once it passed bake check
-(livery.bake), for the autonomous middle rounds; a round judged on baked renders never ships. The `record*`
+(livery.bake). A round judged on baked renders ships only where they stand in for sim shots: the check
+covered every finish the build uses, and the capture and renderer are still the checked ones. The `record*`
 functions validate the critic's JSON and append it to the design's verdicts.jsonl (a concept ranking to
 each concept's), the one verdict store; `status` computes ship from those records, so ship is never the
 critic's own word. `answer` stores the builder's reply to each fix, which the next round's pack shows the
@@ -194,7 +195,21 @@ def _baked(ws: Workspace, name: str, built: Path, stored: dict) -> Path:
     if stamps.digests(outputs) != {k: stored["digests"].get(k) for k in stamps.SHOWN}:
         raise StaleShots(f"{name}'s TGAs aren't the checked build's; run livery build {name}")
     kit = kits.load(ws, kit_name(script(ws, name)))
-    return bake.critic_run(config.load(), ws, name, kit, outputs)
+    return bake.baked_run(config.load(), ws, name, kit, outputs)
+
+
+def _baked_why(ws: Workspace, name: str, shots: str | None) -> list[str]:
+    """Why the baked run a round judged can't stand in for sim shots; empty when it can."""
+    from livery import bake
+
+    run = ws.root / shots if shots else None
+    if run is None or not run.is_dir():
+        return [f"its baked run {shots} is gone"]
+    try:
+        kit = kits.load(ws, kit_name(script(ws, name)))
+    except LiveryError as e:
+        return [str(e)]
+    return bake.run_usable(config.load(), ws, kit, run)
 
 
 def _previous_run(ws: Workspace, name: str, current: Path) -> Path:
@@ -715,7 +730,8 @@ def record_adversary(ws: Workspace, name: str, verdict: dict) -> dict:
 
 
 def status(ws: Workspace, name: str) -> dict:
-    """Ship, computed from the records: the last round was judged on sim shots, not baked renders; it
+    """Ship, computed from the records: the last round was judged on sim shots, or on baked renders that
+    stand in for them (`livery.bake.run_usable`); it
     leaves no open fix that isn't optional (its own, or one of the round before it didn't resolve), nothing
     blocked and no failing taste row; it judged the owner's latest note resolved; it is not worse than the
     round before; and the adversary's top finding on the same shots is optional. Otherwise the critic's call
@@ -736,10 +752,11 @@ def status(ws: Workspace, name: str) -> dict:
         return out
     if last.get("baked"):
         out["baked"] = True
-        why.append(
-            f"judged on baked renders: the round that ships is judged on sim shots (livery preview sim {name},"
-            f" then livery critic pack {name})"
-        )
+        why += [
+            f"judged on baked renders that can't stand in for sim shots ({w}): the round that ships is judged "
+            f"on sim shots (livery preview sim {name}, then livery critic pack {name})"
+            for w in _baked_why(ws, name, last.get("shots"))
+        ]
     now = _hash_now(ws, name)
     if now and last.get("design_hash") and now != last["design_hash"]:
         why.append("the design changed since the last round")

@@ -131,8 +131,11 @@ Outputs go to `.cache/designs/<name>/`: `layers.svg`, `spec.svg`, `paint.png`, `
 | Sim | `preview sim` | `sim/<time>/`: one shot per preview view (The sim) |
 
 - Every preview records the build it shows: TGA digests, design and toolchain hashes, and the `--set` values. A final review, an approval or a critic pack takes only previews of the checked build: a stale `flat/` is rendered again, but stale sim shots can't be.
-- A baked pixel samples paint and spec at its texel from linear-light mips, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder, and the sim's number shows from the background frame.
-- A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options and car model), and only after `livery bake check <kit> [design]` has passed. Bake check compares baked renders with one real sim run and passes when the p95 of every channel in every view is 12 or less. It takes the sim, so it is the session's step, not a builder's. `livery bake status` says whether baked views are usable.
+- A baked pixel (`livery/bake_render.py`) samples paint and spec at its texel from mips box-filtered in the paint's sRGB values, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder and mixed in linear light, and the sim's number shows from the background frame.
+- A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options, car model, the sim's executable and the track's files), and only after `livery bake check <kit> [designs]` has passed with this renderer. A capture shot before the sim's build was recorded is held against the build its last bake check recorded.
+- Bake check compares baked renders with one real sim run per design, per view in a band within 1.5 px of paint edges and in the rest, overall and per finish. It gates on the p95 per channel, looser along edges; the limits live in `livery.bake`. It covers the finishes of the designs that passed in every view; a design that fails covers none of its finishes, since a metal's glare spreads over its neighbours whatever their finish. A check of other designs adds to the last one's while the renderer and the sim's build are the same. It takes the sim, so it is the session's step, not a builder's.
+- Baked views stand in for a design's sim shots where the capture is checked and fresh and the check covered every finish the build uses: rounds judged on them ship, and the review shows them. `livery bake status --design <name>` says whether they do.
+- Every `preview sim` of a build they stand in for renders it baked, records the error per view in the run's manifest and telemetry, and warns when it fails the gate.
 
 ## Kits
 
@@ -205,7 +208,7 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
 | Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
 
-- `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken.
+- `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken, then measures the bake against the shots (Previews).
 - A shot with the replay UI over the car (drawn while the cursor is over the sim) is taken again once, then refused.
 - `livery sim status` reports what the next run would find, without sending the sim anything.
 
@@ -246,14 +249,14 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 | 1–4 | rate a design: done with it, fine, would race, love it |
 | Shift+A | accept every undecided reference, roster row or brand |
 
-- A design item shows its sim shots in view order, then the flat views, the UI's car and the squint.
+- A design item shows the build's sim shots in view order (without them, its baked views where they stand in, captioned as baked), then the flat views, the UI's car and the squint.
 - It opens with the owner's last decision and note on that design, the critic's judgement of the note, and `diff/reviewed-vs-now.png`.
 - The critic's scores and call never reach the page, so they can't anchor the owner.
 
 Apply runs in the checkout that queued the group:
 
 1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, and brand and marking approvals. These come first, so a final that places a brand accepted in the same review can be pinned.
-2. It appends every decision to `prefs/decisions.jsonl`: the note verbatim, the rating, the sim runs shown, the design hash, and the critic's verdict on that hash.
+2. It appends every decision to `prefs/decisions.jsonl`: the note verbatim, the rating, the sim runs (or baked run) shown, the design hash, and the critic's verdict on that hash.
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
 It prints the decisions as JSON, and the agent writes `prefs/log.md` from them in the owner's words (lines starting `Context:` are the agent's).
@@ -275,7 +278,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 | Pack | Holds |
 |---|---|
 | Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note. It refuses a stale check, sim runs of another build and unanswered fixes |
-| `--baked` | the same, from baked renders, for the autonomous middle rounds |
+| `--baked` | the same, from baked renders, for rounds judged without the sim |
 | `--compare` | this round and the last, as A/B and as B/A, unlabelled |
 | `--adversary` | a round without history or note, for a critic hunting the most boring part |
 | `--pairs c1 c2 …` | one pack per ordered pair of concepts: flat views, `car.png`, squint, brief |
@@ -290,7 +293,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 `critic status` says a design ships only when all of these hold:
 
-- the last round was judged on sim shots
+- the last round was judged on sim shots, or on baked renders that stand in for them
 - no fix that isn't optional is open, and nothing is blocked
 - every taste row passes
 - the owner's latest note is resolved
@@ -304,9 +307,9 @@ Two compares in a row that come out the same are a plateau.
 
 ```mermaid
 flowchart TD
-  brief["the owner's brief"] --> concepts["livery-concepts<br/>sketches ranked pairwise,<br/>top 3 built and shot in the sim"]
+  brief["the owner's brief"] --> concepts["livery-concepts<br/>sketches ranked pairwise,<br/>top 3 built, shot in the sim or baked"]
   concepts --> pick{{"concept pick<br/>livery review"}}
-  pick --> refine["livery-refine<br/>builder, sim, critics"]
+  pick --> refine["livery-refine<br/>builder, sim or bake, critics"]
   refine -- "not shipped, budget left" --> refine
   refine --> final{{"final review<br/>livery review"}}
   final -- edit --> refine
@@ -315,9 +318,9 @@ flowchart TD
 ```
 
 - The owner decides twice, at the concept pick and at the final; the `livery-iterate` skill runs the session.
-- `livery-concepts` (in `.claude/workflows/`) writes concept briefs from different sources and a sketch for each. Critics judge every pair in both orders, and the top three are built and shot in the sim.
+- `livery-concepts` (in `.claude/workflows/`) writes concept briefs from different sources and a sketch for each. Critics judge every pair in both orders, and the top three are built and shot in the sim, or baked where the bake stands in.
 - `livery-refine` runs rounds of a fresh builder, the sim and fresh critics until the design ships, or its budget (4 rounds), a blocked fix or a plateau stops it.
-  - Once the kit has passed bake check, middle rounds use baked renders; the last round uses sim shots.
+  - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.
   - A plateau or a rework call forks three variants once, ranked pairwise against the design. A winning variant is adopted.
 - Both workflows stop before `livery review`, because a workflow takes no input mid-run. Workflow scripts have no shell, so the CLI steps between agents run in small agents.
 - A `livery-builder` owns the design named on its prompt's first line (`design: <name>`). Its hooks refuse writes outside `designs/<name>/` and the scratchpad, and shell commands other than the livery CLI, `uv run` and git. It is sent back once if it changed a file outside `designs/`.
