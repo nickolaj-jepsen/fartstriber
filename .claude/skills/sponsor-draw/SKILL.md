@@ -9,7 +9,7 @@ A brand is a folder: its `draw.py`, the one-colour SVG variants it writes (`word
 
 ## Where it goes
 
-- A roster brand is a yes row in `assets/sponsors/roster.md`, drawn in `assets/sponsors/<brand>/`, in a sponsor session, never a design session.
+- A roster brand is a row in `assets/sponsors/roster.md`, drawn in `assets/sponsors/<brand>/`, in a sponsor session, never a design session. Write the row (status blank) and draw it; the owner judges the name and the drawing together in `livery review --sponsors`, one tile per brand: fine makes the row a yes and approves the variants, no turns the row down and keeps the drawing for a redraw. There is no separate roster review.
 - A design's own themed brand goes in `designs/<name>/sponsors/<brand>/`; it is found before the roster and needs no approval. One worth reusing is proposed to the owner as a roster row.
 
 ## Draw

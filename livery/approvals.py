@@ -177,6 +177,7 @@ def compare(ws: Workspace, name: str, digests: dict[str, str]) -> dict:
         changed = _changed(before, after)
         area = car if car is not None and car.shape == changed.shape else np.ones_like(changed)
         result[f"{picture.split('.')[0]}_changed"] = round(float(changed[area].mean()), 4)
+        result[f"{picture.split('.')[0]}_moved_px"] = int(changed[area].sum())
         if picture == "paint.png":
             diff = ws.out(name) / "diff" / "approved-vs-now.png"
             _diff_picture(before, after, changed & area, diff)
@@ -206,6 +207,45 @@ def standings(ws: Workspace) -> dict[str, dict]:
                 row["needs_approval"] = left
         report[name] = row
     return report
+
+
+CARRIED_BY = {
+    "kit",
+    "assets",
+    "toolchain",
+    "policy",
+}  # a library or kit change; the design's own files aren't
+
+
+def carries(row: dict) -> bool:
+    """Whether a design `standings` reports as changed keeps its approval: only a library or kit change moved
+    it, no channel of any car pixel in its paint or spec moved more than TOLERANCE, and it places nothing
+    unapproved."""
+    return (
+        row.get("status") == "changed"
+        and set(row.get("changed_by") or ["?"]) <= CARRIED_BY
+        and row.get("paint_moved_px") == 0
+        and row.get("spec_moved_px") == 0
+        and not row.get("needs_approval")
+    )
+
+
+def carry(ws: Workspace, name: str) -> tuple[dict, dict]:
+    """Moves the design's approval onto its checked build on disk, keeping who approved it, when and their
+    note; the approval before and after."""
+    old = load_approval(ws, name)
+    if old is None:
+        raise NotApproved(f"{name} has no approval to carry")
+    record = old | pin_of(ws, name)
+    keep = _pictures(ws, name, record["digests"])
+    keep.mkdir(parents=True, exist_ok=True)
+    fresh = stamps.shows(stamps.of_flat(ws, name), record["digests"])
+    for rel in PICTURES:
+        src = ws.out(name) / rel
+        if src.exists() and (fresh or not rel.startswith("flat/")):
+            shutil.copy2(src, keep / Path(rel).name)
+    _path(ws, name).write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
+    return old, record
 
 
 def failing(report: dict[str, dict]) -> list[str]:

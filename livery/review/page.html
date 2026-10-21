@@ -170,6 +170,37 @@
   .ask { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--fav); border-radius: 8px; font-size: 13px; }
   .chip { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--muted); margin-left: 4px; }
 
+  /* Library */
+  .lfil { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .lfil button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 13px; cursor: pointer; }
+  .lfil button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .lfil input { width: min(260px, 100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
+  .lsec { margin-top: 22px; }
+  .lsec h3 { font-size: 16px; margin: 0 0 8px; display: flex; gap: 8px; align-items: baseline; }
+  .lsec h3 span { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+  .lcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .lcard img, .lcard .noimg { width: 100%; border-radius: 6px; display: block; aspect-ratio: 16/9; object-fit: cover; background: var(--shot); }
+  .lcard .noimg { background: var(--sunk); border: 1px dashed var(--line); display: grid; place-items: center; font-size: 12px; color: var(--muted); }
+  .lcard img.sheet { object-fit: contain; background: #fff; }
+  .lcard .t { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; }
+  .lcard .t code { font: 600 13px var(--mono); }
+  .lcard .meta { font-size: 12px; color: var(--muted); }
+  .lcard .lf { font-size: 12.5px; color: var(--muted); }
+  .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 4px; padding: 1px 6px; border: 1px solid; flex: none; font-weight: 600; color: var(--muted); }
+  .state.s-on-your-car, .state.s-approved { color: var(--race); }
+  .state.s-held, .state.s-changed { color: var(--no); }
+  .state.s-stopped, .state.s-parked { color: var(--stop); }
+  .state.s-live { color: var(--fav); }
+  .state.s-in-work, .state.s-revived, .state.s-to-review, .state.s-to-draw { color: var(--accent); }
+  .lcard .acts { display: flex; gap: 6px; }
+  .lcard .acts button { flex: 1; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 4px; cursor: pointer; font-size: 13px; }
+  .lcard .conf { font-size: 12.5px; border: 1px solid var(--change); border-radius: 6px; padding: 6px 8px; }
+  .lcard .conf textarea { margin-top: 6px; min-height: 40px; font-size: 13px; }
+  .lcard .conf .row { margin-top: 6px; }
+  .lcard .conf button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+  .lcard .conf label { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
+
   @media (max-width: 900px) {
     .focus, .cmpfoot { grid-template-columns: 1fr; }
     .rail { position: static; }
@@ -204,7 +235,8 @@ async function post(path, body) {
 
 // ---------- State ----------
 let S = { groups: [], owner: "" };
-let screen = location.hash.slice(1) || null;  // a group id, or "history"
+let screen = location.hash.slice(1) || null;  // a group id, "library" or "history"
+const PAGES = ["library", "history"];
 const local = {};  // per group and item: what this page shows that the server needn't know (view, flick, timeline point)
 const L = (gid, id) => (local[gid + "|" + id] ||= { view: null, when: "now", point: -1 });
 let sig = "";
@@ -224,30 +256,35 @@ async function poll() {
   const w = waiting();
   $("count").textContent = w.filter((g) => g.status === "waiting").length || "";
   document.title = (w.length ? `(${w.length}) ` : "") + "Review";
-  if (!screen || (screen !== "history" && !S.groups.some((g) => g.id === screen))) screen = w[0]?.id || "history";
+  if (!screen || (!PAGES.includes(screen) && !S.groups.some((g) => g.id === screen))) screen = w[0]?.id || "library";
   const now = JSON.stringify([screen, S.groups.map((g) => [g.id, g.status, Object.entries(g.decisions).map(([k, d]) => [k, d.decision, d.favourite, d.revived, (d.endorsed || []).length]), g.items.map((i) => !!i.critic)])]);
   renderTabs();
   if (now !== sig) { sig = now; render(); }
 }
 
-function go(s) { screen = s; location.hash = s; sig = ""; poll(); }
+function go(s) {
+  if (s === "history") H = null;  // read again on every visit: a Send or a Library change may have written since
+  if (s === "library") LIB = null;
+  screen = s; location.hash = s; sig = ""; poll();
+}
 
 function renderTabs() {
   const LABEL = { focus: "Final", compare: "Concepts", grid: "" };
   const tabs = waiting().map((g) => {
     const first = g.items[0];
-    const k = g.layout === "focus" ? (first.kind === "kit" ? "Kit" : "Final") : g.layout === "compare" ? "Concepts" : (first.kind[0].toUpperCase() + first.kind.slice(1) + "s");
+    const k = g.layout === "focus" ? (first.kind === "kit" ? "Kit" : first.still ? "Still OK?" : first.again ? "Again" : "Final") : g.layout === "compare" ? "Concepts" : (first.kind[0].toUpperCase() + first.kind.slice(1) + "s");
     const name = g.layout === "focus" ? first.title : `${g.items.filter((i) => !i.sketch).length}`;
     const st = g.status === "waiting" ? "" : `<span class="st">${esc(g.status)}</span>`;
     return `<button class="${g.id === screen ? "on" : ""}" data-g="${esc(g.id)}"><span class="k">${esc(k || LABEL[g.layout])}</span> ${esc(name)} ${st}</button>`;
   });
-  $("tabs").innerHTML = tabs.join("") + `<span class="tsep"></span><button class="${screen === "history" ? "on" : ""}" data-g="history">History</button>`;
+  $("tabs").innerHTML = tabs.join("") + `<span class="tsep"></span>` + [["library", "Library"], ["history", "History"]].map(([s, t]) => `<button class="${screen === s ? "on" : ""}" data-g="${s}">${t}</button>`).join("");
   $("tabs").querySelectorAll("button").forEach((b) => b.onclick = () => go(b.dataset.g));
 }
 
 function render() {
   const m = $("main");
   if (screen === "history") return renderHistory(m);
+  if (screen === "library") return renderLibrary(m);
   const g = group();
   if (!g) { m.innerHTML = `<div class="empty">Nothing is waiting. This page picks up the next review by itself.</div>`; return; }
   const banner = statusBanner(g);
@@ -308,6 +345,11 @@ const FINAL_ANSWERS = [
   ["stop", "Stop", "S", "done with it, not raced"],
 ];
 const KIT_ANSWERS = [["accept", "Approve", "A", "the kit is right"], ["edit", "Change", "C", "say what's off"]];
+const STILL_ANSWERS = [
+  ["race", "Keep it", "K", "its approval moves to this build"],
+  ["edit", "Change", "C", "another round on your note"],
+  ["stop", "Stop", "S", "take its approval back"],
+];
 function answerOf(d) { if (!d) return null; if (d.decision === "accept") return d.favourite ? "fav" : "race"; return d.decision; }
 
 function focusPictures(it) {
@@ -325,7 +367,7 @@ function renderFocus(m, g, banner) {
   const pics = focusPictures(it);
   if (!st.view || !pics.some((p) => p.key === st.view)) st.view = pics[0]?.key;
   const pic = () => pics.find((p) => p.key === st.view) || pics[0];
-  const answers = isKit ? KIT_ANSWERS : FINAL_ANSWERS;
+  const answers = isKit ? KIT_ANSWERS : it.still ? STILL_ANSWERS : FINAL_ANSWERS;
   const ans = answerOf(d);
   const hasThen = pics.some((p) => p.then);
   const crit = it.critic;
@@ -333,7 +375,7 @@ function renderFocus(m, g, banner) {
   m.innerHTML = `${banner}
   <div class="focus">
     <div>
-      <div class="eyebrow">${isKit ? "Kit" : "Final"}${it.pin ? " · checked build" : ""}</div>
+      <div class="eyebrow">${isKit ? "Kit" : it.still ? "Still OK? · a library or kit change moved this approved car" : "Final"}${it.again ? " · review again, from the Library" : ""}${it.pin ? " · checked build" : ""}</div>
       <h2>${esc(it.title)}</h2>
       <div class="viewtabs" id="vtabs">
         ${pics.map((p) => `<button class="vt ${p.key === st.view ? "on" : ""}" data-v="${esc(p.key)}" title="${esc(p.label)}"><img src="${img(g, p.src, 240)}" alt="" loading="lazy">${esc(p.label)}</button>`).join("")}
@@ -573,7 +615,8 @@ function renderGrid(m, g, banner) {
 
 // ---------- History ----------
 let H = null, hf = "all", hd = "";
-const DECIDED = { accept: "accepted", edit: "change", reject: "no", park: "parked", stop: "stopped", skip: "skipped", mix: "mix" };
+const DECIDED = { accept: "accepted", edit: "change", reject: "no", park: "parked", stop: "stopped", skip: "skipped", mix: "mix",
+  revoke: "approval revoked", drop: "dropped", retire: "retired", revive: "revived", carry: "approval carried" };
 async function loadHistory() { try { H = await (await fetch("/api/history")).json(); } catch (e) { H = { entries: [] }; } }
 async function renderHistory(m) {
   document.onkeydown = null;
@@ -598,7 +641,10 @@ async function renderHistory(m) {
     const taste = (e.taste || []).map((t) => `<div class="tasterow">fed taste row <code>${esc(t.id)}</code><div class="lf">${esc(t.look_for)}</div></div>`).join("");
     const label = e.kind === "final" && e.decision === "accept" ? (e.favourite ? "★ raced, a favourite" : "raced") : e.kind === "concept" && e.decision === "accept" ? "picked" : e.kind === "concept" && e.decision === "reject" ? "not picked" : (DECIDED[e.decision] || e.decision);
     return `<li class="${e.undone ? "undone" : ""}" data-u="${esc(e.uid)}"><span class="when">${esc(when(e.at))}</span>${who(e)}${thumb(e.picture, e.kind === "sponsor" || e.kind === "mark")}
-      <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${trail}${taste}${e.undone ? `<div class="sub">undone</div>` : ""}<div data-ask="${esc(e.uid)}"></div></div>
+      <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${trail}${taste}
+      ${e.via ? `<div class="sub">from the ${esc(e.via[0].toUpperCase() + e.via.slice(1))}</div>` : ""}${e.still ? `<div class="sub">still OK?, after a library or kit change</div>` : ""}
+      ${e.moved ? `<div class="sub">moved by ${esc((e.moved.changed_by || []).join(", "))}, no paint or spec pixel past tolerance${String(e.by).startsWith("agent:") ? ` · session ${esc(e.by.slice(6))}` : ""}</div>` : ""}
+      ${e.held?.length ? `<div class="sub">held until a new final without it: ${esc(e.held.join(", "))}</div>` : ""}${e.undone ? `<div class="sub">undone</div>` : ""}<div data-ask="${esc(e.uid)}"></div></div>
       <div class="acts">${e.undone ? `<button data-h="redo">Redo</button>` : `<button data-h="edit">Edit note</button><button data-h="undo">Undo</button>`}</div></li>`;
   };
   m.innerHTML = `<div class="eyebrow">Everything decided, by you or on your behalf · ${esc(H.root || "")}</div>
@@ -632,7 +678,7 @@ async function renderHistory(m) {
     try {
       const out = await post("/api/history/change", { of, kind, note });
       toast(`${kind === "edit" ? "Edited" : kind === "undo" ? "Undone" : "Redone"}${out.committed ? ": " + out.committed : ""}`);
-      await loadHistory(); renderHistory(m);
+      LIB = null; await loadHistory(); renderHistory(m);
       const box = m.querySelector(`[data-ask="${CSS.escape(of)}"]`);
       if (out.thin?.length && box) {
         box.innerHTML = out.thin.map((t) => `<div class="ask">Taste row <code>${esc(t.id)}</code> now rests on too few of your notes. <div class="row" style="margin-top:6px"><button class="ghost" data-keep="${esc(t.id)}">Keep it as mine</button><button class="ghost" data-retire="${esc(t.id)}">Retire it</button></div></div>`).join("");
@@ -642,12 +688,106 @@ async function renderHistory(m) {
     } catch (err) { toast(err.message); }
   }
   async function tasteDo(id, keep, why, ask) {
-    try { await post("/api/history/taste", { id, keep, why }); toast(keep ? `Kept ${id} as yours` : `Retired ${id}`); await loadHistory(); renderHistory(m); }
+    try { await post("/api/history/taste", { id, keep, why }); toast(keep ? `Kept ${id} as yours` : `Retired ${id}`); LIB = null; await loadHistory(); renderHistory(m); }
     catch (err) { toast(err.message); }
   }
 }
 
-window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h && h !== screen) { screen = h; sig = ""; if (h === "history") H = null; poll(); } });
+// ---------- Library: where everything stands now ----------
+let LIB = null, lsec = "all", lq = "";
+const SECTIONS = [["cars", "Cars"], ["brands", "Brands"], ["marks", "Marks"], ["kits", "Kits"], ["taste", "Taste"]];
+const ACT = { review: "Review again", revoke: "Revoke", drop: "Drop", retire: "Retire", revive: "Revive" };
+const VERB = { revoke: "Revoke it", drop: "Drop it", retire: "Retire it", revive: "Revive it" };
+const DONE = { revoke: "Revoked", drop: "Dropped", retire: "Retired", revive: "Revived" };
+async function loadLibrary() { try { LIB = await (await fetch("/api/library")).json(); } catch (e) { LIB = { sections: {} }; } }
+function decidedLabel(kind, decision) {
+  if (kind === "final" && decision === "accept") return "raced";
+  if (kind === "concept") return { accept: "picked", reject: "not picked" }[decision] || DECIDED[decision] || decision;
+  if (kind === "sponsor" || kind === "mark") return { accept: "fine", edit: "change asked", reject: "no" }[decision] || DECIDED[decision] || decision;
+  return DECIDED[decision] || decision;
+}
+function libMeta(c) {
+  const out = [];
+  const l = c.last;
+  if (l?.decision) out.push(`${decidedLabel(l.kind, l.decision)} ${when(l.at).slice(0, 10)}${l.by && l.by !== LIB.owner && l.by !== "owner" ? " by an agent" : ""}`);
+  if (c.approved?.date) out.push(`approved ${c.approved.date}`);
+  else if (typeof c.approved === "string") out.push(`approved ${c.approved}`);
+  if (c.about) out.push(c.about);
+  if (c.held?.length) out.push(`held: places ${c.held.join(", ")}`);
+  if (c.used_by?.length) out.push(`on ${c.used_by.join(", ")}`);
+  if (c.look_for !== undefined) out.push(`rests on ${c.support} of ${c.words} quotes`);
+  if (c.retired) out.push(`retired ${when(c.retired.at).slice(0, 10)}${c.retired.why ? `: ${c.retired.why}` : ""}`);
+  return out.join(" · ");
+}
+function libConfirm(c, a) {
+  if (a === "revoke") return c.state === "on your car"
+    ? `It's on your car now. Revoking stops it installing until a new final.<label><input type="checkbox" data-restore> Also put back the paint from before your first install (<code>livery install --restore</code>)</label>`
+    : "Not on your car now. Revoking stops it installing until a new final.";
+  if (a === "drop") {
+    if (!c.used_by?.length) return "No approved car places it. Dropping it means it is redrawn before any final can use it.";
+    const car = c.on_car?.length ? ` (on your car: ${esc(c.on_car.join(", "))})` : "";
+    return `Placed on <b>${esc(c.used_by.join(", "))}</b>${car}. Dropping it holds those cars until a new final without it${c.id.startsWith("sponsor:") ? ", and designs stop placing it" : ""}.`;
+  }
+  if (a === "retire") return "Retired rows stop gating designs; a retro brings one back only with new evidence.";
+  if (a === "revive") return `Back in work: the next design session on it starts from your words here.${c.here === false ? " Its folder comes back from git." : ""}`;
+  return "";
+}
+async function renderLibrary(m) {
+  document.onkeydown = null;
+  if (!LIB) { m.innerHTML = `<div class="empty">Loading the library…</div>`; await loadLibrary(); }
+  const sec = LIB.sections || {};
+  const match = (c) => !lq || [c.title, c.key, c.state, c.about, c.look_for, ...(c.used_by || [])].join(" ").toLowerCase().includes(lq.toLowerCase());
+  const pic = (c, sheet) => c.picture
+    ? `<img class="zoom${sheet ? " sheet" : ""}" src="/library-img?p=${encodeURIComponent(c.picture)}&w=560" data-full="/library-img?p=${encodeURIComponent(c.picture)}" alt="${esc(c.title)}" loading="lazy">`
+    : `<span class="noimg">no picture</span>`;
+  const card = (s, c) => `<div class="lcard" data-id="${esc(c.id)}">
+      ${s === "taste" ? "" : pic(c, s === "brands" || s === "marks")}
+      <div class="t"><span>${s === "taste" ? `<code>${esc(c.title)}</code>` : esc(c.title)}</span><span class="state s-${esc(c.state.replace(/ /g, "-"))}">${esc(c.state)}</span></div>
+      ${c.look_for ? `<div class="lf">${esc(c.look_for)}</div>` : ""}
+      <div class="meta">${esc(libMeta(c))}</div>
+      ${c.actions.length ? `<div class="acts">${c.actions.map((a) => `<button data-a="${a}">${ACT[a]}</button>`).join("")}</div>` : ""}
+      <div class="slot"></div></div>`;
+  const shown = SECTIONS.filter(([k]) => lsec === "all" || lsec === k).map(([k, t]) => {
+    const cards = (sec[k] || []).filter(match);
+    return `<div class="lsec"><h3>${t} <span>${cards.length}</span></h3>${cards.length ? `<div class="lgrid">${cards.map((c) => card(k, c)).join("")}</div>` : `<p class="small muted">Nothing here.</p>`}</div>`;
+  }).join("");
+  m.innerHTML = `<div class="eyebrow">Where everything stands now · ${esc(LIB.root || "")}</div>
+    <h2>Library</h2>
+    <p class="small muted" style="margin:4px 0 0">Everything you've approved, raced, stopped or turned down. Changed your mind? Review it again, or take it back here; what depends on it is listed first. Each change has an Undo in History.</p>
+    <div class="lfil" id="lfil">${[["all", "All"], ...SECTIONS].map(([k, t]) => `<button data-f="${k}" class="${lsec === k ? "on" : ""}">${t}</button>`).join("")}
+      <input type="text" id="lq" placeholder="Filter" value="${esc(lq)}" aria-label="Filter"><button class="ghost" id="lreload">Reload</button></div>
+    ${shown}`;
+  $("lfil").querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { lsec = b.dataset.f; renderLibrary(m); });
+  $("lq").oninput = () => { lq = $("lq").value; const at = $("lq").selectionStart; renderLibrary(m).then(() => { $("lq").focus(); $("lq").setSelectionRange(at, at); }); };
+  $("lreload").onclick = async () => { await loadLibrary(); renderLibrary(m); };
+  const byId = Object.fromEntries(Object.values(sec).flat().map((c) => [c.id, c]));
+  m.querySelectorAll(".lcard .acts button").forEach((b) => b.onclick = () => {
+    const el = b.closest(".lcard"), c = byId[el.dataset.id], a = b.dataset.a, slot = el.querySelector(".slot");
+    if (a === "review") return again(c, b);
+    slot.innerHTML = `<div class="conf">${libConfirm(c, a)}<textarea placeholder="Why? (optional, counts as your words)"></textarea>
+      <div class="row"><button data-k="go">${VERB[a]}</button><button data-k="no">Cancel</button></div></div>`;
+    slot.querySelector('[data-k="no"]').onclick = () => slot.innerHTML = "";
+    slot.querySelector('[data-k="go"]').onclick = async () => {
+      const restore = slot.querySelector("[data-restore]")?.checked;
+      try {
+        const out = await post(`/api/library/${a}`, { id: c.id, why: slot.querySelector("textarea").value });
+        let said = `${DONE[a]}: ${c.title}. Undo in History.`;
+        if (out.committed) said += ` ${out.committed}`;
+        if (restore) { const r = await post("/api/library/restore", { id: c.id }); said += ` Putting back your old paint (it waits for the sim lock); log: ${r.log}`; }
+        toast(said);
+      } catch (err) { return toast(err.message); }
+      H = null; await loadLibrary(); renderLibrary(m);
+    };
+  });
+  async function again(c, b) {
+    b.disabled = true; b.textContent = "Queuing…";
+    toast(`Queuing ${c.title}${c.id.startsWith("final:") ? "; it is built first if its check isn't current" : ""}…`);
+    try { const out = await post("/api/library/review", { id: c.id }); toast(`${c.title} is in the queue as a screen of its own.`); go(out.group); }
+    catch (err) { toast(err.message); b.disabled = false; b.textContent = ACT.review; }
+  }
+}
+
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h && h !== screen) { screen = h; sig = ""; if (h === "history") H = null; if (h === "library") LIB = null; poll(); } });
 poll();
 setInterval(poll, 1000);
 </script>

@@ -31,9 +31,9 @@ from PIL import Image
 from livery import config, notify, state
 from livery.config import Workspace
 from livery.errors import LiveryError
-from livery.review import history, queue
+from livery.review import history, library, queue
 from livery.review.apply import SHOTS, apply, proposals
-from livery.review.items import ANSWERS, HIDDEN, STRATEGIES, layout
+from livery.review.items import ANSWERS, HIDDEN, STILL, STRATEGIES, layout
 from livery.review.queue import ReviewOpen
 
 PAGE = Path(__file__).with_name("page.html")
@@ -50,7 +50,8 @@ class _Server(ThreadingHTTPServer):
 
     allow_reuse_address = False
     seen = 0.0  # when the page last read the queue
-    root: Path = Path(".")  # the checkout of the review serving the page, for History's main checkout
+    ws: Workspace = Workspace()  # the review serving the page, for History's main checkout
+    commit = False  # whether page screens it applies are committed: the CLI's, never a test's
 
     def server_bind(self) -> None:
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
@@ -82,14 +83,14 @@ def _refusal(item: dict | None, d: dict) -> str | None:
     if item is None:
         return "unknown item"
     choice, note = d["decision"], d["note"]
-    if choice not in ANSWERS.get(item["kind"], ()):
+    if choice not in (STILL if item.get("still") else ANSWERS.get(item["kind"], ())):
         return "bad decision"
     if not isinstance(note, str):
         return "bad note"
     endorsed = d["endorsed"]
     if not isinstance(endorsed, list) or not all(isinstance(e, str) for e in endorsed):
         return "bad endorsed"
-    if d["favourite"] and not (item["kind"] == "final" and choice == "accept"):
+    if d["favourite"] and not (item["kind"] == "final" and choice == "accept" and not item.get("still")):
         return "only a raced final is a favourite"
     if d["strategy"] is not None and not (choice == "edit" and d["strategy"] in STRATEGIES):
         return "bad strategy"
@@ -164,8 +165,16 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, _thumb(path, path.stat().st_mtime, int(width)), "image/jpeg")
         self._send(200, path.read_bytes(), mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
+    def _ws(self, root: Path) -> Workspace:
+        """The checkout at `root` as a workspace: the serving review's own, or one with its own assets and
+        policy."""
+        mine = cast(_Server, self.server).ws
+        if root.resolve() == mine.root.resolve():
+            return mine
+        return Workspace(root=root, assets=root / "assets", policy_file=root / "policy.toml")
+
     def _main(self) -> Workspace:
-        return Workspace(root=history.main_root(cast(_Server, self.server).root))
+        return self._ws(history.main_root(cast(_Server, self.server).ws.root))
 
     def do_GET(self):
         url = urlparse(self.path)
@@ -191,6 +200,19 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"entries": history.entries(ws), "root": str(ws.root), "owner": config.owner()})
         elif url.path == "/history-img":
             self._picture(self._main().root, arg("p"), arg("w"))
+        elif url.path == "/api/library":
+            ws = self._main()
+            with self.lock:
+                self._json({"sections": library.sections(ws), "root": str(ws.root), "owner": config.owner()})
+        elif url.path == "/library-img":
+            ws, p = self._main(), arg("p")
+            if p.startswith("sheet:"):
+                _, kind, key = p.split(":", 2)
+                try:
+                    p = library.sheet(ws, kind, key).relative_to(ws.root).as_posix()
+                except LiveryError:
+                    return self._send(404, b"not found", "text/plain")
+            self._picture(ws.root, p, arg("w"))
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -198,6 +220,8 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         if self.path.startswith("/api/history/"):
             return self._history(body)
+        if self.path.startswith("/api/library/"):
+            return self._library(body)
         gid = str(body.get("group", ""))
         with self.lock:
             group = queue.read(gid) if gid else None
@@ -229,6 +253,11 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._json({"error": f"answer every item first: {', '.join(left)}"}, 409)
                 if unsaid := _unsaid(group):
                     return self._json({"error": f"say what to change: {', '.join(unsaid)}"}, 409)
+                if group.get("page"):  # no session waits on it: this server applies it
+                    queue.request_apply(gid)
+                    group = queue.read(gid) or group
+                    threading.Thread(target=self._apply_page, args=(group,), daemon=True).start()
+                    return self._json({"ok": True})
                 self._write(lambda: queue.request_apply(gid))
             elif self.path == "/api/clear":
                 if group["alive"] and status != "applied":
@@ -256,6 +285,38 @@ class _Handler(BaseHTTPRequestHandler):
             except LiveryError as e:
                 self._json({"error": str(e)}, 400)
 
+    def _apply_page(self, group: dict) -> None:
+        """A page screen's Send, applied by this server in the screen's checkout; a failure shows on it."""
+        ws = self._ws(Path(group["root"]))
+        with contextlib.suppress(Exception):  # _apply records the error on the screen
+            _apply(ws, group, commit=cast(_Server, self.server).commit)
+
+    def _library(self, body: dict) -> None:
+        ws = self._main()
+        action = self.path.removeprefix("/api/library/")
+        item_id, why = str(body.get("id", "")), str(body.get("why", ""))
+        kind, _, key = item_id.partition(":")
+        try:
+            if action == "review":
+                out = library.review_again(ws, item_id)  # may build first: outside the lock
+            else:
+                with self.lock:
+                    if action == "revoke" and kind == "final":
+                        out = library.revoke(ws, key, why)
+                    elif action == "drop":
+                        out = library.drop(ws, kind, key, why)
+                    elif action == "retire" and kind == "taste":
+                        out = library.retire(ws, key, why)
+                    elif action == "revive":
+                        out = library.revive(ws, item_id, why)
+                    elif action == "restore":
+                        out = library.restore_paint(ws)
+                    else:
+                        return self._json({"error": f"nothing to {action} on {item_id!r}"}, 404)
+        except LiveryError as e:
+            return self._json({"error": str(e)}, 400)
+        self._json(out)
+
     def _write(self, write) -> None:
         try:
             write()
@@ -264,12 +325,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True})
 
 
-def _claimed(port: int, root: Path) -> _Server | None:
+def _claimed(port: int, ws: Workspace, commit: bool) -> _Server | None:
     try:
         server = _Server(("127.0.0.1", port), _Handler)
     except OSError:
         return None
-    server.root = root
+    server.ws = ws
+    server.commit = commit
     return server
 
 
@@ -284,11 +346,11 @@ def _shared(port: int) -> bool | None:
         return None
 
 
-def _claim(port: int, root: Path) -> _Server | None:
+def _claim(port: int, ws: Workspace, commit: bool) -> _Server | None:
     """This process's server if it got the port; None while another review's serves the queue."""
     deadline = time.monotonic() + 10
     while True:
-        server = _claimed(port, root)
+        server = _claimed(port, ws, commit)
         if server is not None:
             return server
         shared = _shared(port)
@@ -396,7 +458,7 @@ def serve(
     """Queues the review and blocks until the owner sends it. `commit` lets Apply commit what it wrote: the
     CLI's review, never a test's; it also sends a Windows notification unless `notify_owner` is False. Port 0
     serves a page of its own on a free port."""
-    server = _claim(port, ws.root)
+    server = _claim(port, ws, commit)
     try:
         gid = queue.enqueue(ws.root, items)
     except BaseException:
@@ -422,9 +484,28 @@ def serve(
                 result = _apply(ws, group, commit)
                 applied = time.time()
                 return result
-            if server is None and (server := _claimed(port, ws.root)) is not None:
+            if server is None and (server := _claimed(port, ws, commit)) is not None:
                 _start(server)  # the review that served the page has finished
             time.sleep(POLL)
     finally:
         if server is not None:
             _stop(server, applied)
+
+
+def serve_page(ws: Workspace, port: int = PORT, on_ready=print, commit: bool = False, stop=None) -> None:
+    """Keeps the page up, open on the Library, until `stop()` is true or Ctrl+C: it serves the page while no
+    waiting review does. Page screens it applies are committed only with `commit` (the CLI's)."""
+    server = _claim(port, ws, commit)
+    on_ready(f"library: http://127.0.0.1:{port if server is None else server.server_address[1]}/#library")
+    try:
+        if server is not None:
+            _start(server)
+        while not (stop and stop()):
+            if server is None and (server := _claimed(port, ws, commit)) is not None:
+                _start(server)
+            time.sleep(POLL)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if server is not None:
+            _stop(server, 0)

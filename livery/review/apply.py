@@ -3,7 +3,6 @@
 their log.md, by the agent, in their words."""
 
 import re
-import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -48,12 +47,13 @@ def _mark_references(ws: Workspace, marks: dict[int, str]) -> str:
     return f"references.md: {len(marks)} marked"
 
 
-def _sponsor(key: str, choice: str, root: Path) -> str:
-    if choice == "accept":
-        return f"{key}: approved {', '.join(sponsors.approve(root / key)) or 'nothing new'}"
-    shutil.rmtree(root / key)
-    _mark_table(root / "roster.md", {key: "no"})
-    return f"{key}: dropped"
+def _sponsor(key: str, root: Path) -> str:
+    """A brand the owner said fine to: every variant approved, and its roster row a yes, since the owner
+    judges the row with its drawing."""
+    done = f"{key}: approved {', '.join(sponsors.approve(root / key)) or 'nothing new'}"
+    if any(r["brand"] == key and r["status"] != "yes" for r in sponsors.roster_rows(root / "roster.md")):
+        _mark_table(root / "roster.md", {key: "yes"})
+    return done
 
 
 def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: list[str]) -> None:
@@ -137,9 +137,12 @@ def _keep_shots(ws: Workspace, item: dict, uid: str) -> str | None:
     return f"{SHOTS}/{uid}"
 
 
-def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], review: str) -> str:
-    """Appends every decision to the ledger, by the owner, their note verbatim, and for a design the sim
-    runs (or the baked run) its item showed and a kept copy of its shots."""
+def _record(
+    ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], review: str, effects: dict[str, dict]
+) -> str:
+    """Appends every decision to the ledger, by the owner, their note verbatim, what it replaced
+    (`effects`), and for a design the sim runs (or the baked run) its item showed and a kept copy of its
+    shots."""
     lines = []
     for item_id, d in decisions.items():
         kind, _, key = item_id.partition(":")
@@ -155,6 +158,8 @@ def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], r
             **prefs.owner_by(),
         }
         line |= {k: d[k] for k in EXTRAS if d.get(k)}
+        line |= effects.get(item_id, {})
+        line |= {k: True for k in ("still", "again") if by_id.get(item_id, {}).get(k)}
         if kind == "proposal":
             line["title"] = by_id.get(item_id, {}).get("title")
         if kind in DESIGNS:
@@ -276,6 +281,8 @@ def apply(
     and roster.md marks, brand and race marking approval. Then appends every decision to the ledger and logs
     it; with `commit` (the CLI's review, never a test's) it commits what it wrote and each decided design's
     folder."""
+    from livery.review import library
+
     before = _dirty(ws.root) if commit else None
     review = review or time.strftime("%Y%m%d-%H%M%S")
     written: list[str] = []
@@ -285,15 +292,24 @@ def apply(
     marks: dict[int, str] = {}
     roster: dict[str, str] = {}
     root = ws.sponsors
-    # Brands and race markings first, so a final placing one accepted in this review can be pinned.
+    effects: dict[str, dict] = {}  # what a decision replaced, for History's undo
+    # Brands and race markings first, so a final placing one accepted in this review can be pinned. A no
+    # drops one: unapproved, and a brand's roster row turned down; its folder stays for a redraw.
     for item_id, d in decisions.items():
         kind, _, key = item_id.partition(":")
-        if kind == "sponsor" and d.get("decision") in ("accept", "reject") and item_id in by_id:
-            written.append(_sponsor(key, d["decision"], root))
-            folders.append(root / key)
-            if d["decision"] == "reject":
-                files.append(root / "roster.md")
-    marked = race_marks.apply_review([{"id": k, **d} for k, d in decisions.items()], ws.marks)
+        if kind not in ("sponsor", "mark") or item_id not in by_id:
+            continue
+        # As folders, not files: a brand just drawn goes along with its review, committed or not.
+        if kind == "sponsor" and d.get("decision") == "accept":
+            written.append(_sponsor(key, root))
+            folders += [root / key, root / "roster.md"]
+        elif d.get("decision") == "reject":
+            was, touched = library.drop_brand(ws, kind, key)
+            effects[item_id] = {"was": was}
+            folders += [p.parent if p.name == "brand.toml" else p for p in touched]
+            written.append(f"{kind} {key}: dropped")
+    accepted = [{"id": k, **d} for k, d in decisions.items() if d.get("decision") == "accept"]
+    marked = race_marks.apply_review(accepted, ws.marks)
     if marked:
         written += marked
         folders.append(ws.marks)
@@ -302,6 +318,9 @@ def apply(
         choice = d.get("decision")
         if kind in DESIGNS and choice != "skip":
             folders.append(ws.design_dir(key))
+        if kind == "final" and choice == "stop" and approvals.load_approval(ws, key):
+            effects[item_id] = {"was": library.unpin(ws, key)}
+            written.append(f"designs/{key}/approved.json: revoked")
         if kind == "final" and choice == "accept" and by_id.get(item_id, {}).get("pin"):
             written.append(approvals.pin(ws, key, by_id[item_id]["pin"], d.get("note", "")))
         elif kind == "kit" and choice == "accept":
@@ -319,7 +338,7 @@ def apply(
         written.append(f"roster.md: {len(roster)} marked")
         files.append(root / "roster.md")
     if decisions:
-        written.append(_record(ws, by_id, decisions, review))
+        written.append(_record(ws, by_id, decisions, review, effects))
     _log(ws, items, decisions, written)
     if before is not None and decisions:
         done = _commit(ws.root, before, files, folders, _message(decisions, review), prefs.ledger_path(ws))

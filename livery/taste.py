@@ -92,6 +92,18 @@ def retire(ws: Workspace, row_id: str, why: str, by: dict | None = None) -> dict
     return row
 
 
+def unretire(ws: Workspace, row_id: str) -> dict:
+    """A retired row live again, as it was: what History's undo of a retire does."""
+    all_rows = rows(ws, retired=True)
+    row = next((r for r in all_rows if r["id"] == row_id), None)
+    if row is None:
+        raise BadRow(f"no taste row {row_id!r}")
+    row["status"] = "live"
+    row.pop("retired", None)
+    _write(ws, all_rows)
+    return row
+
+
 def support(ws: Workspace, row: dict) -> list[dict]:
     """The words a row rests on that still count: owner quotes whose decision stands, or that name none."""
     standing = {prefs.uid(d) for d in prefs.decisions(ws)}
