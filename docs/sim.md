@@ -176,6 +176,7 @@ From a fit of the McLaren's capture (`kit fit`, 20261020-100748):
 | TV cameras | a camera's aim depends on the view before, even on the exact frame, so shots don't repeat |
 | Session-time seeks | they drift by up to 12 frames |
 | One colour model for the whole car (output = B + A·h(albedo), A and B from white and black paints per material) | p95 about 20 overall and 36–41 on metallic |
+| The sun's glare on metal in the offline bake: Gaussian blurs (σ 2–256 px) of each metal's highlight energy, the ladder's own glare taken out (McLaren capture 20261020-100748, `materials` fixture shots) | The glare is per channel and centres on a few sun glints, but the ladder can't give their energy. The hottest clip at every step, black metal included. A uniform paint's glare scales with its grey like its shading does, so the kernel can't be fitted on the ladder. Fitted on the fixture's own shots, side_l's far-field metallic p95 rose from 74 to 77–94, and side_r's metallic (p95 2) broke to 26–60. Measuring it would take a capture that paints one glint's island metal over matte black, per glint and view |
 | Extra camera names in the car set | rejected, and the pointer cleared |
 | Levelling car-locked side shots on the sill | the sill is already level to within its own noise (about 0.5°); a fitted line adds that noise as a tilt, so the two sides disagree by 6–14 px instead of 0.6–1.5 |
 | The customer ID in the replay file's header | it has no fixed offset |
