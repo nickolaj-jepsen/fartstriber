@@ -3,6 +3,7 @@ critic shown only once the owner has answered."""
 
 import json
 
+import numpy as np
 from PIL import Image
 
 from livery import prefs, state, taste
@@ -37,7 +38,9 @@ def test_an_edit_or_undo_is_a_line_of_its_own_and_the_decision_reads_as_it_stand
     assert len(prefs.lines(ws)) == 4  # nothing rewritten
     assert review_apply.latest_note(ws, "b") is None
     prefs.change(ws, uids["b"], "redo")
-    assert review_apply.latest_note(ws, "b")["note"] == "the spacing is off"
+    note = review_apply.latest_note(ws, "b")
+    assert note is not None
+    assert note["note"] == "the spacing is off"
 
 
 def test_a_taste_row_left_on_one_note_asks_to_be_kept_or_retired(ws):
@@ -113,4 +116,4 @@ def test_a_design_decision_keeps_what_it_showed(ws):
 
     (line,) = prefs.decisions(ws)
     kept = state.root() / line["shots"] / "front34.jpg"
-    assert Image.open(kept).convert("RGB").getpixel((10, 10))[0] > 200
+    assert np.asarray(Image.open(kept).convert("RGB"))[..., 0].min() > 200
