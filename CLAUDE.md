@@ -21,7 +21,7 @@ Every deterministic step is a `uv run livery` command; `--help` explains each on
 ## Files
 
 - `.cache/designs/<name>/`: a design's build and preview output. Nothing under `.cache/` is committed.
-- `policy.toml`: project policy (lint thresholds, the views a preview shoots), part of every check's hash.
+- `policy.toml`: project policy (lint thresholds, the views a preview shoots, the sim window's client size), its `[lint]` part of every check's hash.
 - `config.toml` in the state dir, `%LOCALAPPDATA%\fartstriber`: personal settings (the owner's name, IDs, iRacing folders, the preview replay). `livery.example.toml` lists the keys; `livery config show` prints them.
 - `kits/<kit>/profile.toml`: how the sim shows a car.
 

@@ -32,3 +32,6 @@ max_hidden_detail_share = 0.5            # of a pattern's area where no view see
 # The views `livery preview sim` shoots, in this order (the paint reloads framed at the first); each kit's
 # profile.toml says how its car is shot from each.
 views = ["front34", "side_l", "side_r", "rear34", "top"]
+# The sim window's client size every sim run shoots at, for every kit: a capture maps window pixels to
+# texels at one size, so it is part of the capture's identity.
+window = [1920, 1080]

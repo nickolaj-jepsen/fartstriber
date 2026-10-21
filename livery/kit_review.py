@@ -293,6 +293,7 @@ def shoot_calibration(cfg: Config, kit: Kit, ws: Workspace, log=print) -> Path:
         groups=groups,
         replay=replay,
         log=log,
+        window=ws.policy.window,
         checkout=ws.root,
     ) as s:
         s.out = d / f"run-{fresh_name(d)}"

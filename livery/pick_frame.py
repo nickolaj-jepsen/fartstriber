@@ -296,6 +296,7 @@ def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) ->
         groups_fix=fix,
         sim="any-replay",
         log=log,
+        window=ws.policy.window,
         checkout=ws.root,
     ) as s:
         s.out = _out(ws, kit)
@@ -412,6 +413,7 @@ def check(cfg: Config, ws: Workspace, kit: Kit, log=print) -> dict:
         groups_fix=f"run livery preview cameras {kit.name} --arm and reopen the replay",
         replay=replay,
         log=log,
+        window=ws.policy.window,
         checkout=ws.root,
     ) as s:
         s.out = _out(ws, kit, "check-")
