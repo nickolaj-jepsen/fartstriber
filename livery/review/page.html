@@ -156,6 +156,7 @@
   .who { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 4px; padding: 1px 5px; justify-self: start; border: 1px solid var(--line); color: var(--muted); }
   .who.me { color: var(--accent); border-color: var(--accent); }
   .hist .th { width: 132px; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; display: block; background: var(--sunk); }
+  .hist .th.sheet { object-fit: contain; background: #fff; }
   .hist .noth { width: 132px; aspect-ratio: 16/9; border-radius: 4px; border: 1px dashed var(--line); display: grid; place-items: center; font-size: 11px; color: var(--muted); }
   .hist .what { min-width: 0; font-size: 14px; }
   .hist .sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -211,7 +212,9 @@ let sig = "";
 function waiting() { return S.groups.filter((g) => g.status !== "applied").slice().sort((a, b) => b.created - a.created); }
 function group() { return S.groups.find((g) => g.id === screen); }
 function decision(g, id) { return g.decisions[id] || null; }
-const img = (g, p) => (p ? `/img?g=${encodeURIComponent(g.id)}&p=${encodeURIComponent(p)}` : "");
+const img = (g, p, w) => (p ? `/img?g=${encodeURIComponent(g.id)}&p=${encodeURIComponent(p)}${w ? `&w=${w}` : ""}` : "");
+// A picture shown smaller than it is, opening at full size in the lightbox.
+const pic = (g, p, w, alt, cls = "zoom") => `<img class="${cls}" src="${img(g, p, w)}" data-full="${img(g, p)}" alt="${esc(alt)}" loading="lazy">`;
 
 async function poll() {
   try {
@@ -294,7 +297,7 @@ function lightbox(src, cap) {
   lb.onclick = close; document.addEventListener("keydown", key, true);
   document.body.appendChild(lb);
 }
-document.addEventListener("click", (e) => { const im = e.target.closest("img.zoom"); if (im) lightbox(im.src, im.alt); });
+document.addEventListener("click", (e) => { const im = e.target.closest("img.zoom"); if (im) lightbox(im.dataset.full || im.src, im.alt); });
 
 // ---------- Focus: a final, a kit, a still OK? ----------
 const FINAL_ANSWERS = [
@@ -333,14 +336,14 @@ function renderFocus(m, g, banner) {
       <div class="eyebrow">${isKit ? "Kit" : "Final"}${it.pin ? " · checked build" : ""}</div>
       <h2>${esc(it.title)}</h2>
       <div class="viewtabs" id="vtabs">
-        ${pics.map((p) => `<button class="vt ${p.key === st.view ? "on" : ""}" data-v="${esc(p.key)}" title="${esc(p.label)}"><img src="${img(g, p.src)}" alt="" loading="lazy">${esc(p.label)}</button>`).join("")}
+        ${pics.map((p) => `<button class="vt ${p.key === st.view ? "on" : ""}" data-v="${esc(p.key)}" title="${esc(p.label)}"><img src="${img(g, p.src, 240)}" alt="" loading="lazy">${esc(p.label)}</button>`).join("")}
         <span class="sp"></span>
         ${hasThen ? `<div class="flick" title="What you saw at your last decision (${esc(when(it.then_at))}) and now: T"><button data-f="then" class="${st.when === "then" ? "on" : ""}">Then</button><button data-f="now" class="${st.when === "now" ? "on" : ""}">Now</button></div>` : ""}
       </div>
       <div class="stage" id="stage"><img id="shot" class="zoom" alt=""><span class="tag" id="tag"></span></div>
       <div class="hintline">Hover a view, Then or a checkpoint to preview it; click to keep it. <kbd>1</kbd>–<kbd>9</kbd> views${hasThen ? " · <kbd>T</kbd> then/now" : ""} · ${answers.map((a) => `<kbd>${a[2]}</kbd>`).join(" ")} answer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> send</div>
       ${(it.timeline || []).length ? `<div style="margin-top:16px"><div class="row"><div class="eyebrow">Earlier checkpoints</div><button class="ghost" id="tonow" ${st.point < 0 ? "hidden" : ""} style="padding:1px 8px;font-size:12px">Back to now</button></div>
-      <div class="tl" id="tl">${it.timeline.map((p, i) => { const v = p.views[st.view] || p.views.front34 || Object.values(p.views)[0]; return `<button class="${p.who} ${i === st.point ? "on" : ""}" data-i="${i}">${v ? `<img src="${img(g, v)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}<span class="w">${esc(p.label)}</span><span class="d">${esc(when(p.at))} · ${p.who === "you" ? "you" : "agents"}</span></button>`; }).join("")}</div>
+      <div class="tl" id="tl">${it.timeline.map((p, i) => { const v = p.views[st.view] || p.views.front34 || Object.values(p.views)[0]; return `<button class="${p.who} ${i === st.point ? "on" : ""}" data-i="${i}">${v ? `<img src="${img(g, v, 320)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}<span class="w">${esc(p.label)}</span><span class="d">${esc(when(p.at))} · ${p.who === "you" ? "you" : "agents"}</span></button>`; }).join("")}</div>
       <div class="chk" id="tlinfo" hidden></div></div>` : ""}
     </div>
     <aside class="rail">
@@ -370,7 +373,7 @@ function renderFocus(m, g, banner) {
 
   const shot = $("shot"), stage = $("stage");
   function show(src, tag, preview) {
-    shot.src = img(g, src); shot.alt = tag; $("tag").textContent = tag + (preview ? " · preview" : "");
+    shot.src = img(g, src, 1800); shot.dataset.full = img(g, src); shot.alt = tag; $("tag").textContent = tag + (preview ? " · preview" : "");
     stage.classList.toggle("preview", !!preview);
   }
   function current() {
@@ -396,6 +399,7 @@ function renderFocus(m, g, banner) {
     b.onmouseleave = current;
   });
   if ($("tl")) {
+    $("tl").scrollLeft = $("tl").scrollWidth;  // the newest checkpoints, beside now
     $("tl").querySelectorAll("button").forEach((b) => {
       const t = it.timeline[+b.dataset.i];
       b.onclick = () => {
@@ -440,9 +444,13 @@ function renderFocus(m, g, banner) {
     else decide(g, it.id, { endorsed: picked });
   });
   const sendBtn = $("send");
-  const unsaid = ans === "edit" && !(noteEl?.value || "").trim() && !(d?.endorsed || []).length;
-  sendBtn.disabled = g.status !== "waiting" || !ans;
-  $("sendwhy").textContent = !ans ? "Pick an answer first" : unsaid ? "Say what to change, or tick a suggestion" : "";
+  function sendable() {
+    const unsaid = ans === "edit" && !(noteEl?.value || "").trim() && !(d?.endorsed || []).length;
+    sendBtn.disabled = g.status !== "waiting" || !ans || unsaid;
+    $("sendwhy").textContent = !ans ? "Pick an answer first" : unsaid ? "Say what to change, or tick a suggestion" : "";
+  }
+  sendable();
+  if (noteEl) noteEl.addEventListener("input", sendable);
   sendBtn.onclick = () => send(g, async () => { if (noteEl) await post("/api/decide", { group: g.id, id: it.id, note: noteEl.value, ...(strat ? { strategy: strat.value } : {}) }); });
 
   document.onkeydown = (e) => {
@@ -469,8 +477,8 @@ function renderCompare(m, g, banner) {
   let rows = `<div></div>` + cars.map((c, i) => { const d = decision(g, c.id); return `<div class="carhead ${picked(c) ? "on" : ""}">
     <label><input type="checkbox" data-c="${esc(c.id)}" ${picked(c) ? "checked" : ""}> <span>${esc(c.title)}</span> <kbd>${i + 1}</kbd></label>
     <input type="text" data-n="${esc(c.id)}" placeholder="a note for this car" value="${esc(d?.note ?? "")}" ${picked(c) ? "" : "hidden"}></div>`; }).join("");
-  for (const v of views) rows += `<div class="vh">${esc(v)}</div>` + cars.map((c) => c.views?.[v] ? `<img class="zoom" src="${img(g, c.views[v])}" alt="${esc(c.title)} · ${esc(v)}" loading="lazy">` : `<div class="gap"></div>`).join("");
-  if (flatRow) rows += `<div class="vh">flat</div>` + cars.map((c) => c.flat?.[0] ? `<img class="zoom" src="${img(g, c.flat[0])}" alt="${esc(c.title)} · flat" loading="lazy">` : `<div class="gap"></div>`).join("");
+  for (const v of views) rows += `<div class="vh">${esc(v)}</div>` + cars.map((c) => c.views?.[v] ? pic(g, c.views[v], 900, `${c.title} · ${v}`) : `<div class="gap"></div>`).join("");
+  if (flatRow) rows += `<div class="vh">flat</div>` + cars.map((c) => c.flat?.[0] ? pic(g, c.flat[0], 900, `${c.title} · flat`) : `<div class="gap"></div>`).join("");
   m.innerHTML = `${banner}
     <div class="eyebrow">Concepts · pick one or more</div>
     <h2>${cars.length} concepts</h2>
@@ -478,7 +486,7 @@ function renderCompare(m, g, banner) {
     <div class="cmp" style="grid-template-columns:${cols}">${rows}</div>
     <div class="cmpfoot">
       <div>${sketches.length ? `<div class="eyebrow">Didn't make the top three</div><p class="small muted" style="margin:4px 0 8px">Flat sketches. Revive one to refine it as if you'd picked it.</p>
-        <div class="sketches">${sketches.map((s) => `<div class="sketch ${picked(s) ? "on" : ""}"><img class="zoom" src="${img(g, s.flat?.[0])}" alt="${esc(s.title)} · sketch" loading="lazy"><div class="row" style="justify-content:space-between;margin-top:4px"><span>${esc(s.title)}</span><button class="ghost" data-r="${esc(s.id)}" style="padding:1px 8px;font-size:12px">${picked(s) ? "Revived" : "Revive"}</button></div></div>`).join("")}</div>` : ""}</div>
+        <div class="sketches">${sketches.map((s) => `<div class="sketch ${picked(s) ? "on" : ""}">${pic(g, s.flat?.[0], 400, `${s.title} · sketch`)}<div class="row" style="justify-content:space-between;margin-top:4px"><span>${esc(s.title)}</span><button class="ghost" data-r="${esc(s.id)}" style="padding:1px 8px;font-size:12px">${picked(s) ? "Revived" : "Revive"}</button></div></div>`).join("")}</div>` : ""}</div>
       <div class="box">
         <label class="small muted" for="shared">A note for every pick</label>
         <textarea id="shared" placeholder="e.g. all of them are too dark at the front"></textarea>
@@ -527,7 +535,7 @@ function renderGrid(m, g, banner) {
       <span class="small muted"><kbd>←</kbd><kbd>→</kbd> move · <kbd>A</kbd> fine · <kbd>E</kbd> change · <kbd>R</kbd> no</span>
       <button class="send" id="gsend">Send</button></div>
     <div class="grid" id="grid">${g.items.map((it, i) => { const d = decision(g, it.id); const ans = GRID_ANSWERS[it.kind] || ["accept", "edit", "reject"]; return `<div class="tile ${i === st.cur ? "cur" : ""}" tabindex="0" data-i="${i}">
-      ${it.images?.[0] ? `<img class="zoom" src="${img(g, it.images[0])}" alt="${esc(it.title)}" loading="lazy">` : ""}
+      ${it.images?.[0] ? pic(g, it.images[0], 1200, it.title) : ""}
       <div class="t"><span>${esc(it.title)}</span></div>
       ${it.body ? `<div class="meta">${esc(it.body)}</div>` : ""}
       <div class="acts">${ans.map((a) => `<button data-d="${a}" class="${d?.decision === a ? "on" : ""}">${GRID[a][0]} <kbd>${GRID[a][1]}</kbd></button>`).join("")}</div>
@@ -574,7 +582,7 @@ async function renderHistory(m) {
   const mine = (e) => e.by === owner || e.by === "owner";
   const keys = [...new Set(H.entries.filter((e) => e.type === "decision").map((e) => e.key))].sort();
   const shown = H.entries.filter((e) => (hf === "all" || (hf === "me" && mine(e)) || (hf === "ag" && !mine(e)) || (hf === "taste" && (e.type === "taste" || e.taste?.length))) && (!hd || e.key === hd));
-  const pic = (p) => p ? `<img class="th zoom" src="/history-img?p=${encodeURIComponent(p)}" alt="as shown then" loading="lazy">` : `<span class="noth">no picture</span>`;
+  const thumb = (p, sheet) => p ? `<img class="th zoom${sheet ? " sheet" : ""}" src="/history-img?p=${encodeURIComponent(p)}&w=300" data-full="/history-img?p=${encodeURIComponent(p)}" alt="as shown then" loading="lazy">` : `<span class="noth">no picture</span>`;
   const who = (e) => `<span class="who ${mine(e) ? "me" : ""}" title="${esc(e.by)}${e.transcript ? " · " + esc(e.transcript) : ""}">${mine(e) ? "you" : "agent"}</span>`;
   const row = (e) => {
     if (e.type === "taste") {
@@ -589,7 +597,7 @@ async function renderHistory(m) {
     const trail = (e.trail || []).filter((t) => t.kind === "edit").length ? `<div class="sub">edited; first: <q>${esc(e.first_note)}</q></div>` : "";
     const taste = (e.taste || []).map((t) => `<div class="tasterow">fed taste row <code>${esc(t.id)}</code><div class="lf">${esc(t.look_for)}</div></div>`).join("");
     const label = e.kind === "final" && e.decision === "accept" ? (e.favourite ? "★ raced, a favourite" : "raced") : e.kind === "concept" && e.decision === "accept" ? "picked" : e.kind === "concept" && e.decision === "reject" ? "not picked" : (DECIDED[e.decision] || e.decision);
-    return `<li class="${e.undone ? "undone" : ""}" data-u="${esc(e.uid)}"><span class="when">${esc(when(e.at))}</span>${who(e)}${pic(e.picture)}
+    return `<li class="${e.undone ? "undone" : ""}" data-u="${esc(e.uid)}"><span class="when">${esc(when(e.at))}</span>${who(e)}${thumb(e.picture, e.kind === "sponsor" || e.kind === "mark")}
       <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${trail}${taste}${e.undone ? `<div class="sub">undone</div>` : ""}<div data-ask="${esc(e.uid)}"></div></div>
       <div class="acts">${e.undone ? `<button data-h="redo">Redo</button>` : `<button data-h="edit">Edit note</button><button data-h="undo">Undo</button>`}</div></li>`;
   };

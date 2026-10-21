@@ -32,7 +32,7 @@ flowchart LR
 | `designs/<name>/` | `design.py`; `brief.md` and `notes.md` (where it stands now); `verdicts.jsonl`; `approved.json`; its own `sponsors/` | yes |
 | `kits/<kit>/` | a car's kit, written only by `livery kit` | yes |
 | `assets/` | fonts, roster brands (`sponsors/`), race markings (`marks/`) | yes |
-| `prefs/`, `references.md` | the owner's decisions, words and favourite liveries | yes |
+| `prefs/<person>/`, `references.md` | each reviewer's decisions, words and taste table; the favourite liveries | yes |
 | `policy.toml` | lint thresholds, the views a preview shoots and the sim window's size | yes |
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
@@ -223,43 +223,48 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 
 ## Review
 
-- One localhost page (port 8765) serves every session on the machine, one item at a time.
-- Each `livery review` queues its items as a group in the state dir (`review/<id>/`) and blocks until the owner presses Apply on that group. Whichever waiting review holds the port serves the page; when it exits, the next one takes over.
-- A checkout has one waiting review at a time. A group whose process died stays on the page, and the next review from that checkout takes it over.
-- `--list` lists the groups; `--cancel` takes this checkout's group off the page.
+- One localhost page (port 8765) serves every session on the machine. Each `livery review` is one screen: it queues its items in the state dir (`review/<id>/`) and blocks until the owner presses Send on it. Whichever waiting review holds the port serves the page; when it exits, the next one takes over.
+- A checkout may have several screens waiting; their Sends take turns (a lock per checkout). A screen whose process died stays on the page, and the next review from that checkout with any of the same items takes it over; one still waiting with the same items is refused.
+- A review that queues sends a Windows notification that opens the page. The tab's title counts what's waiting, newest first.
+- `--list` lists the screens; `--cancel` takes this checkout's off the page.
 
-| Flag | Items |
+| Flag | Items | Layout |
+|---|---|---|
+| `<design>` | a final | Focus |
+| `<designs>` | concepts to pick from; `--sketch <name>` adds a concept outside the top three, shown small to revive | Compare |
+| `--kit <kit>` | a kit's overlays and calibration shots | Focus |
+| `--roster`, `--sponsors`, `--marks`, `--references`, `--proposals <file>` | roster rows, drawn brands, race markings, `references.md` rows, a retro's edits (`[{title, body}]`) | Grid |
+
+| On | Answers (`items.ANSWERS`) |
 |---|---|
-| `<designs>` | several are concepts to pick or mix; one is a final |
-| `--kit <kit>` | a kit's overlays and calibration shots |
-| `--roster` | proposed brands in `roster.md` |
-| `--sponsors` | drawn brands with an unapproved variant, then the `sponsor-roster` car |
-| `--marks` | unapproved race markings |
-| `--references` | `references.md` rows |
-| `--proposals <file>` | a retro's proposed edits (`[{title, body}]`) |
+| a final | Race it (`accept`, maybe `favourite`), Change (`edit`, with a `strategy`, quick or full), Park (not now, worth coming back to), Stop (not worth more work) |
+| concepts | picked (`accept`, a note each and one for all) or not (`reject`, what Send records for the rest); a picked sketch is `revived` |
+| a kit | approve, change |
+| a grid tile | fine, change, no (a reference: yes or no) |
 
-| Key | Decision |
-|---|---|
-| A | accept (for a design: good enough to race) |
-| E | edit, with a note |
-| R | reject |
-| S | skip |
-| M | mix concepts, with a note |
-| P | park a design: stop iterating, not approved |
-| 1–4 | rate a design: done with it, fine, would race, love it |
-| Shift+A | accept every undecided reference, roster row or brand |
+- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note with the critic's judgement of it. Hovering a view, Then or a checkpoint previews it.
+- The critic's call and its open suggestions reach the page only once the owner has answered the item (`items.HIDDEN`), so they can't anchor them. A ticked suggestion goes with a Change as `endorsed`: it counts for that round, never as the owner's taste.
+- A Change may be stored before its note; Send needs a note or a ticked suggestion. A grid sends only once every tile has an answer.
+- Pictures are fetched at the size they are shown; a click opens them whole.
 
-- A design item shows the build's sim shots in view order (without them, its baked views where they stand in, captioned as baked), then the flat views, the UI's car and the squint.
-- It opens with the owner's last decision and note on that design, the critic's judgement of the note, and `diff/reviewed-vs-now.png`.
-- The critic's scores and call never reach the page, so they can't anchor the owner.
-
-Apply runs in the checkout that queued the group:
+Send runs Apply in the checkout that queued the screen:
 
 1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, and brand and marking approvals. These come first, so a final that places a brand accepted in the same review can be pinned.
-2. It appends every decision to `prefs/decisions.jsonl`: the note verbatim, the rating, the sim runs (or baked run) shown, the design hash, and the critic's verdict on that hash.
+2. It appends every decision to the owner's ledger (Records): the note verbatim, the extras, the sim runs (or baked run) shown and a shrunk copy of their shots in the state dir (`review-shots/<uid>/`), the design hash, and the critic's verdict on that hash.
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
-It prints the decisions as JSON, and the agent writes `prefs/log.md` from them in the owner's words (lines starting `Context:` are the agent's).
+It prints the decisions as JSON, and the agent writes the owner's `log.md` from them in their words (lines starting `Context:` are the agent's).
+
+### History
+
+The page's History lists every decision, newest first, with what it showed, the taste rows it fed and who made it, and every taste row with the words it rests on and the session that wrote it. It reads and writes the main checkout (the repository's first worktree) and commits there.
+
+| Action | Writes |
+|---|---|
+| Edit note, Undo, Redo | a line of its own in the ledger naming the decision by uid (`prefs.change`) |
+| Keep as mine, Retire | the taste row, by the owner; a retired row stops gating designs |
+
+When an undo leaves a live taste row resting on fewer than two of the owner's notes, History asks whether to keep it as theirs or retire it.
 
 ## Approvals
 
@@ -273,7 +278,7 @@ It prints the decisions as JSON, and the agent writes `prefs/log.md` from them i
 
 A fresh `livery-critic` subagent judges each pack: it has only the Read tool, its model is pinned and it gets no CLAUDE.md. A judge compares more reliably than it scores, and favours whichever image comes first, so most of its jobs are comparisons run in both orders.
 
-`livery critic pack` makes a folder of what the critic may see, never the script. Every pack holds the rubric, the taste table, `references.md`, `prefs/log.md`, and per design `kit.md` (what the sim draws over the car and what hides its paint).
+`livery critic pack` makes a folder of what the critic may see, never the script. Every pack holds the rubric, the taste table (rendered from `taste.json` as `taste.md`), `references.md`, the owner's `log.md`, and per design `kit.md` (what the sim draws over the car and what hides its paint).
 
 | Pack | Holds |
 |---|---|
@@ -330,12 +335,16 @@ flowchart TD
 | Record | Where | Committed |
 |---|---|---|
 | Verdicts | `designs/<name>/verdicts.jsonl` | yes |
-| Decisions | `prefs/decisions.jsonl`, written by Apply | yes |
-| The owner's words | `prefs/log.md` | yes |
+| Decisions | `prefs/<person>/decisions.jsonl`, written by Send and History | yes |
+| The owner's words | `prefs/<person>/log.md` | yes |
+| Their taste | `prefs/<person>/taste.json` (`livery taste`) | yes |
+| What each review showed | `review-shots/` in the state dir | no |
 | Approvals | `approved.json` in designs and kits | yes |
 | Where a design stands | `brief.md`, `notes.md` (now only; the history is in git and the verdicts) | yes |
 | Telemetry | `telemetry.jsonl` in the state dir: every livery command, sim run, install and review decision | no |
 
+- `prefs/<person>/` is the owner's by default (`owner` in `config.toml`, lower case); a contributor's PR brings their own. Every ledger line has a `uid` and `by`: the person, or `agent:<session>` (the SessionStart hook exports the session's id and transcript). Nothing is rewritten: an edit or undo is a later line naming the decision, and readers fold them in (`prefs.decisions`). Union merges keep appends from two branches (`.gitattributes`).
+- A taste row rests on quotes, each naming the decision it came from where there is one. `livery taste show` prints the live rows as the table builders read; `put` and `retire` change one, as this agent.
 - `livery status [design]` builds nothing. It reports the check, the TGAs, the approvals, whether the previews are fresh, and the critic's last round.
 - `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage and waits for the sim lock.
 - Every command takes `--json`.

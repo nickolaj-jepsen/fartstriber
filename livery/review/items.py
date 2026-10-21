@@ -100,7 +100,9 @@ def _shown(ws: Workspace, name: str, line: dict) -> dict[str, str]:
 
 
 def _sentence(text: str) -> tuple[str, str]:
-    """A suggestion as a short title (its first sentence, cut at a word) and the rest."""
+    """A suggestion as a short title (its first sentence, cut at a word) and the rest. A leading "Optional
+    polish." says what the optional flag says already."""
+    text = re.sub(r"^\s*optional(\s+polish)?(,\s*carried over)?\s*[.:]\s*", "", text, flags=re.I)
     first, _, rest = text.strip().partition(". ")
     title = first if len(first) <= 90 else first[:90].rsplit(" ", 1)[0] + "…"
     return title.rstrip("."), (rest if title == first.rstrip(".") else text).strip()
@@ -110,6 +112,8 @@ def _verdict(r: dict) -> dict:
     """A critic round as the page shows it once the owner has answered: its call and every open suggestion."""
     fixes = []
     for f in r.get("fixes", []):
+        if isinstance(f, str):  # verdicts from before v2: a fix was its text
+            f = {"text": f}
         if f.get("title"):
             title, detail = f["title"], f.get("detail") or f.get("text", "")
         else:

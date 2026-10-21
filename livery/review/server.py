@@ -9,7 +9,9 @@ checkout (livery.review.history).
 """
 
 import contextlib
+import functools
 import hashlib
+import io
 import json
 import mimetypes
 import os
@@ -23,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlparse
+
+from PIL import Image
 
 from livery import config, notify, state
 from livery.config import Workspace
@@ -96,6 +100,17 @@ def _refusal(item: dict | None, d: dict) -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=512)
+def _thumb(path: Path, mtime: float, width: int) -> bytes:
+    """`path` as a JPEG at most `width` wide; cached by its modification time."""
+    img = Image.open(path).convert("RGB")
+    if img.width > width:
+        img = img.resize((width, max(1, round(img.height * width / img.width))), Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=84)
+    return out.getvalue()
+
+
 def _unsaid(group: dict) -> list[str]:
     """Changes that don't yet say what to change: no note and no ticked critic suggestion."""
     return [
@@ -136,14 +151,17 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code: int = 200) -> None:
         self._send(code, json.dumps(obj).encode(), "application/json")
 
-    def _picture(self, root: Path, rel: str) -> None:
-        """A picture from inside `root`, or one a decision kept in the state dir (`state:`)."""
+    def _picture(self, root: Path, rel: str, width: str = "") -> None:
+        """A picture from inside `root`, or one a decision kept in the state dir (`state:`); with a width, a
+        JPEG no wider, for thumbnails (sim shots are megabytes each)."""
         if rel.startswith("state:"):
             root, rel = (state.root() / SHOTS).resolve(), rel[len("state:") :].removeprefix(f"{SHOTS}/")
         root = root.resolve()
         path = (root / rel).resolve()
         if root not in path.parents or not path.is_file() or path.suffix not in PICTURES:
             return self._send(404, b"not found", "text/plain")
+        if width.isdigit() and path.suffix != ".svg":
+            return self._send(200, _thumb(path, path.stat().st_mtime, int(width)), "image/jpeg")
         self._send(200, path.read_bytes(), mimetypes.guess_type(path.name)[0] or "application/octet-stream")
 
     def _main(self) -> Workspace:
@@ -165,13 +183,14 @@ class _Handler(BaseHTTPRequestHandler):
             group = queue.read(arg("g"))
             if group is None:
                 return self._send(404, b"not found", "text/plain")
-            self._picture(Path(group["root"]), arg("p"))  # a group's pictures come only from its own checkout
+            # A group's pictures come only from its own checkout.
+            self._picture(Path(group["root"]), arg("p"), arg("w"))
         elif url.path == "/api/history":
             ws = self._main()
             with self.lock:
                 self._json({"entries": history.entries(ws), "root": str(ws.root), "owner": config.owner()})
         elif url.path == "/history-img":
-            self._picture(self._main().root, arg("p"))
+            self._picture(self._main().root, arg("p"), arg("w"))
         else:
             self._send(404, b"not found", "text/plain")
 

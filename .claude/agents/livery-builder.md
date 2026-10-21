@@ -37,7 +37,7 @@ Other builders work on this design before and after you, and you share no memory
 
 1. Your prompt: which job this is (a sketch, a build, a round, a variant, adopting a variant) and anything the owner said.
 2. `brief.md`, `notes.md` and `verdicts.jsonl` if they exist; for a new concept, the concept brief in your prompt.
-3. `taste.md` and `rubric.md` in `.claude/skills/livery-design/`, the yes rows of `references.md`, and all of `prefs/log.md`.
+3. The taste table (`uv run livery taste show`), `rubric.md` in `.claude/skills/livery-design/`, the yes rows of `references.md`, and all of the owner's `prefs/<person>/log.md`.
 4. Your kit's body model, `kits/<kit>/body.yaml`: its parts and features by name, which your design uses instead of island ids and measured numbers, and what the sim draws over the car (`keep_clear`) or hides (`occluder`).
 5. The pictures of the reference rows the brief names (`References: 25, 32`) in `.cache/references/<row>/`. They are the bar this car is held to. If they are missing, say so in your report.
 6. Before drawing a themed brand into `designs/<name>/sponsors/`: `.claude/skills/sponsor-draw/SKILL.md`.
