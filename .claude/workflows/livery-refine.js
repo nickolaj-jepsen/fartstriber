@@ -102,8 +102,10 @@ const SKETCH = {
   required: ['design', 'rendered', 'summary', 'problems'],
   properties: { design: STR, rendered: BOOL, summary: STR, problems: STRS },
 }
-// blocked, kit, character and sim stop the loop for the owner, so they hold only what does: a kit gap the
-// round worked around, or a sim run it didn't need, goes in notes.
+// character and sim stop the loop for the owner. blocked and kit go to the owner too, but a checked build
+// in the sim is still judged and its other fixes worked; the loop stops on them once no fix the owner
+// would send the car back for is left. A kit gap the round worked around, or a sim run it didn't need,
+// goes in notes.
 const STOPS = (what) => ({ type: 'array', items: STR, description: `${what}; [] when there is none` })
 const BUILT = {
   type: 'object',
@@ -316,6 +318,7 @@ function buildPrompt(n, adopt, baked) {
 const history = []
 const constraints = new Set()
 const notes = new Set() // for the owner, not stopping the loop
+const held = new Set() // blocked fixes and kit faults for the owner, carried while other fixes are worked
 let last = null // the latest livery critic status
 let fork = null
 
@@ -331,7 +334,7 @@ function finish(stop, extra) {
     history,
     status: last,
     review,
-    for_owner: [...(more.for_owner || []), ...notes],
+    for_owner: [...(more.for_owner || []), ...held, ...notes],
     constraints: [...constraints],
     fork: fork && { ranking: fork.ranking, winner: fork.winner },
     remove: fork ? fork.variants.filter(v => !shown.includes(v)) : [],
@@ -386,17 +389,15 @@ for (let n = 1; n <= BUDGET; n++) {
   for (const c of built.constraints) constraints.add(c)
   const [blocked, kit, character, sim] = [real(built.blocked), real(built.kit), real(built.character), real(built.sim)]
   for (const n of real(built.notes)) notes.add(n)
-  const raised = [
-    ...blocked.map(b => `blocked: ${b}`),
-    ...kit.map(k => `kit fault: ${k}`),
-    ...character.map(c => `character conflict: ${c}`),
-    ...sim.map(x => `the sim needs: ${x}`),
-  ]
-  if (raised.length) {
-    const stop = blocked.length ? 'blocked' : kit.length ? 'kit' : character.length ? 'character' : 'sim'
+  for (const b of blocked) held.add(`blocked: ${b}`)
+  for (const k of kit) held.add(`kit fault: ${k}`)
+  const raised = [...character.map(c => `character conflict: ${c}`), ...sim.map(x => `the sim needs: ${x}`)]
+  const unjudged = !built.checked || (!baked && !built.sim_run)
+  if (raised.length || (unjudged && (blocked.length || kit.length))) {
+    const stop = character.length ? 'character' : sim.length ? 'sim' : blocked.length ? 'blocked' : 'kit'
     return finish(stop, { for_owner: raised })
   }
-  if (!built.checked || (!baked && !built.sim_run))
+  if (unjudged)
     return finish('error', { for_owner: [`round ${n}: no checked build${baked ? '' : ' in the sim'}: ${built.summary}`] })
 
   const judged = await judgeRound(n, baked)
@@ -407,8 +408,8 @@ for (let n = 1; n <= BUDGET; n++) {
     overall: verdict.overall, call: verdict.verdict, fixes: verdict.fixes.map(f => f.text),
     owner_note: verdict.owner_note ? verdict.owner_note.status : null,
   })
-  if (verdict.blocked.length)
-    return finish('blocked', { for_owner: verdict.blocked.map(b => `blocked, as the critic sees it: ${b}`) })
+  for (const b of verdict.blocked) held.add(`blocked, as the critic sees it: ${b}`)
+  if (verdict.blocked.length && !verdict.fixes.some(f => !f.optional)) return finish('blocked')
   if (last.round > 1) {
     const compared = await compareRounds(n, baked)
     if (compared.error) return finish('error', { for_owner: [compared.error] })
