@@ -1,5 +1,4 @@
-"""`livery kit spec`: the kit's finishes, from its calibration capture's grey ladders (docs/plan.md, decision
-21).
+"""`livery kit spec`: the kit's finishes, from its calibration capture's grey ladders (docs/sim.md, Materials).
 
 The sim renders paint under a metal finish darker than under gloss (docs/sim.md, Rendering). For each
 preset with metal in it, the build brightens the paint by a lookup measured on the ladders: for each grey a
