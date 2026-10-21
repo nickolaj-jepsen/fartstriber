@@ -14,7 +14,7 @@ from livery import body, carspace, stamps, ui_preview
 from livery.config import Workspace
 from livery.designs import build_livery
 from livery.errors import LiveryError
-from livery.kit import Kit
+from livery.kit import Kit, view_kind
 from livery.params import parse_range
 from livery.raster import rasterise
 
@@ -41,10 +41,18 @@ def _render(
 def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) -> Image.Image:
     """The paint seen flat on one view of the car: each car-space pixel looked up through the kit's maps.
 
-    Sides are drawn as seen (left side nose left, right side nose right), the top from above, nose left.
+    Sides are drawn as seen (left side nose left, right side nose right), the top from above, nose left,
+    and a face as seen from ahead or behind, at the scale of the others (`width` px per car length).
     """
     islands = np.asarray(Image.open(kit.dir / "overlays" / "islands.png"))
-    if view == "top":
+    if view_kind(view) == "face":
+        a0, a1, b0, b1 = extent(kit, view)
+        ka, kb = carspace.unit_lengths(kit, view)
+        height = max(1, int(width * (b1 - b0) * kb))
+        width = max(1, int(width * (a1 - a0) * ka))
+        w, v = np.meshgrid(np.linspace(a0, a1, width), np.linspace(b1, b0, height))
+        pts = np.stack([w.ravel(), v.ravel()], 1)
+    elif view == "top":
         t = carspace.kit_data(kit)["top_transform"]
         height = int(width * 2 * abs(t["y_per_w"]) / t["x_per_u"])
         u, w = np.meshgrid(np.linspace(0, 1, width), np.linspace(-1, 1, height))
@@ -70,18 +78,41 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
         out[idx] = paint[y[hit], x[hit]]
         done[idx] = True
     img = Image.fromarray(out.reshape(height, width, 3))
-    return img.transpose(Image.FLIP_LEFT_RIGHT) if view == "side_r" else img
+    return img.transpose(Image.FLIP_LEFT_RIGHT) if view in ("side_r", "front") else img
+
+
+def extent(kit: Kit, view: str) -> tuple[float, float, float, float]:
+    """The car-space box a car view shows, (a0, a1, b0, b1) of its two coordinates: on a face, where its
+    maps were measured."""
+    kind = view_kind(view)
+    if kind != "face":
+        return (0.0, 1.0, -1.0, 1.0) if kind == "top" else (0.0, 1.0, 0.0, 1.0)
+    areas = [pc.car_area for pc in carspace.pieces(kit, view) if pc.car_area is not None]
+    if not areas:
+        return -1.0, 1.0, 0.0, 1.0
+    a0, b0, a1, b1 = shapely.union_all(areas).bounds
+    return a0, a1, b0, b1
 
 
 def views(paint: np.ndarray, kit: Kit, width: int = VIEW_WIDTH) -> Image.Image:
-    """Left side, top, right side, stacked."""
+    """Left side, top, right side, stacked, and below them the faces the kit maps side by side."""
     parts = [car_view(paint, kit, v, width) for v in ("side_l", "top", "side_r")]
+    faces = [car_view(paint, kit, v, width) for v in kit.face_views]
     pad = 12
-    sheet = Image.new("RGB", (width + 2 * pad, sum(p.height for p in parts) + pad * 4), BACKGROUND)
+    across = sum(p.width for p in faces) + pad * (len(faces) - 1)
+    if faces and across > width:  # side by side they'd be wider than the car: smaller
+        s = width / across
+        faces = [p.resize((max(1, int(p.width * s)), max(1, int(p.height * s)))) for p in faces]
+    rows = sum(p.height for p in parts) + (max(p.height for p in faces) + pad if faces else 0)
+    sheet = Image.new("RGB", (width + 2 * pad, rows + pad * 4), BACKGROUND)
     y = pad
     for p in parts:
         sheet.paste(p, (pad, y))
         y += p.height + pad
+    x = pad
+    for p in faces:
+        sheet.paste(p, (x, y))
+        x += p.width + pad
     return sheet
 
 

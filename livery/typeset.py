@@ -321,12 +321,13 @@ class Line:
 
 
 def _reading(kit: Kit, view: str, facing: str) -> np.ndarray:
-    """Reading frame (x along the line, y up, both in car lengths as seen) to car space (u, v or w)."""
+    """Reading frame (x along the line, y up, both in car lengths as seen) to car space (u, v or w; w, v on a
+    face, read from ahead or behind)."""
     k = carspace.aspect(kit, view)
-    if view == "side_l":
-        return np.array([[1.0, 0.0], [0.0, 1.0 / k]])
-    if view == "side_r":
-        return np.array([[-1.0, 0.0], [0.0, 1.0 / k]])
+    if view in ("side_l", "side_r", "front", "rear"):
+        a, b = carspace.unit_lengths(kit, view)
+        x = -1.0 if view in ("side_r", "front") else 1.0
+        return np.array([[x / a, 0.0], [0.0, 1.0 / b]])
     if facing == "front":  # read from the front: x across to the car's left, up towards the tail
         return np.array([[0.0, 1.0], [-1.0 / k, 0.0]])
     return np.array([[0.0, -1.0], [1.0 / k, 0.0]])
@@ -334,7 +335,8 @@ def _reading(kit: Kit, view: str, facing: str) -> np.ndarray:
 
 def _slope(view: str, deg: float) -> float:
     """A lean as dx/dy in the reading frame: on the sides `deg` leans tops towards the tail, as `rake` does,
-    which on the right side, read tail to nose, is a back-slant; on top it leans them along the line."""
+    which on the right side, read tail to nose, is a back-slant; on top and on a face it leans them along
+    the line."""
     s = math.tan(math.radians(deg))
     return -s if view == "side_r" else s
 

@@ -221,6 +221,9 @@ def _norm_hex(v: str) -> str:
 def _screen(view: str, kit: Kit) -> np.ndarray:
     """Car space -> screen (x right, y down) as each view is looked at; text there must read normally."""
     asp = carspace.side_aspect(kit)
+    if view in ("front", "rear"):  # seen from ahead the car's right (w = 1) is on the left, from behind right
+        a, b = carspace.unit_lengths(kit, view)
+        return np.array([[-a if view == "front" else a, 0.0], [0.0, -b]])
     return {
         "side_l": np.array([[1.0, 0.0], [0.0, -asp]]),
         "side_r": np.array([[-1.0, 0.0], [0.0, -asp]]),

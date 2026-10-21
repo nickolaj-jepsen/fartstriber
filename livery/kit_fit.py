@@ -1,9 +1,10 @@
 """`livery kit fit`: car-space -> texture maps from the kit's calibration capture (`livery kit capture`).
 
 The capture holds, per preview view, the texel the sim draws at each car pixel, to a fraction of one
-(`livery.graycode`). The fit reads five of them: each side square-on, whose screen axes are the car's; the
+(`livery.graycode`). The fit needs five of them: each side square-on, whose screen axes are the car's; the
 three-quarter view that sees each side's up-facing strips (front34 the left, rear34 the right); and the top,
-5 degrees off vertical. It runs in stages, each a function below:
+5 degrees off vertical. It also reads, when the capture has them, the views straight ahead and behind (the
+faces) and the left side from above (side_high). It runs in stages, each a function below:
 
 1. Side frames: u nose 0 -> tail 1 along a side view's screen x, v sill 0 -> top of the side 1 up it.
 2. Side maps: a quadratic per large island with a residual grid, fitted to its side's samples.
@@ -12,8 +13,14 @@ three-quarter view that sees each side's up-facing strips (front34 the left, rea
 5. Small side islands and top strips: affine maps from side and carried samples.
 6. Mirror: an island neither side mapped takes its partner's map reflected; of partners that disagree, the
    side that saw its island far more keeps its map, else the one that fits the other side better.
-7. Top maps: (u, w) -> (x, y) for the top islands and the up-facing parts of side islands the sides miss.
-8. The top-rest model for top islands too little seen for a map of their own, and the seams.
+7. Top maps: (u, w) -> (x, y) for the top islands and the up-facing parts of side islands the sides miss,
+   with side_high carried into (u, w) where the top shot missed a shoulder.
+8. The top-rest model for top islands too little seen for a map of their own.
+9. Faces: a homography from each face view's screen to (w, v), anchored on the cells it shares with the
+   side panels (v) and the top shot (w) near its end; a face map (w, v) -> (x, y) for each island no side
+   maps and the top maps badly or not at all.
+
+The seams come last, over every view.
 
 Each map holds only where it was measured: in the texture, where its samples lie, and in car space, where
 their car coordinates lie, each grown by a margin. Thresholds are in texture px of a 2048 px template and
@@ -44,6 +51,11 @@ REF_CANVAS = 2048
 SIDES = {"side_l": ("lower", "front34"), "side_r": ("upper", "rear34")}  # view -> texture band, its 3/4 view
 PLAN = "top"
 VIEWS = (*SIDES, *(h for _, h in SIDES.values()), PLAN)
+# Views a capture may also have, each read when it is there: the face views (car-space face -> the view
+# that sees it straight on) and the left side from above, for the door shoulders' up-facing parts.
+FACES = {"front": "front", "rear": "rear_chase"}
+HIGH_SIDE = "side_high"
+OPTIONAL = (*FACES.values(), HIGH_SIDE)
 REPORT = kits.FIT_REPORT
 # What a fit depends on in the capture's identity: not the spec presets or the sim's graphics options.
 WATCHED = {
@@ -96,6 +108,11 @@ GRID_CELL = 0.025  # car-space units
 GRID_MIN_SAMPLES = 1000  # islands with fewer keep the plain quadratic
 GRID_MIN_CELL_SAMPLES = 8
 EDGE_PX = 8  # a shot whose car comes this close to the screen edge has lost part of it
+# A face's frame is anchored on the side and top samples within this much u of its end: further from the
+# face, a part sits at another depth, and so at another scale, in the face view's perspective.
+FACE_END = 0.15
+MIN_FACE_CELLS = 30  # of each kind of anchor
+MAX_TOP_DROPPED = 0.2  # a top map that drops more of its samples than this is replaced by a face's
 
 
 class FitError(LiveryError):
@@ -140,8 +157,25 @@ class Template:
         n = -(-self.canvas // c)
         return np.floor(ty / c).astype(np.int64) * n + np.floor(tx / c).astype(np.int64)
 
+    def grown(self, cells: np.ndarray, size: float = SEEN_PX) -> np.ndarray:
+        """Texture cells (of `size`) with their eight neighbours."""
+        n = -(-self.canvas // max(1, round(self.px(size))))
+        return np.unique((cells[:, None] + [d * n + e for d in (-1, 0, 1) for e in (-1, 0, 1)]).ravel())
+
     def of_band(self, band: str) -> set[str]:
         return {r for r, b in self.band.items() if b == band}
+
+    def x_centre(self, rid: str) -> float | None:
+        """The texture x an island mirrors itself about, for one laid out across the car along texture x (a
+        rear face): its middle, if it overlaps itself reflected there by MIN_MIRROR_IOU."""
+        ys, xs = np.nonzero(self.islands == int(rid[1:]))
+        if not len(xs):
+            return None
+        x0, x1, y0 = int(xs.min()), int(xs.max()), int(ys.min())
+        mask = np.zeros((int(ys.max()) - y0 + 1, x1 - x0 + 1), bool)
+        mask[ys - y0, xs - x0] = True
+        both = (mask & mask[:, ::-1]).sum()
+        return (x0 + x1 + 1) / 2 if both / (2 * mask.sum() - both) >= MIN_MIRROR_IOU else None
 
 
 def template(kit: Kit) -> Template:
@@ -250,7 +284,8 @@ def capture_shots(cfg: Config, ws: Workspace, kit: Kit, tpl: Template) -> tuple[
     missing = [v for v in VIEWS if not (run / v / "geometry.npz").exists()]
     if missing:
         raise FitError(f"{kit.name}'s capture has no {', '.join(missing)} view; the fit needs {VIEWS}")
-    return {v: shot(v, graycode.ViewMap.load(run / v / "geometry.npz"), tpl) for v in VIEWS}, run
+    read = [*VIEWS, *(v for v in OPTIONAL if (run / v / "geometry.npz").exists())]
+    return {v: shot(v, graycode.ViewMap.load(run / v / "geometry.npz"), tpl) for v in read}, run
 
 
 # Fitting helpers.
@@ -478,20 +513,31 @@ def _small_map(tpl: Template, view: str, s: Samples) -> tuple[dict, dict] | None
 
 
 def _mirrored(t: dict, rid: str, axis: float) -> dict:
-    """A side map reflected onto the other side's partner island, about the template's mirror axis."""
+    """A map reflected onto its island's partner, about the template's mirror axis: a side's onto the other
+    side, a face's onto the partner across the car's centre line (which shows at w what it shows at -w)."""
     coef = np.asarray(t["coef"])
+    face = kits.view_kind(t["view"]) == "face"
+    if face:
+        coef = coef * [1, -1, 1, 1, -1, 1]
     mirrored = np.vstack([coef[0], -coef[1]])
     mirrored[1, 0] += 2 * axis
+    car_domain = t["car_domain"]
+    if face:
+        car_domain = [[[-a, b] for a, b in ring] for ring in _as_rings(car_domain)]
     out = {
-        "view": "side_r" if t["view"] == "side_l" else "side_l",
+        "view": t["view"] if face else "side_r" if t["view"] == "side_l" else "side_l",
         "coef": np.round(mirrored, 4).tolist(),
         "domain": [[[x, round(2 * axis - y, 1)] for x, y in ring] for ring in _as_rings(t["domain"])],
-        "car_domain": t["car_domain"],
+        "car_domain": car_domain,
         "mirror_of": rid,
     }
     if "grid" in t:  # reflected in y like the map
-        d = np.asarray(t["grid"]["d"]) * [1, -1]
-        out["grid"] = {**t["grid"], "d": np.round(d, 2).tolist()}
+        g = t["grid"]
+        d = np.asarray(g["d"]) * [1, -1]
+        out["grid"] = {**g, "d": np.round(d, 2).tolist()}
+        if face:
+            (a0, a1) = g["u"]
+            out["grid"] |= {"u": [-a1, -a0], "d": np.round(d[::-1], 2).tolist()}
     return out
 
 
@@ -669,14 +715,20 @@ def _mirror_fill(tpl: Template, rid: str, own: Side, other: Side) -> Samples:
     return Samples.of(other.u[m][new], other.v[m][new], tx[new], ty[new])
 
 
-def _reflected(tpl: Template, rid: str, s: Samples) -> Samples:
-    """A centre island's samples reflected across the car's centre line (w -> -w), at texture cells the
-    island's own samples don't reach: a bank or the camera's tilt hides one half from the views that see the
-    other."""
-    tx, ty = s.tex[:, 0], 2 * tpl.axis - s.tex[:, 1]
+def _reflected(tpl: Template, rid: str, s: Samples, col: int = 1, about_x: float | None = None) -> Samples:
+    """A centre island's samples reflected across the car's centre line (w, car-space column `col`, -> -w),
+    at texture cells the island's own samples don't reach: a bank or the camera's tilt hides one half from
+    the views that see the other. The texture mirrors about the template's axis, or for an island laid out
+    along texture x, about x = `about_x`."""
+    if about_x is None:
+        tx, ty = s.tex[:, 0], 2 * tpl.axis - s.tex[:, 1]
+    else:
+        tx, ty = 2 * about_x - s.tex[:, 0], s.tex[:, 1]
     seen = np.unique(tpl.cells(s.tex[:, 0], s.tex[:, 1], SEEN_PX))
     new = (tpl.ids(tx, ty) == rid) & ~np.isin(tpl.cells(tx, ty, SEEN_PX), seen)
-    return Samples.of(s.car[new, 0], -s.car[new, 1], tx[new], ty[new])
+    car = s.car[new].copy()
+    car[:, col] *= -1
+    return Samples(car, np.stack([tx[new], ty[new]], 1))
 
 
 def side_maps(tpl: Template, sd: dict[str, Side]) -> tuple[dict, dict, dict]:
@@ -849,28 +901,107 @@ def mirror(tpl: Template, transforms: dict, fitted: dict, report: dict) -> None:
 # Stages 7 and 8: the top view.
 
 
+@dataclass
+class High:
+    """The left side seen from above (`HIGH_SIDE`), carried into the top's (u, w)."""
+
+    shot: Shot
+    uw: np.ndarray
+    ok: np.ndarray
+
+
+def high_side(tpl: Template, top: Top, shots: dict[str, Shot], report: dict) -> High | None:
+    """The raised side view carried into the top's (u, w) through the cells it shares with the top shot,
+    as the three-quarter views are carried into the sides."""
+    h = shots.get(HIGH_SIDE)
+    if h is None:
+        return None
+    p = top.shot
+    cuw, cxy = _common_cells(p.key, np.stack([top.u, top.w_seen], 1), h.key, h.screen())
+    uw, ok = _carry(h.screen(), cxy, cuw)
+    report[HIGH_SIDE] = {"cells": len(cuw), "carried": int(ok.sum())}
+    return High(h, uw, ok)
+
+
+def _high_fill(tpl: Template, rid: str, top: Top, high: High | None, out: np.ndarray | None) -> tuple:
+    """Samples of island `rid` from the raised side view at texture cells the top shot didn't see on it,
+    nor next to one it saw (a rim the top's pixels just miss is no part it can't see), and its partner's
+    there, reflected (the raised view sees only the left side); none inside `out` (the side map's area).
+    Returns both, as Samples."""
+    if high is None:
+        return Samples.empty(), Samples.empty()
+    p, h = top.shot, high.shot
+    mine = p.ids == rid
+    seen = tpl.grown(np.unique(tpl.cells(p.tx[mine], p.ty[mine], SEEN_PX)))
+
+    def fresh(tx: np.ndarray, ty: np.ndarray) -> np.ndarray:
+        keep = ~np.isin(tpl.cells(tx, ty, SEEN_PX), seen)
+        return keep & ~shapely.contains_xy(out, tx, ty) if out is not None else keep
+
+    # It sees the far side's shoulder too, over the top, but edge-on: only the left half's islands (below
+    # the mirror axis in the texture) take its own samples.
+    m = (h.ids == rid) & high.ok & (tpl.centre_y[rid] > tpl.axis)
+    m[m] = fresh(h.tx[m], h.ty[m])
+    own = Samples.of(high.uw[m, 0], high.uw[m, 1], h.tx[m], h.ty[m])
+    seen = np.union1d(seen, tpl.cells(h.tx[m], h.ty[m], SEEN_PX))
+    pid = tpl.partner(rid)
+    if pid is None or pid == rid:
+        return own, Samples.empty()
+    # The top camera's tilt sets the two sides' w a little apart (a shoulder sits lower than the top islands
+    # its w comes from): a partner's place reflected is where the top shot puts the mirror image of its
+    # texels, measured on the cells it saw of both, along the car.
+    pm = p.ids == pid
+    a, b = _common_cells(
+        p.key[mine],
+        np.stack([top.u[mine], top.w_seen[mine]], 1),
+        tpl.cells(p.tx[pm], 2 * tpl.axis - p.ty[pm]),
+        np.stack([top.u[pm], top.w_seen[pm]], 1),
+    )
+    if len(a) < HIGH_MIN_CELLS:
+        return own, Samples.empty()
+    line = np.column_stack([np.ones(len(b)), b[:, 0]])
+    off, _, _ = _robust_fit(line, np.stack([a[:, 0] - b[:, 0], a[:, 1] + b[:, 1]], 1), floor=CAR_FLOOR)
+    m = (h.ids == pid) & high.ok
+    tx, ty = h.tx[m], 2 * tpl.axis - h.ty[m]
+    on = (tpl.ids(tx, ty) == rid) & fresh(tx, ty)
+    uw = high.uw[m][on]
+    d = np.column_stack([np.ones(len(uw)), uw[:, 0]]) @ off
+    return own, Samples.of(uw[:, 0] + d[:, 0], d[:, 1] - uw[:, 1], tx[on], ty[on])
+
+
 def over_top(
-    tpl: Template, top: Top, sd: dict[str, Side], transforms: dict, report: dict, evidence: dict
+    tpl: Template,
+    top: Top,
+    sd: dict[str, Side],
+    transforms: dict,
+    report: dict,
+    evidence: dict,
+    high: High | None = None,
 ) -> dict:
     """Side panels that turn over into the top (fender and haunch tops, door shoulders) face the top camera,
     not the side one, and so do centre parts the template files with the sides (the bonnet duct ramp). The
     part of such an island the side shots missed gets a top-view map (u, w) -> (x, y) of its own, with w
-    where the large top islands put that place in the top shot."""
+    where the large top islands put that place in the top shot, and where the top shot missed it too, from
+    the raised side view (`high_side`)."""
     p = top.shot
     out = {}
     candidates = (set(transforms) | {r for r in set(p.ids) if tpl.band[r] != "top"}) & set(p.ids)
     for rid in sorted(candidates):
         m = p.ids == rid
+        side_area = None
         if rid in transforms:  # what the side map holds stays the side's
             side_area = carspace.region(transforms[rid]["domain"])
             m &= ~shapely.contains_xy(side_area, p.tx, p.ty)
-        if m.sum() < MIN_SAMPLES:
+        raised, mirrored = _high_fill(tpl, rid, top, high, side_area)
+        if m.sum() + len(raised) + len(mirrored) < MIN_SAMPLES:
             continue
-        samples = Samples.of(top.u[m], top.w_seen[m], p.tx[m], p.ty[m])
+        samples = Samples.of(top.u[m], top.w_seen[m], p.tx[m], p.ty[m]) + raised + mirrored
         t, rep = _large_map(tpl, "top", samples)
         rep.pop("view")
+        if len(raised) + len(mirrored):
+            rep |= {"side_high_samples": len(raised), "mirror_filled": len(mirrored)}
         # A part seen edge-on from above (a wing endplate) spans the texture but almost no car space.
-        scale = _min_scale(np.asarray(t["coef"]).T, top.u[m], top.w_seen[m])
+        scale = _min_scale(np.asarray(t["coef"]).T, *samples.car.T)
         if scale < tpl.px(MIN_PX_PER_UNIT) or rep["p90_px"] > tpl.px(MAX_SMALL_P90_PX):
             rep["map"] = None
         else:
@@ -956,6 +1087,180 @@ def rest_domain(tpl: Template, shots: dict[str, Shot], rest: set[str]) -> list:
     return out
 
 
+# Stage 9: the faces.
+
+
+@dataclass
+class Face:
+    """A face view's shot in the face's car space (w, v)."""
+
+    shot: Shot
+    w: np.ndarray
+    v: np.ndarray
+
+
+def _homography(xy_w, w, xy_v, v) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Screen -> (w, v), w = (h0 x + h1 y + h2) / d and v = (h3 x + h4 y + h5) / d with d = h6 x + h7 y + 1,
+    fitted linearly on points where only w is known and points where only v is: robust, and with the
+    perspective terms held near zero unless the anchors need them (a face seen straight on is near affine,
+    and the anchors, along its edges, hardly fix them). Returns h and each anchor's miss."""
+    rows_w = np.column_stack([xy_w, np.ones(len(w)), np.zeros((len(w), 3)), -w[:, None] * xy_w])
+    rows_v = np.column_stack([np.zeros((len(v), 3)), xy_v, np.ones(len(v)), -v[:, None] * xy_v])
+    a, b = np.vstack([rows_w, rows_v]), np.concatenate([w, v])
+    ridge = np.sqrt(len(b)) * np.eye(8)[6:]
+    keep = np.ones(len(b), bool)
+    for _ in range(3):
+        h, *_ = np.linalg.lstsq(np.vstack([a[keep], ridge]), np.concatenate([b[keep], [0, 0]]), rcond=None)
+        miss_w = np.abs(_project(h, xy_w)[:, 0] - w)
+        miss_v = np.abs(_project(h, xy_v)[:, 1] - v)
+        err = np.concatenate([miss_w, miss_v])
+        keep = err <= max(3 * np.median(err[keep]), CAR_FLOOR)
+    return h, miss_w, miss_v
+
+
+def _project(h: np.ndarray, xy: np.ndarray) -> np.ndarray:
+    d = h[6] * xy[:, 0] + h[7] * xy[:, 1] + 1
+    return (
+        np.stack([h[0] * xy[:, 0] + h[1] * xy[:, 1] + h[2], h[3] * xy[:, 0] + h[4] * xy[:, 1] + h[5]], 1)
+        / d[:, None]
+    )
+
+
+def face_frames(tpl: Template, shots: dict[str, Shot], sd: dict[str, Side], top: Top, report: dict) -> dict:
+    """Each face view's frame: v from the texture cells it shares with the side panels near its end, w from
+    those it shares with the top shot near its end (w where the large top islands put them). A face whose
+    view has too few of either is left out, with the reason in the report."""
+    out = {}
+    for face, view in FACES.items():
+        f = shots.get(view)
+        if f is None:
+            continue
+        rep: dict = {"from": view}
+        report.setdefault("frames", {})[face] = rep
+
+        def near(u: np.ndarray, end: str = face) -> np.ndarray:
+            return u > 1 - FACE_END if end == "rear" else u < FACE_END
+
+        keys = np.concatenate([s.shot.key[s.panels & near(s.u)] for s in sd.values()])
+        vs = np.concatenate([s.v[s.panels & near(s.u)] for s in sd.values()])
+        centre = f.screen().mean(axis=0)
+        xy = f.screen() - centre
+        cv, xy_v = _common_cells(keys, vs[:, None], f.key, xy)
+        m = near(top.u)
+        cw, xy_w = _common_cells(top.shot.key[m], top.w_seen[m, None], f.key, xy)
+        rep |= {"w_cells": len(cw), "v_cells": len(cv)}
+        if min(len(cw), len(cv)) < MIN_FACE_CELLS:
+            rep["skipped"] = (
+                f"too few cells shared with the {'top' if len(cw) < MIN_FACE_CELLS else 'side'} shots"
+            )
+            continue
+        h, miss_w, miss_v = _homography(xy_w, cw[:, 0], xy_v, cv[:, 0])
+        wv = _project(h, xy)
+        rep |= {
+            "w_p90": round(float(np.percentile(miss_w, 90)), 4),
+            "v_p90": round(float(np.percentile(miss_v, 90)), 4),
+        }
+        # On a symmetric car a texel and its mirror image sit at -w of each other.
+        a, b = _common_cells(f.key, wv[:, :1], tpl.cells(f.tx, 2 * tpl.axis - f.ty), wv[:, :1])
+        rep["mirror_w_p90"] = (
+            round(float(np.percentile(np.abs(a + b), 90)), 4) if len(a) >= MIN_FACE_CELLS else None
+        )
+        out[face] = Face(f, wv[:, 0], wv[:, 1])
+    return out
+
+
+def _top_fails(rep: dict, tpl: Template) -> bool:
+    return rep.get("p90_px", 0) > tpl.px(MAX_SMALL_P90_PX) or rep.get("dropped", 0) > MAX_TOP_DROPPED
+
+
+def face_maps(
+    tpl: Template,
+    faces: dict[str, Face],
+    transforms: dict,
+    tops: dict,
+    rest: set[str],
+    report: dict,
+    evidence: dict,
+) -> dict:
+    """A face map (w, v) -> (x, y) for each island a face view sees enough of that neither side maps and the
+    top maps badly or not at all (`tops`: the top's own maps; `rest`: the islands only its top-rest model
+    holds). Of two faces, the one that saw more of it. The replaced top maps leave `tops`."""
+    fits: dict[str, list] = {}
+    for face, fc in faces.items():
+        s = fc.shot
+        for rid in sorted(set(s.ids) - set(transforms)):
+            if rid in tops and not _top_fails(_top_rep(report, rid), tpl):
+                continue
+            m = s.ids == rid
+            small = tpl.area[rid] <= tpl.area_px(MAX_SMALL_AREA_PX)
+            if m.sum() < (MIN_SMALL_SAMPLES if small else MIN_SAMPLES):
+                continue
+            own = Samples.of(fc.w[m], fc.v[m], s.tx[m], s.ty[m])
+            samples = own + _face_reflected(tpl, rid, own)
+            if m.sum() >= MIN_SAMPLES:
+                t, rep = _large_map(tpl, face, samples)
+                scale = _min_scale(np.asarray(t["coef"]).T, *samples.car.T)
+                if scale < tpl.px(MIN_PX_PER_UNIT) or rep["p90_px"] > tpl.px(MAX_SMALL_P90_PX):
+                    report.setdefault(rid, {"view": tpl.band[rid]}).setdefault("faces", {})[face] = {
+                        "samples": int(m.sum()),
+                        "p90_px": rep["p90_px"],
+                        "map": None,
+                    }
+                    continue
+            else:
+                got = _small_map(tpl, face, samples)
+                if got is None:
+                    continue
+                t, rep = got
+            if len(samples) > len(own):
+                rep["mirror_filled"] = len(samples) - len(own)
+            fits.setdefault(rid, []).append((int(m.sum()), face, t, rep, samples))
+    out: dict = {}
+    for rid, cands in sorted(fits.items()):
+        n, face, t, rep, samples = max(cands, key=lambda c: c[0])
+        out[rid] = t
+        evidence[(face, rid)] = samples
+        row = report.setdefault(rid, {"view": tpl.band[rid]})
+        if rid in tops:  # the top map's report moves under what replaced it
+            was = row.pop("top") if isinstance(row.get("top"), dict) else None
+            if was is None:
+                was = {k: row.pop(k) for k in list(row) if k not in ("view", "w_off")}
+            row["replaced_by_face"] = {"face": face, "top": was}
+            tops.pop(rid)
+            evidence.pop(("top", rid), None)
+        elif rid in rest:
+            row["replaced_by_face"] = {"face": face, "top": "top-rest"}
+        row["face"] = {**rep, "samples": n}
+    for rid, t in list(out.items()):  # a partner no view maps takes the face map, reflected
+        pid = tpl.partner(rid)
+        if pid is None or pid == rid or pid in out or pid in transforms or pid in tops:
+            continue
+        out[pid] = _mirrored(t, rid, tpl.axis)
+        report[rid]["face"]["mirror"] = pid
+    return out
+
+
+def _top_rep(report: dict, rid: str) -> dict:
+    """The report of an island's top map: over_top's under "top", top_maps' the island's own."""
+    row = report.get(rid, {})
+    return row["top"] if isinstance(row.get("top"), dict) else row
+
+
+def _face_reflected(tpl: Template, rid: str, s: Samples) -> Samples:
+    """A face island's samples reflected across the car's centre line, when it mirrors itself in the
+    texture: about the template's axis (laid out like the top) or across its own middle in x."""
+    if tpl.partner(rid) == rid:
+        return _reflected(tpl, rid, s, col=0)
+    cx = tpl.x_centre(rid)
+    return _reflected(tpl, rid, s, col=0, about_x=cx) if cx is not None else Samples.empty()
+
+
+def map_views(maps: dict) -> list[str]:
+    """The car-space views a kit's maps hold: the sides, the top, and the faces that have maps."""
+    faces = {t["view"] for t in maps.get("side_transforms", {}).values()}
+    return [*SIDES, PLAN, *(f for f in kits.FACE_VIEWS if f in faces)]
+
+
 # The fit.
 
 
@@ -967,7 +1272,9 @@ class Fitted:
 
 
 def fit_maps(tpl: Template, shots: dict[str, Shot]) -> Fitted:
-    """Every stage, from the shots to the maps."""
+    """Every stage, from the shots to the maps. Only the fit's views are read: a capture's close-ups and
+    second-light views don't feed it."""
+    shots = {v: s for v, s in shots.items() if v in VIEWS or v in OPTIONAL}
     frames, panels, frame_report = side_frames(tpl, shots)
     report: dict = {"frames": frame_report}
     sd = sides(tpl, shots, frames, panels, report)
@@ -978,11 +1285,15 @@ def fit_maps(tpl: Template, shots: dict[str, Shot]) -> Fitted:
     small_maps(tpl, sd, strips, transforms, fitted, report)
     mirror(tpl, transforms, fitted, report)
     evidence = {(t["view"], rid): fitted[rid] for rid, t in transforms.items() if rid in fitted}
-    over = over_top(tpl, top, sd, transforms, report, evidence)
+    over = over_top(tpl, top, sd, transforms, report, evidence, high_side(tpl, top, shots, report))
     top_t, own = top_maps(tpl, top, sd, transforms, strips, report, evidence)
     top_t["islands"] = {}
-    top_t["sides"] = {**over, **own}
+    tops = {**over, **own}
     rest_ids = tpl.of_band("top") - set(transforms) - set(own)
+    faces = face_frames(tpl, shots, sd, top, report)
+    transforms |= face_maps(tpl, faces, transforms, tops, rest_ids, report, evidence)
+    top_t["sides"] = tops
+    rest_ids -= set(transforms)
     top_t["rest_domain"] = rest_domain(tpl, shots, rest_ids)
     rest = np.isin(top.shot.ids, list(rest_ids))
     evidence[("top", "top-rest")] = Samples.of(top.u[rest], top.w[rest], top.shot.tx[rest], top.shot.ty[rest])
@@ -1014,7 +1325,7 @@ def seam_pairs_of(pieces: dict[str, tuple[carspace.Piece, ...]], canvas: int) ->
     for view, every in pieces.items():
         # The top view's overall scale is too rough to pair seams with; only fitted islands take part.
         pcs = [pc for pc in every if pc.island != "top-rest"]
-        start = (0.5, 0.5 if view != "top" else 0.0)
+        start = carspace.start(view)
         for a in pcs:
             for ring in getattr(a.area, "geoms", [a.area]):
                 if ring.is_empty or not hasattr(ring, "exterior"):
@@ -1089,11 +1400,16 @@ def old_frame(old: tuple[carspace.Piece, ...], new: Fitted, view: str) -> np.nda
 def compare(kit: Kit, tpl: Template, old_maps: dict, new: Fitted) -> dict:
     """Per island and view, on the samples the new map was fitted on: each map's miss at its 90th
     percentile (the old one in the car space that fits it best, `old_frames`) and how far paint at the same
-    car-space point moves from the old map to the new (p90 and most)."""
+    car-space point moves from the old map to the new (p90 and most), and the islands whose view changes."""
     _, shapes = carspace.load_shapes(kit)
     new_raw = {**old_maps, **new.maps}
-    out: dict = {"old_frames": {}, "islands": {}}
-    for view in kit.views:
+    out: dict = {"old_frames": {}, "islands": {}, "owners": {}}
+    was_by, now_by = owners(old_maps), owners(new_raw)
+    for rid in sorted(was_by.keys() | now_by.keys()):
+        if was_by.get(rid) != now_by.get(rid):
+            out["owners"][rid] = [was_by.get(rid), now_by.get(rid)]
+    views = map_views(old_maps) if "top_transform" in old_maps else []
+    for view in [*views, *(v for v in map_views(new_raw) if v not in views)]:
         old_pcs = carspace.build_pieces(old_maps, shapes, view) if "top_transform" in old_maps else ()
         new_pcs = carspace.build_pieces(new_raw, shapes, view)
         frame = old_frame(old_pcs, new, view)
@@ -1115,6 +1431,13 @@ def compare(kit: Kit, tpl: Template, old_maps: dict, new: Fitted) -> dict:
     out["old_sides_agree"] = _sides_agree(old_maps.get("side_transforms", {}), tpl)
     out["sides_agree"] = new.report.get("sides_agree", {})
     return out
+
+
+def owners(maps: dict) -> dict[str, str]:
+    """The view whose map paints each island: its side or face map's, else "top" for a map of the top's."""
+    top = maps.get("top_transform", {})
+    out = {rid: "top" for part in ("sides", "islands") for rid in top.get(part, {})}
+    return out | {rid: t["view"] for rid, t in maps.get("side_transforms", {}).items()}
 
 
 def _p90(d: np.ndarray) -> float:
@@ -1164,7 +1487,8 @@ def design_moves(ws: Workspace, kit: Kit, maps: dict, seams: list) -> dict[str, 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         shutil.copytree(kit.dir, root / "kits" / kit.name)
-        kits.write(root / "kits" / kit.name, maps=maps)
+        meta = kits.read_meta(kit.dir) | {"views": map_views(maps)}
+        kits.write(root / "kits" / kit.name, meta=meta, maps=maps)
         (root / "kits" / kit.name / "seams.json").write_text(
             json.dumps(seams), encoding="utf-8", newline="\n"
         )
@@ -1195,10 +1519,13 @@ def summary(report: dict, seams: list) -> dict:
     rows = {r: v for r, v in report.items() if r.startswith("i") and isinstance(v, dict)}
     p90 = sorted(((v["p90_px"], r) for r, v in rows.items() if "p90_px" in v), reverse=True)
     agree = report.get("sides_agree", {})
+    faces = {r: v["face"] for r, v in rows.items() if "face" in v}
     return {
-        "islands_fitted": sum("p90_px" in v for v in rows.values()),
+        "islands_fitted": sum("p90_px" in v for v in rows.values()) + len(faces),
         "mirrored": sorted(v["mirror"]["island"] for v in rows.values() if v.get("mirror")),
         "replaced_by_mirror": sorted(r for r, v in rows.items() if "replaced_by_mirror_of" in v),
+        "faces": {r: f["view"] for r, f in sorted(faces.items())},
+        "replaced_by_face": sorted(r for r, v in rows.items() if "replaced_by_face" in v),
         "worst_p90_px": [[r, x] for x, r in p90[:8]],
         "sides_agree_worst_median_px": max((d["median_px"] for d in agree.values()), default=None),
         "seam_pairs": len(seams),
@@ -1214,6 +1541,16 @@ def lines(result: dict) -> list[str]:
         f"mirrored {', '.join(s['mirrored']) or 'none'}; replaced by a mirror {', '.join(s['replaced_by_mirror']) or 'none'}",
         "worst p90: " + ", ".join(f"{r} {x} px" for r, x in s["worst_p90_px"]),
     ]
+    frames = result.get("fit", {}).get("frames", {})
+    for face in kits.FACE_VIEWS:
+        if face in frames:
+            out.append(f"{face} face frame: " + ", ".join(f"{k} {_num(v)}" for k, v in frames[face].items()))
+    if s.get("faces"):
+        out.append(
+            "face maps: "
+            + ", ".join(f"{r} {f}" for r, f in s["faces"].items())
+            + f"; replacing top maps of {', '.join(s['replaced_by_face']) or 'none'}"
+        )
     if result["kept"]:
         out.append(f"kept the current maps of {', '.join(result['kept'])}")
     cmp = result.get("compare")
@@ -1226,6 +1563,11 @@ def lines(result: dict) -> list[str]:
                 f"{_num(r['p90_px']):>7}  {_num(r.get('moved_p90_px')):>9}  {_num(r.get('moved_max_px')):>9}"
             )
         out.append("(* a main island; 'now' is the current maps, in the car space that fits them best)")
+        if cmp.get("owners"):
+            out.append(
+                "islands changing view: "
+                + ", ".join(f"{r} {_num(a)} -> {_num(b)}" for r, (a, b) in cmp["owners"].items())
+            )
         pairs = sorted(cmp["sides_agree"].keys() | cmp["old_sides_agree"].keys())
         out.append(
             "sides agree, median px now -> new: "
@@ -1267,7 +1609,8 @@ def fit(
     kept = keep_old(new, old, set(keep))
     maps = {**old, **new.maps}
     _, shapes = carspace.load_shapes(kit)
-    seams = seam_pairs_of({view: carspace.build_pieces(maps, shapes, view) for view in kit.views}, kit.canvas)
+    views = map_views(maps)
+    seams = seam_pairs_of({view: carspace.build_pieces(maps, shapes, view) for view in views}, kit.canvas)
     result = {"capture": run.name, "summary": summary(new.report, seams), "kept": kept, "fit": new.report}
     if old.get("side_transforms"):
         result["compare"] = compare(kit, tpl, old, new)
@@ -1278,7 +1621,7 @@ def fit(
     kits.write(kit.dir, maps=maps)
     (kit.dir / "seams.json").write_text(json.dumps(seams), encoding="utf-8", newline="\n")
     version = kit.version + 1
-    kits.write(kit.dir, meta=kits.read_meta(kit.dir) | {"version": version})
+    kits.write(kit.dir, meta=kits.read_meta(kit.dir) | {"version": version, "views": views})
     (kit.dir / kits.APPROVAL).unlink(missing_ok=True)  # new maps need the owner's review again
     report = {"version": version, **{k: v for k, v in result.items() if k != "designs_moved"}}
     (kit.dir / REPORT).write_text(kits.dumps(report) + "\n", encoding="utf-8", newline="\n")

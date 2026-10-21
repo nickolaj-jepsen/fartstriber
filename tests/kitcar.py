@@ -2,12 +2,15 @@
 template lays one out, and the preview views rendered into the calibration capture's per-pixel format
 (`graycode.ViewMap`), so a fit can be checked against where each texel really is on the car.
 
-The body is a slab 4 m long: each side a panel that bulges a little (front, door and rear islands), a
-shoulder strip turning from the side over into the top, which the side views see nearly edge-on (one island,
-and four small louvres at the front), and the top (bonnet, roof, rear deck) with a hump in the middle. A
-bank in front of the car can hide the bottom of one side. The left side's islands sit below the mirror axis in the texture, the right side's are their
-mirror images above it, the top's are in the middle with w linear in texture y. Texture x runs nose to tail,
-with a gap between islands that meet on the car, and a little bend so the maps aren't plain affine.
+The body is a slab 4 m long: each side a panel that bulges a little and turns in over its last 40 cm at
+either end (front, door and rear islands), a shoulder strip turning from the side over into the top, which
+the side views see nearly edge-on (one island, and four small louvres at the front), the top (bonnet, roof,
+rear deck) with a hump in the middle, a lip under the bonnet's front edge leaning back a little, which the
+top view sees nearly edge-on (and decodes badly), and a flat rear face. A bank in front of the car can
+hide the bottom of one side. The left side's islands sit below the mirror axis in the texture, the right
+side's are their mirror images above it, the top's and the lip's are in the middle with w linear in texture
+y; the rear face lies across the car along texture x. Texture x runs nose to tail, with a gap between
+islands that meet on the car, and a little bend so the maps aren't plain affine.
 """
 
 from collections.abc import Callable
@@ -25,8 +28,11 @@ HALF = 2.0  # half the car's length, m
 SILL, BELT = 0.15, 0.9  # the side panel's height range, m
 TOP_HALF = 0.75  # the top's half width, m
 RISE = 0.02  # m the shoulder rises over its 13 cm: the side views see it nearly edge-on
-PX_PER_M = 220  # texture px per metre along the car
+PX_PER_M = 190  # texture px per metre along the car
 SPACING = 0.002  # m between the points a surface is drawn with: under half a pixel in every view
+TAPER, TAPER_IN = 0.4, 0.12  # the sides turn in over their last 40 cm, by up to 12% of their width
+LIP_H, LIP_LEAN = 0.3, np.radians(10)  # m, and how far it leans back from vertical
+FACE_HALF = 0.8  # the rear face's half width, m
 
 # Island ids, numbered as kit extract numbers them: by band, then nose to tail.
 LEFT = {"front": "i001", "door": "i002", "rear": "i003", "shoulder": "i007"}
@@ -35,8 +41,9 @@ TOP = {"front": "i009", "door": "i010", "rear": "i011"}  # bonnet, roof, rear de
 LOUVRES = 1.2  # m: forward of this the shoulder is four small islands, 0.2 m each
 LEFT |= {f"louvre{k}": f"i{12 + k:03d}" for k in range(4)}
 RIGHT |= {f"louvre{k}": f"i{16 + k:03d}" for k in range(4)}
+LIP, REAR_FACE = "i020", "i021"
 BAND = {**dict.fromkeys(LEFT.values(), "lower"), **dict.fromkeys(RIGHT.values(), "upper")}
-BAND |= dict.fromkeys(TOP.values(), "top")
+BAND |= dict.fromkeys(TOP.values(), "top") | {LIP: "top", REAR_FACE: "upper"}
 GAP = {"front": 0.0, "door": 12.0, "rear": 24.0}  # texture px between islands that meet on the car
 
 
@@ -62,13 +69,19 @@ class Surface:
     point: Callable[[np.ndarray, np.ndarray], np.ndarray]  # (n,), (n,) -> (n, 3): x forward, y left, z up
     texel: Callable[[np.ndarray, np.ndarray], np.ndarray]  # -> (n, 2)
     island: Callable[[np.ndarray, np.ndarray], np.ndarray]  # -> (n,) ids
+    decode_errors: tuple[tuple[str, float], ...] = ()  # (view, share of its pixels there decoded wrongly)
+
+
+def _taper(x: np.ndarray) -> np.ndarray:
+    return 1 - TAPER_IN * (np.clip(np.abs(x) - (HALF - TAPER), 0, None) / TAPER) ** 2
 
 
 def _side(sign: int) -> Surface:
     ids = LEFT if sign > 0 else RIGHT
 
     def point(x, z):
-        return np.stack([x, sign * (0.88 + 0.04 * np.sin(np.pi * (z - SILL) / (BELT - SILL))), z], 1)
+        y = (0.88 + 0.04 * np.sin(np.pi * (z - SILL) / (BELT - SILL))) * _taper(x)
+        return np.stack([x, sign * y, z], 1)
 
     def texel(x, z):
         t = (z - SILL) / (BELT - SILL)
@@ -130,7 +143,42 @@ def _ids(ids: dict[str, str], seg: np.ndarray) -> np.ndarray:
     return out
 
 
-SURFACES = (_side(1), _side(-1), _shoulder(1), _shoulder(-1), _top())
+def _one(rid: str) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+    return lambda a, b: np.full(len(a), rid, dtype=object)
+
+
+def _lip() -> Surface:
+    """Down from the bonnet's front edge, the bottom further forward: the top view sees it nearly edge-on.
+    Laid out like the top, its top edge towards the tail (as the top view sees it)."""
+
+    def point(h, y):
+        return np.stack([HALF + h * np.sin(LIP_LEAN), y, BELT + RISE - h * np.cos(LIP_LEAN)], 1)
+
+    def texel(h, y):
+        w = -y / TOP_HALF
+        return np.stack([885 - 110 * h + 2 * w * w, AXIS - 150 * w], 1)
+
+    return Surface("lip", (0.0, LIP_H), (-TOP_HALF, TOP_HALF), point, texel, _one(LIP), (("top", 0.3),))
+
+
+def _rear_face() -> Surface:
+    """The tail, flat, laid out across the car along texture x, sill at the bottom."""
+
+    def point(y, z):
+        return np.stack([np.full(len(y), -HALF), y, z], 1)
+
+    def texel(y, z):
+        t = (z - SILL) / (BELT + RISE - SILL)
+        return np.stack([950 - 85 * y, 880 - 160 * t + 3 * t * (y / FACE_HALF) ** 2], 1)
+
+    return Surface("rear", (-FACE_HALF, FACE_HALF), (SILL, BELT + RISE), point, texel, _one(REAR_FACE))
+
+
+SURFACES = (_side(1), _side(-1), _shoulder(1), _shoulder(-1), _top(), _lip(), _rear_face())
+
+
+def surface(name: str) -> Surface:
+    return next(s for s in SURFACES if s.name == name)
 
 
 def _grid(s: Surface, spacing: float = SPACING) -> tuple[np.ndarray, np.ndarray]:
@@ -177,6 +225,12 @@ CAMERAS = {
     "front34": Camera((18.96, 15.91, 3.98), (0.0, 0.0, 0.4), 0.24),
     "rear34": Camera((-16.59, -13.92, 13.0), (0.0, 0.0, 0.4), 0.24),
     "top": Camera((0.0, -2.18, 25.4), (0.0, 0.0, 0.5), 0.2, up=(0.0, 1.0, 0.0)),
+    "front": Camera((14.0, 0.0, 1.4), (0.0, 0.0, 0.55), 0.24),
+    "rear_chase": Camera((-14.0, 0.0, 1.4), (0.0, 0.0, 0.55), 0.24),
+    "side_high": Camera((0.0, 22.66, 11.07), (0.0, 0.0, 0.5), 0.2),  # the left side, 25 degrees up
+    # Views a capture also has that the fit doesn't read: a close-up, and side_r at another light.
+    "door_close": Camera((0.0, 6.0, 0.6), (0.0, 0.0, 0.5), 0.5),
+    "side_r_lit": Camera((0.5, -25.0, 0.6), (0.5, 0.0, 0.6), 0.2),
 }
 
 
@@ -186,8 +240,8 @@ def _normals(s: Surface, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     db = s.point(a, b + h) - s.point(a, b - h)
     n = np.cross(da, db)
     n /= np.linalg.norm(n, axis=1, keepdims=True)
-    # Outward: away from the car's centre line and up.
-    out = s.point(a, b) * [0, 1, 0] + [0, 0, 0.3]
+    # Outward: away from the car's middle and up.
+    out = s.point(a, b) * [1, 1, 0] + [0, 0, 0.3]
     return np.where(((n * out).sum(1) < 0)[:, None], -n, n)
 
 
@@ -206,6 +260,13 @@ def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
         ix, iy = np.floor(sx).astype(int), np.floor(sy).astype(int)
         ok = (ix >= 0) & (ix < W) & (iy >= 0) & (iy < H)
         t = s.texel(a[ok], b[ok])
+        share = dict(s.decode_errors).get(view, 0.0)
+        if share:  # decode errors: whole pixels off by 10-25 texels
+            rng = np.random.default_rng(1)
+            px, at = np.unique(iy[ok] * W + ix[ok], return_inverse=True)
+            off = rng.uniform(10, 25, (len(px), 2)) * rng.choice([-1, 1], (len(px), 2))
+            off[rng.random(len(px)) >= share] = 0
+            t += off[at]
         keys.append(iy[ok] * W + ix[ok])
         depths.append(depth[ok])
         txs.append(t[:, 0])
@@ -244,8 +305,27 @@ def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
     )
 
 
+IGNORED = ("door_close", "side_r_lit")  # what a capture has that the fit doesn't read
+
+
 def render_all(hide_left_below: float | None = None) -> dict[str, graycode.ViewMap]:
-    return {v: render(v, hide_left_below if v == "side_l" else None) for v in CAMERAS}
+    """Every view the fit reads."""
+    names = [v for v in CAMERAS if v not in IGNORED]
+    return {v: render(v, hide_left_below if v == "side_l" else None) for v in names}
+
+
+def hidden(vm: graycode.ViewMap, hide: np.ndarray) -> graycode.ViewMap:
+    """The view with the screen pixels in `hide` (h, w) hidden, as something in front of the car hides them."""
+    keep = ~hide[vm.pix]
+    return graycode.ViewMap(
+        car=vm.car & ~hide,
+        pix=vm.pix & ~hide,
+        uv=vm.uv[keep],
+        jac=vm.jac[keep],
+        level=vm.level[keep],
+        conf=vm.conf[keep],
+        agree=vm.agree[keep],
+    )
 
 
 # The texture: islands, as kit extract writes them.

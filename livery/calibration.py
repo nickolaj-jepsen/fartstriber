@@ -33,4 +33,9 @@ def calibration(kit: Kit) -> Livery:
     if "top" in kit.views:
         spine = [(-0.1, -SPINE), (1.1, -SPINE), (1.1, SPINE), (-0.1, SPINE)]
         liv.add(svg(polygon(kit, "top", spine, DARK), id="spine", z=1, tags=ALLOW))
+    for view in kit.face_views:  # the belt runs on round the face, and the spine down it
+        belt = [(-2.0, lo), (2.0, lo), (2.0, hi), (-2.0, hi)]
+        liv.add(svg(polygon(kit, view, belt, DARK), id=f"belt-{view}", z=1, tags=ALLOW))
+        spine = [(-SPINE, -1.0), (SPINE, -1.0), (SPINE, 2.0), (-SPINE, 2.0)]
+        liv.add(svg(polygon(kit, view, spine, DARK), id=f"spine-{view}", z=1, tags=ALLOW))
     return liv

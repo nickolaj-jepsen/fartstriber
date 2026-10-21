@@ -1,7 +1,8 @@
 """The design library. Geometry is in car space (see `livery.carspace`) unless a primitive says otherwise.
 
-Views: "side_l", "side_r", "top". Primitives that cover several views return one element per view, with
-ids suffixed by the view, so lints and the critic can name each piece.
+Views: "side_l", "side_r", "top", and the faces ("front", "rear") the kit maps. Primitives that cover
+several views return one element per view, with ids suffixed by the view, so lints and the critic can name
+each piece.
 """
 
 import re
@@ -15,8 +16,11 @@ import shapely
 
 from livery import carspace, config, sponsors
 from livery.errors import LiveryError
-from livery.kit import Kit
+from livery.kit import Kit, view_kind
 from livery.model import Element, Livery, Material
+
+FACE_W = 2.0  # past either edge of a face (w), so a shape across it covers it whole
+FACE_V = (-1.0, 2.0)  # below and above a face (v)
 
 _SVG_NS = "{http://www.w3.org/2000/svg}"
 
@@ -78,12 +82,19 @@ def band(
     """A band across the car between u0 and u1 (nose 0, tail 1), up the sides and over the top.
 
     `angle` leans it in degrees, measured on the side as seen: positive leans the top towards the tail.
-    Over the top it continues from where it leaves the sides (v = 1), so it stays one band.
+    Over the top it continues from where it leaves the sides (v = 1), so it stays one band. A band that
+    reaches the nose (an edge at u <= 0) or the tail (u >= 1) covers that face across, between v0 and v1, or
+    to the face's bottom and top where it reaches the sill and the top of the side.
     """
     lean = np.tan(np.radians(angle)) * carspace.side_aspect(kit)  # u per unit of v
     out = []
     for view in _views(kit, views):
-        if view == "top":
+        if view_kind(view) == "face":
+            if not _reaches(view, u0 + lean * v0, u0 + lean * v1, u1 + lean * v0, u1 + lean * v1):
+                continue
+            lo, hi = FACE_V[0] if v0 <= 0 else v0, FACE_V[1] if v1 >= 1 else v1
+            pts = [(-FACE_W, lo), (FACE_W, lo), (FACE_W, hi), (-FACE_W, hi)]
+        elif view == "top":
             a, b = u0 + lean, u1 + lean
             pts = [(a, -1.2), (b, -1.2), (b, 1.2), (a, 1.2)]
         else:
@@ -104,12 +115,23 @@ def stripe(
     material: Material = Material.gloss,
     z: int = 0,
 ) -> list[Element]:
-    """A stripe along the car from u0 to u1: between v = a0..a1 on the sides, w = a0..a1 on top."""
-    pts = [(u0, a0), (u1, a0), (u1, a1), (u0, a1)]
-    return [
-        shape(kit, f"{id}.{v}", v, pts, color, material, z, tags=("crosses_seam",))
-        for v in _views(kit, views)
-    ]
+    """A stripe along the car from u0 to u1: between v = a0..a1 on the sides, w = a0..a1 on top. On a face
+    it runs across between v = a0..a1, where u0..u1 reaches that end (u0 <= 0 the nose, u1 >= 1 the tail)."""
+    out = []
+    for v in _views(kit, views):
+        if view_kind(v) == "face":
+            if not _reaches(v, u0, u1):
+                continue
+            pts = [(-FACE_W, a0), (FACE_W, a0), (FACE_W, a1), (-FACE_W, a1)]
+        else:
+            pts = [(u0, a0), (u1, a0), (u1, a1), (u0, a1)]
+        out.append(shape(kit, f"{id}.{v}", v, pts, color, material, z, tags=("crosses_seam",)))
+    return out
+
+
+def _reaches(face: str, *u: float) -> bool:
+    """Whether a shape whose edges lie at these u reaches the face's end of the car."""
+    return min(u) <= 0 if face == "front" else max(u) >= 1
 
 
 def _region_geom(kit: Kit, region: str):
@@ -141,14 +163,15 @@ def _frame(
     """Texture position and 2x2 matrix for a text frame (x reading direction, y down) at a car-space point.
 
     One frame unit is one unit of u (car length). On the sides, text reads left to right as seen, so on
-    the right side it runs nose-wards; on top it reads from the front (or from behind, `facing="rear"`).
+    the right side it runs nose-wards; on a face too, seen from ahead or behind; on top it reads from the
+    front (or from behind, `facing="rear"`).
     """
     piece, xy, jac = carspace.anchor(kit, view, at)
-    asp = carspace.side_aspect(kit)
-    if view == "side_l":
-        f = np.array([[1.0, 0.0], [0.0, -1.0 / asp]])
-    elif view == "side_r":
-        f = np.array([[-1.0, 0.0], [0.0, -1.0 / asp]])
+    a, b = carspace.unit_lengths(kit, view)
+    if view == "side_l" or view == "rear":  # seen from behind, the car's right (w = 1) is on the right
+        f = np.array([[1.0 / a, 0.0], [0.0, -1.0 / b]])
+    elif view == "side_r" or view == "front":
+        f = np.array([[-1.0 / a, 0.0], [0.0, -1.0 / b]])
     else:
         t = carspace.kit_data(kit)["top_transform"]
         w_per_u = t["x_per_u"] / abs(t["y_per_w"])  # top-view texture is laid out at one scale
@@ -313,12 +336,9 @@ OPTICAL = 0.25
 
 
 def _length(kit: Kit, view: str, a: tuple[float, float], b: tuple[float, float]) -> float:
-    """Car lengths between two car-space points of one view, as the reading frame measures them."""
-    du, dv = b[0] - a[0], b[1] - a[1]
-    if view == "top":
-        t = carspace.kit_data(kit)["top_transform"]
-        return float(np.hypot(du, dv * abs(t["y_per_w"]) / t["x_per_u"]))
-    return float(np.hypot(du, dv * carspace.side_aspect(kit)))
+    """Car lengths between two car-space points of one view, as seen."""
+    ka, kb = carspace.unit_lengths(kit, view)
+    return float(np.hypot((b[0] - a[0]) * ka, (b[1] - a[1]) * kb))
 
 
 def sponsor_group(

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from livery import calibrate, carspace, config, kit_fit, state
+from livery import calibrate, carspace, config, kit_fit, primitives, state
 from livery import kit as kits
 from livery.config import REPO, Workspace
 from livery.kit import Kit, Profile, View
@@ -41,14 +41,30 @@ def unbanked():
     return kitcar.render("side_l")
 
 
+def _shots(views, tpl, names=None) -> dict[str, kit_fit.Shot]:
+    return {v: kit_fit.shot(v, vm, tpl) for v, vm in views.items() if names is None or v in names}
+
+
+def _write(kit: Kit, fitted: kit_fit.Fitted) -> None:
+    maps = {**kits.read_maps(kit.dir), **fitted.maps}
+    kits.write(kit.dir, meta=kits.read_meta(kit.dir) | {"views": kit_fit.map_views(maps)}, maps=maps)
+
+
 @pytest.fixture(scope="module")
 def synth(tmp_path_factory, views) -> Synth:
+    """The fit from every view it reads: the five it needs, the faces and side_high."""
     ws = _kit(tmp_path_factory.mktemp("synth"))
     kit = kits.load(ws, "synth")
     tpl = kit_fit.template(kit)
-    fitted = kit_fit.fit_maps(tpl, {v: kit_fit.shot(v, vm, tpl) for v, vm in views.items()})
-    kits.write(kit.dir, maps={**kits.read_maps(kit.dir), **fitted.maps})
+    fitted = kit_fit.fit_maps(tpl, _shots(views, tpl))
+    _write(kit, fitted)
     return Synth(ws, kits.load(ws, "synth"), tpl, fitted)
+
+
+@pytest.fixture(scope="module")
+def base(synth, views) -> kit_fit.Fitted:
+    """The fit from the five views it needs alone."""
+    return kit_fit.fit_maps(synth.tpl, _shots(views, synth.tpl, kit_fit.VIEWS))
 
 
 def _misses(kit: Kit, view: str, rid: str, car: np.ndarray, tex: np.ndarray) -> np.ndarray:
@@ -140,6 +156,110 @@ def test_seams_pair_texels_on_the_same_spot_of_the_car(synth):
         assert max(d) < 20, pair
 
 
+def _car(kit: Kit, view: str, rid: str, texels: np.ndarray) -> np.ndarray:
+    """The car-space points the kit's map of an island in a view puts at texels."""
+    pc = next(p for p in carspace.pieces(kit, view) if p.island == rid)
+    return np.array([carspace.invert(pc, t, carspace.start(view))[0] for t in texels])
+
+
+def test_face_pixels_map_back_to_the_texels_they_show(synth):
+    assert synth.kit.face_views == ("front", "rear")
+    for face, rid in (("front", kitcar.LIP), ("rear", kitcar.REAR_FACE)):
+        s = synth.fitted.evidence[(face, rid)]
+        miss = _misses(synth.kit, face, rid, s.car, s.tex)
+        assert len(miss) > 0.9 * len(s)
+        assert np.percentile(miss, 90) < 1.0
+
+
+def test_a_face_meets_the_sides_at_their_v_and_the_top_at_its_w(synth):
+    side, rear, top, lip = (kitcar.surface(n) for n in ("side1", "rear", "top", "lip"))
+    z = np.linspace(0.25, 0.85, 7)
+    tail = np.full(len(z), -kitcar.HALF)
+    y = side.point(tail, z)[:, 1]  # the left side's edge at the tail
+    v_side = _car(synth.kit, "side_l", kitcar.LEFT["rear"], side.texel(tail, z))[:, 1]
+    v_face = _car(synth.kit, "rear", kitcar.REAR_FACE, rear.texel(y, z))[:, 1]
+    assert np.abs(v_side - v_face).max() < 0.02  # 1.5 cm on the car
+    y = np.linspace(-0.6, 0.6, 7)
+    for end, face, rid, texel in (
+        (-kitcar.HALF, "rear", kitcar.REAR_FACE, rear.texel(y, np.full(len(y), kitcar.BELT + kitcar.RISE))),
+        (kitcar.HALF, "front", kitcar.LIP, lip.texel(np.zeros(len(y)), y)),
+    ):
+        on_top = top.texel(np.full(len(y), end), y)
+        w_top = _car(synth.kit, "top", synth.tpl.ids(*on_top.T)[0], on_top)[:, 1]
+        w_face = _car(synth.kit, face, rid, texel)[:, 0]
+        assert np.abs(w_top - w_face).max() < 0.03, face  # 2 cm on the car
+
+
+def test_the_optional_views_leave_the_side_and_top_maps_where_they_were(synth, base):
+    _, shapes = carspace.load_shapes(synth.kit)
+    raw = kits.read_maps(synth.kit.dir)
+    replaced = {r for r, v in synth.fitted.report.items() if isinstance(v, dict) and "replaced_by_face" in v}
+    assert replaced == {kitcar.LIP}
+    for view in ("side_l", "side_r", "top"):
+        before = carspace.build_pieces({**raw, **base.maps}, shapes, view)
+        for (v, rid), s in base.evidence.items():
+            if v != view or rid in replaced or rid == "top-rest":
+                continue
+            was = kit_fit._piece_px(before, rid, s.car)
+            now = kit_fit._piece_px(carspace.pieces(synth.kit, view), rid, s.car)
+            assert was is not None, (view, rid)
+            assert now is not None, (view, rid)
+            assert np.percentile(np.linalg.norm(now - was, axis=1), 90) < 0.5, (view, rid)
+
+
+def test_a_part_the_top_sees_edge_on_is_mapped_from_the_face_that_sees_it(synth, base):
+    assert kitcar.LIP in base.maps["top_transform"]["sides"]  # the top's map, with its decode errors
+    t = synth.fitted.maps["side_transforms"][kitcar.LIP]
+    assert t["view"] == "front"
+    assert kitcar.LIP not in synth.fitted.maps["top_transform"]["sides"]
+    row = synth.fitted.report[kitcar.LIP]
+    assert row["replaced_by_face"]["face"] == "front"
+    assert row["replaced_by_face"]["top"]["dropped"] > kit_fit.MAX_TOP_DROPPED
+    old = {**kits.read_maps(synth.kit.dir), **base.maps}
+    assert kit_fit.compare(synth.kit, synth.tpl, old, synth.fitted)["owners"][kitcar.LIP] == ["top", "front"]
+
+
+def test_side_high_maps_what_the_top_misses_of_the_shoulders(synth, views):
+    """Something over the rear half of both shoulders hides them from the top view; the raised side view
+    sees the left one, and the right one is its mirror image."""
+    tpl = synth.tpl
+    top = views["top"]
+    ids = tpl.ids(*top.uv.T)
+    behind = np.isin(ids, [kitcar.LEFT["shoulder"], kitcar.RIGHT["shoulder"]]) & (top.uv[:, 0] > 450)
+    hide = np.zeros_like(top.pix)
+    hide[top.pix] = behind
+    seen = {**views, "top": kitcar.hidden(top, hide)}
+    without = kit_fit.fit_maps(tpl, _shots(seen, tpl, kit_fit.VIEWS))
+    full = kit_fit.fit_maps(tpl, _shots(seen, tpl))
+    for rid in (kitcar.LEFT["shoulder"], kitcar.RIGHT["shoulder"]):
+        tops = [f.maps["top_transform"]["sides"] for f in (without, full)]
+        area = [carspace.region(t[rid]["domain"]).area if rid in t else 0.0 for t in tops]
+        assert area[1] > 1.5 * area[0], rid
+        # Where the top would have seen it, the raised view's map puts paint where the top's would, to the
+        # couple of cm a carry from the cells around a part both views see holds.
+        s = synth.fitted.evidence[("top", rid)]
+        hid = s.tex[:, 0] > 450
+        got = kit_fit._map_px(full.maps["top_transform"]["sides"][rid], s.car[hid])
+        assert np.percentile(np.linalg.norm(got - s.tex[hid], axis=1), 90) < 4, rid
+    assert full.report[kitcar.RIGHT["shoulder"]]["top"]["mirror_filled"] > 0
+
+
+def test_a_band_reaching_an_end_covers_its_face(synth):
+    tail = {e.id for e in primitives.band(synth.kit, "b", 0.8, 1.05, "#ff0000") if e.svg}
+    assert tail == {"b.side_l", "b.side_r", "b.top", "b.rear"}
+    middle = {e.id for e in primitives.band(synth.kit, "m", 0.3, 0.5, "#ff0000")}
+    assert middle == {"m.side_l", "m.side_r", "m.top"}
+
+
+def test_text_on_a_face_reads_forwards_as_seen(synth):
+    from livery.lint import output
+
+    for face, at in (("front", (0.0, 0.85)), ("rear", (0.0, 0.5))):
+        el = primitives.text(synth.kit, f"t.{face}", face, "AB", at, 0.03, "#000000")
+        kinds = {k for k, _ in output._orientation(el, output._nodes(el), synth.kit)}
+        assert not kinds & {"mirrored", "backwards"}, face
+
+
 def test_a_compare_with_the_same_maps_moves_nothing(synth):
     out = kit_fit.compare(synth.kit, synth.tpl, kits.read_maps(synth.kit.dir), synth.fitted)
     rows = out["islands"].values()
@@ -153,7 +273,7 @@ def test_a_compare_with_the_same_maps_moves_nothing(synth):
 
 def _captured(ws: Workspace, kit: Kit, views) -> None:
     """The kit's current calibration capture: the rendered views, under the identity the kit has now."""
-    prof = Profile(REPLAY, 100, {v: View(f"Preview {v}", ()) for v in kit_fit.VIEWS}, {})
+    prof = Profile(REPLAY, 100, {v: View(f"Preview {v}", ()) for v in views}, {})
     kits.write_profile(kit.dir, prof)
     run = calibrate.root(ws, kit.name) / "run"
     for v, vm in views.items():
@@ -183,6 +303,21 @@ def test_a_fit_writes_maps_seams_and_its_report_and_sends_the_kit_back_to_review
     assert report["summary"] == result["summary"] == dry["summary"]
     assert json.loads((kit.dir / "seams.json").read_text(encoding="utf-8"))
     assert kits.read_maps(kit.dir)["side_transforms"]
+    assert after.face_views == ("front", "rear")
+
+
+def test_a_fit_reads_neither_close_ups_nor_second_light_views(tmp_path, views, base):
+    ws = _kit(tmp_path)
+    kit = kits.load(ws, "synth")
+    _captured(
+        ws, kit, {**{v: views[v] for v in kit_fit.VIEWS}, **{v: kitcar.render(v) for v in kitcar.IGNORED}}
+    )
+    kit_fit.fit(config.load(), ws, kit)
+    after = kits.load(ws, "synth")
+    assert after.views == kits.DEFAULT_VIEWS  # no face view without the views that see the faces
+    maps = kits.read_maps(kit.dir)
+    for part in ("side_transforms", "top_transform"):
+        assert maps[part] == json.loads(json.dumps(base.maps[part]))
 
 
 def test_a_fit_refuses_a_capture_shot_before_the_frame_moved(tmp_path, views):

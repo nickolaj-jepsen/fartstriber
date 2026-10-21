@@ -25,7 +25,7 @@ from shapely.geometry.base import BaseGeometry
 
 from livery import carspace
 from livery import kit as kits
-from livery.kit import Kit, KitError
+from livery.kit import Kit, KitError, view_kind
 
 FILE = "body.yaml"
 SIDES = ("left", "right", "centre", "both", "unknown")
@@ -82,7 +82,7 @@ class Part:
 
 @dataclass(frozen=True)
 class Feature:
-    """A place on the body: car-space geometry on one view (u, v on a side; u, w on top)."""
+    """A place on the body: car-space geometry on one view (u, v on a side; u, w on top; w, v on a face)."""
 
     name: str
     view: str
@@ -122,7 +122,7 @@ class Feature:
 
     @property
     def box(self) -> tuple[float, float, float, float]:
-        """Its bounds: (u0, v0, u1, v1), w for v on top."""
+        """Its bounds in its view's two coordinates: (u0, v0, u1, v1) on a side."""
         x0, y0, x1, y1 = self.geometry().bounds
         return (float(x0), float(y0), float(x1), float(y1))
 
@@ -364,9 +364,10 @@ def notes(kit: Kit) -> str:
             rows.append(f"## {head}\n")
             for f in found:
                 u0, a0, u1, a1 = f.box
-                axis = "w" if f.view == "top" else "v"
+                first, second = {"top": ("u", "w"), "face": ("w", "v")}.get(view_kind(f.view), ("u", "v"))
                 rows.append(
-                    f"- {f.title} ({f.name}), {f.view} u {u0:.3f}-{u1:.3f}, {axis} {a0:.3f}-{a1:.3f}: {f.note}"
+                    f"- {f.title} ({f.name}), {f.view} {first} {u0:.3f}-{u1:.3f}, {second} {a0:.3f}-{a1:.3f}: "
+                    f"{f.note}"
                 )
             rows.append("")
     return f"# {kit.name}: the car under the paint\n\n" + "\n".join(rows) if rows else ""

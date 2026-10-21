@@ -54,8 +54,9 @@ Designs draw in car space through the kit's maps:
 
 - Side views: u runs from the nose (0) to the tail (1); v from the sill (0) to the top of the side (1).
 - Top view: u as on the sides; w from left (-1) to right (1).
+- Faces (`front`, `rear`: what faces forward at the nose and backward at the tail): w as on top, v as on the sides. A kit has the faces its fit mapped (`kit.face_views`); `kit.side_views` never includes them.
 
-A primitive that covers several views returns one element per view, with the view appended to its id.
+A primitive that covers several views returns one element per view, with the view appended to its id. `band` and `stripe` cover a face only when their u range reaches its end.
 
 | Module | Gives |
 |---|---|
@@ -174,10 +175,11 @@ Capture:
 
 Fit:
 
-- It reads five views: each side square-on, the two three-quarters (for up-facing strips) and the top. A map holds only where it was measured.
-- Each well-seen side panel gets a quadratic from (u, v) to (x, y) plus a residual grid, and small islands get affine maps. An island neither side saw takes its partner's map, reflected. Top islands are mapped from the top shot (`docs/sim.md`, Fitting from the preview views).
+- It needs five views: each side square-on, the two three-quarters (for up-facing strips) and the top. It also reads `front` and `rear_chase` (the faces) and `side_high` (door shoulders) when the capture has them, and no other view. A map holds only where it was measured.
+- Each well-seen side panel gets a quadratic from (u, v) to (x, y) plus a residual grid, and small islands get affine maps. An island neither side saw takes its partner's map, reflected. Top islands are mapped from the top shot (`docs/sim.md`, Fitting from the preview views); `side_high`, carried into the top's (u, w), fills what the top shot missed of a shoulder.
+- A face view's frame is a homography to (w, v), anchored on the cells it shares with the side panels (v) and the top shot (w) near its end. An island no side maps gets a face map when it has no top map or its top map fails (p90 or dropped samples); the order is side, top, face. `kit.yaml` lists the faces that got maps.
 - `seams.json` pairs texture points that are the same spot on the car.
-- `--compare` writes nothing: per island and view, it reports the old and new error, how far paint moves, and each approved design's share of moved pixels.
+- `--compare` writes nothing: per island and view, it reports the old and new error, how far paint moves, the islands that change view, and each approved design's share of moved pixels.
 
 The body model:
 

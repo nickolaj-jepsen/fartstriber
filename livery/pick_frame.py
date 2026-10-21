@@ -243,10 +243,9 @@ def with_covered(
     Paint near the aligned mask counts as shown, so only a fence, a wall or a bank leaves a gap."""
     out = {}
     for f, x in by_frame.items():
+        rf = rolls.get(f)
         peers = [
-            g
-            for g in by_frame
-            if rolls.get(f) is None or rolls.get(g) is None or abs(rolls[f] - rolls[g]) <= ROLL_PEER
+            g for g in by_frame if rf is None or (rg := rolls.get(g)) is None or abs(rf - rg) <= ROLL_PEER
         ]
         clearest = max(peers, key=lambda g: by_frame[g].area)
         ref = masks[clearest]

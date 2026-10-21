@@ -42,8 +42,8 @@ def variant_for(view: str, toward: str | None) -> str:
         return "mark"
     if toward not in ("nose", "tail"):
         raise sponsors.SponsorError(f"a marking points toward the nose or the tail, not {toward!r}")
-    if view == "top":
-        raise sponsors.SponsorError("on top a line reads across the car: point markings on the sides")
+    if view in ("top", "front", "rear"):
+        raise sponsors.SponsorError(f"on the {view} a line reads across the car: point markings on the sides")
     reads = "tail" if view == "side_l" else "nose"
     return "right" if toward == reads else "left"
 

@@ -35,7 +35,10 @@ DEFAULT_SPEC = {
     Material.chrome: (255, 0, 255),
 }
 DEFAULT_BLEED_PX = 16  # seam lines show at 0 px, faintly at 8, not at 16 (docs/sim.md)
-DEFAULT_VIEWS = ("side_l", "side_r", "top")  # the plan view is "top"; every other view is a side
+DEFAULT_VIEWS = ("side_l", "side_r", "top")  # car-space views: the sides, the plan view "top" and the faces
+# The faces: (w, v) on the surfaces facing forward at the nose and backward at the tail, w as on top, v as on
+# the sides. A kit has the ones its fit mapped.
+FACE_VIEWS = ("front", "rear")
 META = "kit.yaml"
 MAPS = "maps.json"
 PROFILE = "profile.toml"
@@ -81,7 +84,11 @@ class Kit:
 
     @property
     def side_views(self) -> tuple[str, ...]:
-        return tuple(v for v in self.views if v != "top")
+        return tuple(v for v in self.views if view_kind(v) == "side")
+
+    @property
+    def face_views(self) -> tuple[str, ...]:
+        return tuple(v for v in self.views if view_kind(v) == "face")
 
     # The body model (`livery.body`, from body.yaml): parts by name, and features of the body.
 
@@ -106,6 +113,11 @@ class Kit:
         from livery import body
 
         return dict(body.read(self.dir).features)
+
+
+def view_kind(view: str) -> str:
+    """A car-space view's kind: "side" (u, v), "top" (u, w) or "face" (w, v)."""
+    return "top" if view == "top" else "face" if view in FACE_VIEWS else "side"
 
 
 def read_meta(kit_dir: Path) -> dict:

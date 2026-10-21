@@ -19,7 +19,13 @@ from livery.kit import Kit
 from livery.raster import rasterise
 from livery.simsession import SimSession, fresh_name
 
-VIEW_COLOURS = {"side_l": (230, 80, 60), "side_r": (60, 120, 230), "top": (60, 180, 90)}
+VIEW_COLOURS = {
+    "side_l": (230, 80, 60),
+    "side_r": (60, 120, 230),
+    "top": (60, 180, 90),
+    "front": (200, 90, 220),
+    "rear": (240, 190, 50),
+}
 OTHER = (150, 150, 150)
 
 
@@ -30,7 +36,8 @@ def out_dir(ws: Workspace, kit: Kit) -> Path:
 
 
 def overlay(kit: Kit, ws: Workspace) -> Path:
-    """Islands tinted by view (left red, right blue, top green, unmapped grey) with ids, over the wire."""
+    """Islands tinted by view (left red, right blue, top green, front violet, rear amber, unmapped grey)
+    with ids, over the wire."""
     raw = kits.read_meta(kit.dir) | kits.read_maps(kit.dir)
     islands = np.asarray(Image.open(kit.dir / "overlays" / "islands.png"))
     mapped = {rid: t["view"] for rid, t in raw.get("side_transforms", {}).items()}
@@ -185,12 +192,14 @@ def _view_picture(
     rgb[on] = lut[which[on]]
     img = Image.fromarray(rgb).convert("RGBA")
     h, w = which.shape
-    flip = view == "side_r"
+    flip = view in ("side_r", "front")
+    a0, a1, b0, b1 = preview_flat.extent(kit, view)
 
     def to_px(p) -> tuple[float, float]:
-        u, a = p
-        x = (1 - u if flip else u) * (w - 1)
-        y = (a + 1) / 2 * (h - 1) if view == "top" else (1 - a) * (h - 1)
+        s = (p[0] - a0) / (a1 - a0)
+        t = (p[1] - b0) / (b1 - b0)
+        x = (1 - s if flip else s) * (w - 1)
+        y = t * (h - 1) if view == "top" else (1 - t) * (h - 1)
         return (x, y)
 
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -237,7 +246,9 @@ def body_overlay(kit: Kit, ws: Workspace, width: int = 1800) -> list[Path]:
     d = out_dir(ws, kit)
     texture = d / "parts.png"
     _texture_picture(kit, ws, idx, parts).save(texture)
-    shown = [v for v in ("side_l", "top", "side_r") if v in kit.views and carspace.pieces(kit, v)]
+    shown = [
+        v for v in ("side_l", "top", "side_r", *kit.face_views) if v in kit.views and carspace.pieces(kit, v)
+    ]
     views = [_view_picture(kit, ws, idx, parts, v, width) for v in shown]
     pad, head = 12, 26
     height = sum(v.height + head for v in views) + pad * 2 + head
@@ -294,6 +305,7 @@ def shoot_calibration(cfg: Config, kit: Kit, ws: Workspace, log=print) -> Path:
         replay=replay,
         log=log,
         window=ws.policy.window,
+        renderer=ws.policy.renderer,
         checkout=ws.root,
     ) as s:
         s.out = d / f"run-{fresh_name(d)}"

@@ -1,6 +1,7 @@
 """Car space -> template pixels, through the kit's fitted transforms.
 
 Side views: (u, v), u nose 0 -> tail 1, v sill 0 -> top of the side 1. Top view: (u, w), w left -1 -> right 1.
+Faces ("front", "rear", the surfaces facing forward and backward): (w, v), w as on top and v as on the sides.
 A view is a set of pieces, each a map and the texture area it is valid on. A shape is mapped through every
 piece and cut to its area, so it continues across seams; the cut is geometric, so the SVG carries only the
 visible pieces and no clip paths.
@@ -18,7 +19,7 @@ from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from livery import kit as kits
-from livery.kit import Kit
+from livery.kit import Kit, view_kind
 
 
 @dataclass(frozen=True)
@@ -139,7 +140,7 @@ def region(d: list) -> BaseGeometry:
 
 def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple[Piece, ...]:
     """A view's pieces from a kit's maps (`maps.json` as read) and island shapes."""
-    if view != "top":
+    if view_kind(view) != "top":
         out = []
         for rid, t in sorted(raw.get("side_transforms", {}).items()):
             if t["view"] == view:
@@ -172,14 +173,15 @@ def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple
         )
     # Top islands with a map of their own, and side islands that turn over into the top, for the part the
     # side view can't see. Each texture pixel has one owner: the side map keeps what it was measured on.
-    sides = raw.get("side_transforms", {})
+    every = raw.get("side_transforms", {})
+    sides = {rid: st for rid, st in every.items() if view_kind(st["view"]) == "side"}
     for rid, st in sorted(t.get("sides", {}).items()):
         area = shapes[rid].intersection(region(st["domain"]))
         if rid in sides:
             area = area.difference(region(sides[rid]["domain"]))
         if not area.is_empty:
             out.append(Piece(rid, _side_map(st), area, region(st["car_domain"])))
-    mapped = own.keys() | t.get("sides", {}).keys() | sides.keys()
+    mapped = own.keys() | t.get("sides", {}).keys() | every.keys()
     rest = shapely.union_all(
         [shapes[r["id"]] for r in raw["regions"] if r["view"] == "top" and r["id"] not in mapped]
     )
@@ -207,17 +209,36 @@ def side_aspect(kit: Kit) -> float:
     return abs(f["sill_sy"] - f["top_sy"]) / abs(f["tail_sx"] - f["nose_sx"])
 
 
+def top_aspect(kit: Kit) -> float:
+    """How long one unit of w is, in units of u (the top's half width over the car's length)."""
+    t = kit_data(kit)["top_transform"]
+    return abs(t["y_per_w"]) / t["x_per_u"]
+
+
+def unit_lengths(kit: Kit, view: str) -> tuple[float, float]:
+    """How long one unit of each car-space coordinate of a view is as seen, in car lengths (units of u)."""
+    kind = view_kind(view)
+    if kind == "top":
+        return 1.0, top_aspect(kit)
+    if kind == "face":
+        return top_aspect(kit), side_aspect(kit)
+    return 1.0, side_aspect(kit)
+
+
 def aspect(kit: Kit, view: str) -> float:
-    """How long one unit of v (sides) or w (top) is as seen, in units of u."""
-    if view == "top":
-        t = kit_data(kit)["top_transform"]
-        return abs(t["y_per_w"]) / t["x_per_u"]
-    return side_aspect(kit)
+    """How long one unit of a view's second coordinate (v, or w on top) is as seen, in units of its first."""
+    a, b = unit_lengths(kit, view)
+    return b / a
+
+
+def start(view: str) -> tuple[float, float]:
+    """A car-space point in the middle of a view, where finding a texel's car point by Newton's method starts."""
+    return {"top": (0.5, 0.0), "face": (0.0, 0.5)}.get(view_kind(view), (0.5, 0.5))
 
 
 def px_per_unit(kit: Kit, view: str, at: tuple[float, float] | None = None) -> tuple[float, float]:
-    """Texture px per unit of u and of v (w on top): the local map's at a car-space point, or on top
-    without one, the top view's linear scale. A side has no single scale, so it needs a point."""
+    """Texture px per unit of a view's two coordinates: the local map's at a car-space point, or on top
+    without one, the top view's linear scale. A side or face has no single scale, so it needs a point."""
     if at is None:
         if view != "top":
             raise ValueError(f"{view} has no single scale: give a point")
@@ -323,6 +344,6 @@ def to_car(kit: Kit, xy: tuple[float, float]) -> tuple[str, np.ndarray, np.ndarr
     for view in kit.views:
         for pc in pieces(kit, view):
             if pc.area.contains(pt):
-                car, jac = invert(pc, xy, (0.5, 0.5 if view != "top" else 0.0))
+                car, jac = invert(pc, xy, start(view))
                 return view, car, jac
     return None

@@ -519,7 +519,7 @@ def _car_at(kit: Kit, view: str, xy: tuple[float, float]) -> list[float] | None:
     p = shapely.Point(xy)
     for pc in carspace.pieces(kit, view):
         if pc.area.distance(p) <= MEET_PX:
-            car, _ = carspace.invert(pc, xy, (0.5, 0.5 if view != "top" else 0.0))
+            car, _ = carspace.invert(pc, xy, carspace.start(view))
             return [round(float(c), 3) for c in car]
     return None
 
