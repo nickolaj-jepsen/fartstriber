@@ -85,11 +85,16 @@ def installed(ws: Workspace, names: list[str]) -> set[str]:
 
 
 def _gone_at(ws: Workspace, name: str) -> str | None:
-    """The commit that deleted a design's folder, so a revive can bring it back; None if git never had it."""
+    """The commit that deleted a design's folder, so a revive can bring it back; None if git never had it.
+    Every ref, in full: a folder may have lived only on an archived branch."""
     from livery.review.apply import _git
 
     try:
-        out = _git(ws.root, "rev-list", "-n", "1", "HEAD", "--", f"designs/{name}/design.py")
+        out = _git(
+            ws.root,
+            *("log", "-n", "1", "--format=%H", "--full-history", "--diff-filter=D", "--all"),
+            *("--", f"designs/{name}/design.py"),
+        )
     except OSError:
         return None
     return (out.stdout.strip() or None) if out.returncode == 0 else None
@@ -143,14 +148,16 @@ def _cars(ws: Workspace, by_id: dict[str, list[dict]]) -> list[dict]:
         last = _last(mine)
         approval = approvals.load_approval(ws, name) if (ws.design_dir(name) / "design.py").exists() else None
         here = (ws.design_dir(name) / "design.py").exists()
-        held = approvals.unapproved(ws, approval) if approval else []
+        held = [x.split(" (")[0] for x in approvals.unapproved(ws, approval)] if approval else []
         if approval:
             st = "on your car" if name in on_car else "held" if held else "approved"
         else:
             st = _car_state(last)
+            if not here and st not in ("parked", "stopped", "not picked"):
+                st = "retired"  # its folder was deleted
         if st in ("on your car", "approved", "held"):
             actions = ["review", "revoke"]
-        elif st in ("parked", "stopped", "not picked"):
+        elif st in ("parked", "stopped", "not picked", "retired"):
             actions = ["revive"] if here or _gone_at(ws, name) else []
         else:
             actions = ["review"] if here else []
@@ -319,14 +326,23 @@ def _line(item_id: str, decision: str, note: str, **extra) -> dict:
     }
 
 
-def _commit(ws: Workspace, files: list[Path], message: str, folders: list[Path] | None = None) -> str | None:
-    from livery.review.apply import _commit as commit
+def dirty(ws: Workspace) -> set[str] | None:
+    """What has uncommitted changes before a change is made, which its commit then refuses to take along."""
     from livery.review.apply import _dirty
 
-    before = _dirty(ws.root)
+    return _dirty(ws.root)
+
+
+def commit(
+    ws: Workspace, before: set[str] | None, files: list[Path], message: str, folders: list[Path] | None = None
+) -> str | None:
+    """Commits the ledger, these files and folders in the checkout, as Apply does; `before` from `dirty`,
+    taken before the change."""
+    from livery.review.apply import _commit
+
     if before is None:
         return None
-    return commit(
+    return _commit(
         ws.root, before, [prefs.ledger_path(ws), *files], folders or [], message, prefs.ledger_path(ws)
     )
 
@@ -351,12 +367,13 @@ def revoke(ws: Workspace, name: str, why: str = "") -> dict:
     """Takes back a car's approval, so it installs no more until a new final. Says whether it is on the car
     now, for the owner to put back what was there before (`restore_paint`)."""
     on_car = name in installed(ws, [name])
+    before = dirty(ws)
     was = unpin(ws, name)
     if was is None:
         raise NotHere(f"{name} has no approval to revoke")
     line = _line(f"final:{name}", "revoke", why, was=was)
     prefs.append(ws, [line])
-    committed = _commit(ws, [_approval_path(ws, name)], f"Library: revoke {name}")
+    committed = commit(ws, before, [_approval_path(ws, name)], f"Library: revoke {name}")
     return {"line": line, "committed": committed, "on_car": on_car}
 
 
@@ -392,18 +409,20 @@ def drop(ws: Workspace, kind: str, key: str, why: str = "") -> dict:
     if kind not in ("sponsor", "mark"):
         raise UsageError(f"only a brand or a marking is dropped, not a {kind}")
     held = _placing(ws, "sponsors" if kind == "sponsor" else "marks", key)
+    before = dirty(ws)
     was, files = drop_brand(ws, kind, key)
     line = _line(f"{kind}:{key}", "drop", why, was=was, held=held)
     prefs.append(ws, [line])
-    committed = _commit(ws, files, f"Library: drop {kind} {key}")
+    committed = commit(ws, before, files, f"Library: drop {kind} {key}")
     return {"line": line, "committed": committed, "held": held}
 
 
 def retire(ws: Workspace, row_id: str, why: str = "") -> dict:
+    before = dirty(ws)
     row = taste.retire(ws, row_id, why, by=prefs.owner_by())
     line = _line(f"taste:{row_id}", "retire", why)
     prefs.append(ws, [line])
-    committed = _commit(ws, [taste.path(ws)], f"Library: retire taste row {row_id}")
+    committed = commit(ws, before, [taste.path(ws)], f"Library: retire taste row {row_id}")
     return {"line": line, "row": row, "committed": committed}
 
 
@@ -428,13 +447,14 @@ def revive(ws: Workspace, item_id: str, why: str = "") -> dict:
     if kind not in DESIGNS:
         raise UsageError(f"only a car or a concept is revived, not {item_id!r}")
     restored = False
+    before = dirty(ws)
     if not (ws.design_dir(name) / "design.py").exists():
         restored = _restore_folder(ws, name)
         if not restored:
             raise NotHere(f"designs/{name} is gone and git has no copy to bring back")
     line = _line(item_id, "revive", why, restored=restored)
     prefs.append(ws, [line])
-    committed = _commit(ws, [], f"Library: revive {name}", folders=[ws.design_dir(name)])
+    committed = commit(ws, before, [], f"Library: revive {name}", folders=[ws.design_dir(name)])
     return {"line": line, "committed": committed, "restored": restored}
 
 

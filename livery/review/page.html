@@ -262,7 +262,11 @@ async function poll() {
   if (now !== sig) { sig = now; render(); }
 }
 
-function go(s) { screen = s; location.hash = s; sig = ""; poll(); }
+function go(s) {
+  if (s === "history") H = null;  // read again on every visit: a Send or a Library change may have written since
+  if (s === "library") LIB = null;
+  screen = s; location.hash = s; sig = ""; poll();
+}
 
 function renderTabs() {
   const LABEL = { focus: "Final", compare: "Concepts", grid: "" };
@@ -696,16 +700,22 @@ const ACT = { review: "Review again", revoke: "Revoke", drop: "Drop", retire: "R
 const VERB = { revoke: "Revoke it", drop: "Drop it", retire: "Retire it", revive: "Revive it" };
 const DONE = { revoke: "Revoked", drop: "Dropped", retire: "Retired", revive: "Revived" };
 async function loadLibrary() { try { LIB = await (await fetch("/api/library")).json(); } catch (e) { LIB = { sections: {} }; } }
+function decidedLabel(kind, decision) {
+  if (kind === "final" && decision === "accept") return "raced";
+  if (kind === "concept") return { accept: "picked", reject: "not picked" }[decision] || DECIDED[decision] || decision;
+  if (kind === "sponsor" || kind === "mark") return { accept: "fine", edit: "change asked", reject: "no" }[decision] || DECIDED[decision] || decision;
+  return DECIDED[decision] || decision;
+}
 function libMeta(c) {
   const out = [];
   const l = c.last;
-  if (l?.decision) out.push(`${DECIDED[l.decision] || l.decision} ${when(l.at).slice(0, 10)}${l.by && l.by !== LIB.owner && l.by !== "owner" ? " by an agent" : ""}`);
+  if (l?.decision) out.push(`${decidedLabel(l.kind, l.decision)} ${when(l.at).slice(0, 10)}${l.by && l.by !== LIB.owner && l.by !== "owner" ? " by an agent" : ""}`);
   if (c.approved?.date) out.push(`approved ${c.approved.date}`);
   else if (typeof c.approved === "string") out.push(`approved ${c.approved}`);
   if (c.about) out.push(c.about);
   if (c.held?.length) out.push(`held: places ${c.held.join(", ")}`);
   if (c.used_by?.length) out.push(`on ${c.used_by.join(", ")}`);
-  if (c.state === "live" || c.state === "retired") out.push(`rests on ${c.support} of ${c.words} quotes`);
+  if (c.look_for !== undefined) out.push(`rests on ${c.support} of ${c.words} quotes`);
   if (c.retired) out.push(`retired ${when(c.retired.at).slice(0, 10)}${c.retired.why ? `: ${c.retired.why}` : ""}`);
   return out.join(" · ");
 }

@@ -154,13 +154,41 @@ def test_reviving_a_stopped_car_puts_it_back_in_work_with_the_owners_words(ws):
     assert note["note"] == "try it with the new tyres"
 
 
-def test_reviving_a_concept_whose_folder_was_deleted_brings_it_back_from_git(ws, monkeypatch):
-    for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}.items():
-        monkeypatch.setenv(k, v)
-    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "t@t")
-    git = lambda *a: subprocess.run(["git", "-C", str(ws.root), *a], check=True, capture_output=True)  # noqa: E731
+@pytest.fixture
+def git(ws, monkeypatch):
+    """The test workspace as a git checkout of its own; git(*args) runs git in it and returns its output."""
+    for k in ("GIT_AUTHOR", "GIT_COMMITTER"):
+        monkeypatch.setenv(f"{k}_NAME", "t")
+        monkeypatch.setenv(f"{k}_EMAIL", "t@t")
+
+    def run(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(ws.root), *args], check=True, capture_output=True, text=True
+        ).stdout
+
+    run("init", "-q")
+    (ws.root / ".gitignore").write_text(".cache/\n", encoding="utf-8")
+    return run
+
+
+def test_each_library_change_and_its_undo_is_committed_alone(lib, git):
+    _approved(lib, "d", places=["acme/mark"])
+    git("add", "-A")
+    git("commit", "-qm", "start")
+
+    for change in (
+        lambda: library.drop(lib, "sponsor", "acme"),
+        lambda: library.revoke(lib, "d"),
+        lambda: library.retire(lib, taste.ids(lib)[0]),
+    ):
+        assert change()["committed"].startswith("committed")
+        assert not git("status", "--porcelain")
+        assert history.change(lib, _last_uid(lib), "undo")["committed"].startswith("committed")
+        assert not git("status", "--porcelain")
+
+
+def test_reviving_a_concept_whose_folder_was_deleted_brings_it_back_from_git(ws, git):
     checked(ws, "sketch")
-    git("init", "-q")
     git("add", "designs")
     git("commit", "-qm", "sketch")
     review_apply._record(ws, {}, {"concept:sketch": {"decision": "reject"}}, "r", {})
