@@ -62,7 +62,10 @@ SIDE_L = (
     (0.655, 0.95),
     (0.656, 1.25),
 )
-COIL_TOP = ((0.656, -1.25), (0.656, -0.5), (0.60, -0.28), (0.40, 0.25), (0.315, 0.5), (0.315, 1.25))
+# The coil over the engine cover and roof: it leaves the left haunch square at u 0.656 and arrives on the
+# right square at u 0.315, and between the two it is one S of changing curvature (see `_coil_top`) with no
+# straight stretch, so it moves like the dips and rises on the sides.
+COIL_FROM, COIL_TO = (0.656, -0.5), (0.315, 0.5)  # where the S leaves and joins the square crossings
 SIDE_R = (
     (0.315, 1.25),
     (0.315, 0.92),
@@ -146,6 +149,31 @@ class Params(DesignParams):
     lockup_u: float = param(0.028, 0.01, 0.08)
     lockup_w: float = param(0.0, -0.1, 0.1)
     lockup_h: float = param(0.02, 0.015, 0.03)
+    # The coil's S on top: how long its ends run on square across the car before turning forward, as a
+    # share of the distance between them (more: tighter bends and a middle that runs more along the
+    # car), and how much of that goes to the left (haunch) end rather than the right.
+    coil_ease: float = param(0.58, 0.0, 1.2)
+    coil_skew: float = param(0.0, -0.6, 0.6)
+
+
+def _coil_top(kit, p: Params):
+    """The coil's spine on top: square across the car at both sides, and between `COIL_FROM` and
+    `COIL_TO` a cubic Bezier leaving and arriving square across, so its curvature never stops changing."""
+    k = carspace.aspect(kit, "top")
+    (u0, w0), (u1, w1) = COIL_FROM, COIL_TO
+    a = p.coil_ease * math.hypot(u1 - u0, (w1 - w0) * k) / k  # in w
+    c = ((u0, w0), (u0, w0 + a * (1 + p.coil_skew)), (u1, w1 - a * (1 - p.coil_skew)), (u1, w1))
+    pts = []
+    for i in range(17):
+        t = i / 16
+        b = ((1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t**2 * (1 - t), t**3)
+        pts.append(
+            (
+                sum(f * q[0] for f, q in zip(b, c, strict=True)),
+                sum(f * q[1] for f, q in zip(b, c, strict=True)),
+            )
+        )
+    return ((u0, -1.25), *pts, (u1, 1.25))
 
 
 def _smooth(pts, n: int = 4):
@@ -482,7 +510,7 @@ def build(kit, p: Params):
     for id, view, spine in (
         ("neck", "top", NECK_TOP),
         ("body", "side_l", SIDE_L),
-        ("coil", "top", COIL_TOP),
+        ("coil", "top", _coil_top(kit, p)),
         ("body", "side_r", SIDE_R),
     ):
         parts, b = _body(kit, p, id, view, spine)
