@@ -112,15 +112,16 @@ const BUILT = {
     design: STR, checked: BOOL, sim_run: STR,
     blocked: STOPS('fixes this round could not make inside the design folder'),
     kit: STOPS('kit faults found this round that stop a fix (not gaps it designed around)'),
-    character: { type: 'string', description: "a change of the brief's character the fixes would need; '' when none" },
-    sim: { type: 'string', description: "what the owner must do before the next sim round can run; '' when nothing" },
+    character: { type: 'string', description: "a change of the brief's character the fixes would need; an empty string when none" },
+    sim: { type: 'string', description: "what the owner must do before the next sim round can run; an empty string when nothing" },
     notes: { type: 'array', items: STR, description: 'anything else for the owner: kit gaps worked around, known limits' },
     constraints: STRS, summary: STR,
   },
 }
-// A builder sometimes answers 'none' in a stop field instead of leaving it empty.
+// A builder sometimes answers 'none', or an empty pair of quotes, in a stop field instead of leaving it empty.
 const NONE = /^\s*(none|no |nothing|not run|n\/a|-\s*$)/i
-const real = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : []).filter(x => typeof x === 'string' && x.trim() && !NONE.test(x))
+const bare = (x) => x.replace(/^[\s"'`]+|[\s"'`]+$/g, '')
+const real = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : []).filter(x => typeof x === 'string' && bare(x) && !NONE.test(bare(x)))
 // What the CLI steps print, as the clerk reads it back.
 const STATUS = {
   type: 'object',
