@@ -13,9 +13,10 @@ export const meta = {
 // session has it, adopt: a variant they picked at a plateau, for round 1 to adopt, judge_first: round 1
 // judges the checked build as it stands, for a build whose last fixes are already answered}. Ship is livery critic
 // status's call, never the workflow's. The workflow ends where the owner decides: it never runs livery review.
-// Once the kit's capture passed livery bake check, middle rounds are judged on baked renders, without the
-// sim (docs/architecture.md, Design sessions). A baked round never ships, so the budget's last round, and the round
-// after a baked one that only its being baked kept from shipping, are judged on sim shots.
+// Once the kit's capture passed livery bake check, rounds are judged on baked renders, without the sim
+// (docs/architecture.md, Design sessions). A baked round ships only where its baked views stand in for sim shots
+// (the check covered every finish the build uses). Where they don't, the budget's last round, and the round after a
+// baked one that only its being baked kept from shipping, are judged on sim shots.
 
 const VARIANTS = 3
 const PAIR = '__' // joins a pair's names in its pack folder and answer file, as livery.critic does
@@ -138,7 +139,11 @@ const COMPARED = {
   properties: { ok: BOOL, result: { type: 'string', enum: ['better', 'worse', 'same'] }, status: STATUS, error: STR },
 }
 const RANKED = { type: 'object', required: ['ok'], properties: { ok: BOOL, ranking: STRS, error: STR } }
-const BAKE = { type: 'object', required: ['ok', 'checked'], properties: { ok: BOOL, checked: BOOL, error: STR } }
+const BAKE = {
+  type: 'object',
+  required: ['ok', 'checked', 'usable'],
+  properties: { ok: BOOL, checked: BOOL, usable: BOOL, error: STR },
+}
 
 const indent = text => text.split('\n').map(l => `  ${l}`).join('\n')
 
@@ -240,9 +245,9 @@ async function compareRounds(n, baked) {
 }
 
 // The adversary's check of the same shots, once status leaves nothing else in the way of ship.
-async function adversaryCheck(n) {
+async function adversaryCheck(n, baked) {
   const packed = await clerk(`r${n} adversary pack`, 'Judge',
-    `1. uv run livery critic pack ${DESIGN} --adversary\nReturn ok and the folder it prints (its last line), exactly as printed.`,
+    `1. uv run livery critic pack ${DESIGN} --adversary${bakedFlag(baked)}\nReturn ok and the folder it prints (its last line), exactly as printed.`,
     FOLDER)
   if (!packed || !packed.ok || !packed.folder) return { error: `round ${n} adversary pack: ${packed ? packed.error : 'no answer'}` }
   const found = (await critic(packed.folder, 'adversary', ADVERSARY, `r${n} adversary`, 'Judge')) ||
@@ -257,8 +262,10 @@ async function adversaryCheck(n) {
 
 // Status's reasons not to ship, when the only one left is the missing adversary check.
 const onlyAdversaryLeft = st => !st.ship && st.why.length > 0 && st.why.every(w => /adversary/i.test(w))
-// A baked round that would go to the adversary, and so maybe ship, if it had been judged on sim shots.
-const onlyBakedLeft = st => st.baked && st.why.every(w => /baked renders|adversary/i.test(w))
+// A baked round whose renders can't stand in for sim shots, that would go to the adversary, and so maybe ship,
+// if it had been judged on sim shots.
+const onlyBakedLeft = st =>
+  st.baked && st.why.some(w => /baked renders/i.test(w)) && st.why.every(w => /baked renders|adversary/i.test(w))
 
 const SOURCES = [
   'Take the move from the system of the brief\'s first reference row (its pictures are in .cache/references/).',
@@ -330,16 +337,27 @@ function finish(stop, extra) {
   }
 }
 
-const bakeState = await clerk('bake status', 'Build',
-  `1. uv run livery bake status --design ${DESIGN} --json\nReturn ok and, as checked, the value of "checked" in the JSON it prints.`,
-  BAKE)
-const BAKED_OK = Boolean(bakeState && bakeState.ok && bakeState.checked)
-log(BAKED_OK ? 'middle rounds are judged on baked renders' : 'every round is judged on sim shots: the bake isn\'t checked')
+// checked: baked renders may judge a round; usable: they stand in for the checked build's sim shots, so a
+// round judged on them can ship.
+const bakeStatus = async () => {
+  const st = await clerk('bake status', 'Build',
+    `1. uv run livery bake status --design ${DESIGN} --json\nReturn ok and, as checked and usable, the values of ` +
+      '"checked" and "usable" in the JSON it prints.',
+    BAKE)
+  return { checked: Boolean(st && st.ok && st.checked), usable: Boolean(st && st.ok && st.usable) }
+}
+const bakeState = await bakeStatus()
+const BAKED_OK = bakeState.checked
+log(!BAKED_OK ? 'every round is judged on sim shots: the bake isn\'t checked'
+  : bakeState.usable ? 'rounds are judged on baked renders, which stand in for sim shots'
+  : 'middle rounds are judged on baked renders; the last on sim shots unless the bake comes to stand in')
 
 let adopt = ADOPT || null
 let simNext = false // the last baked round would have gone on towards ship on sim shots
 for (let n = 1; n <= BUDGET; n++) {
-  const baked = BAKED_OK && n < BUDGET && !simNext
+  // The budget's last round is baked only where the bake stands in for the build as it is now.
+  const standsIn = n < BUDGET || (BAKED_OK && !simNext && (n === 1 ? bakeState : await bakeStatus()).usable)
+  const baked = BAKED_OK && !simNext && standsIn
   simNext = false
   const asIs = JUDGE_FIRST && n === 1
   // Judging the design as it stands still needs a current check and previews of that build: a library or
@@ -399,8 +417,8 @@ for (let n = 1; n <= BUDGET; n++) {
   if (baked && onlyBakedLeft(last)) {
     simNext = true
     log(`round ${n}: only its baked shots keep it from the adversary; the next round is judged on sim shots`)
-  } else if (!baked && onlyAdversaryLeft(last)) {
-    const checked = await adversaryCheck(n)
+  } else if (onlyAdversaryLeft(last)) {
+    const checked = await adversaryCheck(n, baked)
     if (checked.error) return finish('error', { for_owner: [checked.error] })
     last = checked.status
   }

@@ -7,7 +7,7 @@ description: The Fartstriber design session - the owner's brief, the livery-conc
 
 The owner decides twice: the concept pick and the final. Between them the work runs on its own, in two saved workflows (`.claude/workflows/`) that start `livery-builder` and `livery-critic` agents (`.claude/agents/`, which say how each does its job) and stop before `livery review`. This session writes the brief, starts the workflows, runs the reviews and passes on only results and what the owner has to do. It never replies to a notice that a workflow or an agent is still working.
 
-Load `livery-design` first. A workflow starts with the Workflow tool, `{name: "<workflow>", args: {...}}`. Both shoot in the sim: when you start one, ask the owner to leave the preview replay open and the cursor off the sim window (`livery sim status` says what a run would find).
+Load `livery-design` first. A workflow starts with the Workflow tool, `{name: "<workflow>", args: {...}}`. Both shoot in the sim unless the kit's bake stands in for the design's sim shots: once the capture is checked and fresh and its bake check covered every finish the build uses (`livery bake status --design <name>`), the critic's rounds, the shots at the concept pick and the final review are baked, and no sim run is needed. When one may shoot, ask the owner to leave the preview replay open and the cursor off the sim window (`livery sim status` says what a run would find). A `preview sim` of a build the bake stands in for measures the bake against the sim again and warns when it drifted: then the kit needs `livery bake check` (`kit-calibrate`) before baked views are trusted again; after an iRacing update the capture is stale and needs shooting again.
 
 ## 1. Brief
 
@@ -17,7 +17,7 @@ Another round or a change to an existing design goes straight to 5, with their w
 
 ## 2. Concepts
 
-Start `livery-concepts` with `{brief, names, references}`: 6 new design names unless they ask for more (every pair is judged in both orders: 30 critics for 6 concepts, 56 for 8). It returns the critic's ranking, the top 3 checked and shot in the sim, and `for_owner`. Delete the `unshown` sketch folders, which were never committed.
+Start `livery-concepts` with `{brief, names, references}`: 6 new design names unless they ask for more (every pair is judged in both orders: 30 critics for 6 concepts, 56 for 8). It returns the critic's ranking, the top 3 checked and shot in the sim (or baked, where the bake stands in), and `for_owner`. Delete the `unshown` sketch folders, which were never committed.
 
 ## 3. Concept pick
 
@@ -41,7 +41,7 @@ Delete the variant folders it lists under `remove`, and an adopted variant's onc
 
 ## 6. Final review
 
-`livery build <design>`, then `livery review <design>`. The item opens with their last decision on it, the sim shots they saw then beside now, and whether the critic sees their note resolved. They accept (good enough to race), edit with a note, or park it, and may rate it; log it as in 4. A final review needs a checked build, and accepting pins exactly that build. On edit, refine again with their note. On park, stop.
+`livery build <design>`, then `livery review <design>`. The page shows the build's sim shots, or without them its baked views, labelled as baked, where the bake stands in; when it would have neither (`livery status <design>` and `livery bake status --design <design>`), run `livery preview sim <design>` first. The item opens with their last decision on it, the car shots they saw then beside now, and whether the critic sees their note resolved. They accept (good enough to race), edit with a note, or park it, and may rate it; log it as in 4. A final review needs a checked build, and accepting pins exactly that build. On edit, refine again with their note. On park, stop.
 
 ## 7. Install and export
 

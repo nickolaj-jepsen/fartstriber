@@ -106,6 +106,47 @@ def _sha(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
+def _stat(path: Path) -> list[int]:
+    st = path.stat()
+    return [st.st_size, st.st_mtime_ns]
+
+
+def sim_build(cfg: Config) -> dict | None:
+    """The sim's executable and its signature file, which every iRacing update rewrites."""
+    exe = cfg.install / cfg.process
+    if not exe.exists():
+        return None
+    return {"file": exe.name, "stat": _stat(exe), "sgn": _sha(exe.with_suffix(".sgn"))}
+
+
+def track_files(cfg: Config) -> dict | None:
+    """The replay's track as installed: the files in each folder down its path under the install's tracks
+    folder (the .dat files and version.txt), which an update to the track rewrites."""
+    parts = Path(cfg.replay.track.replace("\\", "/")).parts
+    out = {}
+    for i in range(1, len(parts) + 1):
+        folder = cfg.install.joinpath("tracks", *parts[:i])
+        for f in sorted(folder.iterdir()) if folder.is_dir() else []:
+            if f.is_file():
+                out["/".join((*parts[:i], f.name))] = _stat(f)
+    return out or None
+
+
+# Recorded since the first captures were shot: a capture without them is held against what its last bake
+# check recorded, since a passing check shows the capture still holds for the sim as it was then.
+VOUCHED = ("sim", "track_files")
+
+
+def shot_identity(manifest: dict) -> dict:
+    """What a capture was shot against, VOUCHED keys it lacks taken from its bake check."""
+    ident = dict(manifest.get("identity", {}))
+    vouched = (manifest.get("check") or {}).get("identity") or {}
+    for key in VOUCHED:
+        if key not in ident and key in vouched:
+            ident[key] = vouched[key]
+    return ident
+
+
 def identity(cfg: Config, kit: Kit, prof: kits.Profile) -> dict:
     """Everything the shots depend on, apart from the window's size, which the first paint records."""
     r = cfg.replay
@@ -126,6 +167,8 @@ def identity(cfg: Config, kit: Kit, prof: kits.Profile) -> dict:
         "track_cameras": _sha(cameras.track_cam(cfg.documents, r.track)),
         "renderer": renderer_settings(cfg.documents / RENDERER_INI),
         "car_dat": car_dat(cfg, kit.paint_folder),
+        "sim": sim_build(cfg),
+        "track_files": track_files(cfg),
         "scheme": [[list(slot) for slot in p] for p in graycode.SCHEME],
         "jobs": [[j.name, j.grey, list(j.spec)] for j in jobs(kit)],
     }
@@ -425,8 +468,12 @@ def reshoot(cfg: Config, ws: Workspace, kit: Kit, materials: list[Material], log
     prof = kits.profile(kit)
     views = prof.shots(prof.preview)
     ident = identity(cfg, kit, prof)
-    old = manifest.get("identity", {})
-    moved = sorted(k for k in ident.keys() - {"jobs", "kit_hash"} if ident.get(k) != old.get(k))
+    old = shot_identity(manifest)
+    moved = sorted(
+        k
+        for k in ident.keys() - {"jobs", "kit_hash"}
+        if (k in old or k not in VOUCHED) and ident.get(k) != old.get(k)
+    )
     if moved:
         raise CaptureFailed(f"{run} was shot with another {', '.join(moved)}; shoot a fresh capture")
     keys = {m: f"{m}@{'-'.join(str(x) for x in kit.spec[m])}" for m in materials}
