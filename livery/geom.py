@@ -15,7 +15,7 @@ import numpy as np
 import shapely
 import shapely.affinity
 import shapely.ops
-from shapely.geometry import LineString, MultiLineString, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from livery import carspace
@@ -254,14 +254,14 @@ class Edges:
     def alongside(self, geom: BaseGeometry, within: BaseGeometry | None = None) -> BaseGeometry:
         """The parts of a texture shape's outline (in `within`, if given) within reach of a line of their
         own island, meeting no line or outline."""
-        edge = geom.boundary if within is None else geom.boundary.intersection(within)
+        edge = _outline(geom) if within is None else _outline(geom).intersection(within)
         if edge.is_empty or not self.near.intersects(edge):  # far from every line: skip the costly overlay
             return LineString()
         return edge.difference(self.meet).intersection(self.near)
 
     def touches(self, geom: BaseGeometry) -> bool:
         """Whether any free part of its outline comes within reach of a line."""
-        edge = geom.boundary
+        edge = _outline(geom)
         return self.near.intersects(edge) and edge.difference(self.meet).intersects(self.near)
 
     def _free(self, geom: BaseGeometry, within: BaseGeometry | None = None) -> list[_Free]:
@@ -406,6 +406,14 @@ class Edges:
             mid = max(pieces, key=lambda f: len(f.pts))
             x, y = mid.pts[len(mid.pts) // 2]
             yield moved, Snap(to, self.b.kinds[r.line], round(px, 1), round(r.length), (round(x), round(y)))
+
+
+def _outline(geom: BaseGeometry) -> BaseGeometry:
+    """The boundary of a texture shape's polygonal part. A difference or union can leave polygons with stray
+    lines or points, a collection with no boundary of its own."""
+    if not isinstance(geom, Polygon | MultiPolygon):
+        geom = _union(polygons(geom))
+    return geom.boundary
 
 
 def _spans(mask: np.ndarray) -> list[tuple[int, int]]:
