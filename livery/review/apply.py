@@ -97,12 +97,12 @@ def decisions_on(ws: Workspace, name: str) -> list[dict]:
 
 
 def latest_note(ws: Workspace, name: str) -> dict | None:
-    """The ledger line with the owner's latest note on a design, which every round after it answers to;
-    None once they have accepted the final since."""
+    """The ledger line with the owner's latest note on a design, or critic suggestions they endorsed, which
+    every round after it answers to; None once they have accepted the final since."""
     for line in reversed(decisions_on(ws, name)):
         if line["id"].startswith("final:") and line.get("decision") == "accept":
             return None
-        if line.get("note", "").strip():
+        if line.get("note", "").strip() or line.get("endorsed"):
             return line
     return None
 

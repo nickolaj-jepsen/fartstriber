@@ -9,6 +9,11 @@ from tests.conftest import TASTE_IDS, checked, sim_run
 FIX = "the orange band stops short of the tail light"
 
 
+def suggestion(title: str, optional: bool = False, **more) -> dict:
+    """A critic suggestion as a round records it."""
+    return {"title": title, "detail": "", "where": "", "optional": optional} | more
+
+
 def verdict(**change) -> dict:
     """A well-formed round verdict on a first round: every taste row passes, one fix that matters."""
     return {
@@ -17,7 +22,7 @@ def verdict(**change) -> dict:
         "scores": dict.fromkeys(critic.RUBRIC, 4),
         "overall": 7,
         "verdict": "iterate",
-        "fixes": [{"text": FIX, "optional": False}],
+        "fixes": [suggestion(FIX)],
         "lint_missed": [],
         "blocked": [],
     } | change
@@ -37,8 +42,10 @@ def _taste(fail: str, where: str = "") -> list[dict]:
         {"verdict": "ship"},  # ship is computed, never the critic's call
         {"overall": 11},
         {"scores": dict.fromkeys(critic.RUBRIC[:-1], 3)},
-        {"fixes": [{"text": "a", "optional": False}] * 4},
         {"fixes": ["a plain string"]},
+        {"fixes": [{"text": "a fix as it was before suggestions", "optional": False}]},
+        {"fixes": [{"title": "a", "detail": "b", "optional": False}]},  # where is text, maybe empty
+        {"fixes": [suggestion("a headline that runs on " + "and on " * 8)]},
         {"taste": _taste("boring")[1:]},  # a row left out
         {"taste": _taste("boring")},  # failing without saying where
         {"previous": [{"status": "resolved", "evidence": "side_l.png"}]},  # there was no last round
@@ -48,6 +55,15 @@ def _taste(fail: str, where: str = "") -> list[dict]:
 def test_malformed_verdicts_are_refused(change):
     with pytest.raises(critic.BadVerdict):
         critic.validate(verdict(**change), taste=TASTE_IDS)
+
+
+def test_a_round_suggests_as_many_fixes_as_it_takes_and_names_each_in_one_line():
+    many = [suggestion(f"fix {i}", detail=f"why {i}", where="front34: the nose") for i in range(6)]
+    last = critic.validate(verdict(fixes=many), taste=TASTE_IDS)
+
+    lines = [f["text"] for f in critic.fixes(last)]
+    assert len(set(lines)) == 6
+    assert all("fix" in t and "why" in t and "front34" in t for t in lines)
 
 
 def test_a_failing_taste_row_says_where():
