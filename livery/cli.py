@@ -873,7 +873,7 @@ def critic_pack(
     A round: the checked build's sim shots with their distance images (shots of another build are
     refused), the close crops, the squint, the brief and the pictures of the reference rows it names, the
     boring anchors, the rubric, taste table, references and prefs, the earlier verdicts with the builder's
-    answers and the owner's latest note. --adversary packs the same without the history or the note. --compare prints two packs: pass
+    answers and the owner's latest note, each of its pins as the crop they pinned and the same box now. --adversary packs the same without the history or the note. --compare prints two packs: pass
     the critics' answers to `critic compare` in the order printed. --pairs prints a folder of packs named
     A__B (flat views, car view, squint): save each answer as A__B.json in one folder for `critic rank
     --pairs`. Several designs and no flag is the legacy concept ranking on sim shots.
@@ -955,7 +955,7 @@ def critic_status(design: Design, as_json: AsJson = False) -> None:
     """Print whether the design goes back to the owner and whether it ships, and why not, as JSON.
 
     Ready: the last round, on sim shots or baked renders that stand in for them, judged the owner's
-    latest note and every critic suggestion they endorsed resolved, nothing is blocked and every taste
+    latest note, each of its pins and every critic suggestion they endorsed resolved, nothing is blocked and every taste
     row passes; `holds` says what keeps it from that. The critic's own fixes never hold it back.
     Ship, on top: no open fix that isn't optional, not worse than the round before, and the adversary's
     top finding optional; `why` lists every reason it doesn't. Otherwise the critic's call (iterate or
