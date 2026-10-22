@@ -76,7 +76,7 @@ LAUNCH = {
 }
 
 
-def with_launch(tmp_path: Path, **change: str) -> Path:
+def with_launch(tmp_path: Path, **change: str | None) -> Path:
     """The fixture settings plus a [sim] table; a value of None leaves its key out."""
     p = settings(tmp_path)
     rows = [f"{k} = {v}" for k, v in {**LAUNCH, **change}.items() if v is not None]

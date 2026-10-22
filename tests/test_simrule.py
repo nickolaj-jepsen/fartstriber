@@ -1,6 +1,7 @@
 """When agents may start the sim, and when an agent-started sim has to go."""
 
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -30,12 +31,12 @@ def test_an_agent_starts_the_sim_once_the_owner_has_been_away():
 
 def test_without_settings_or_with_never_agents_never_start_it():
     assert simrule.blocked(None, AWAY, SIM, None) is not None
-    never = Launch(**{**RULES.__dict__, "rule": "never"})
+    never = replace(RULES, rule="never")
     assert simrule.blocked(never, AWAY, SIM, None) is not None
 
 
 def test_anytime_starts_it_while_the_owner_is_here():
-    anytime = Launch(**{**RULES.__dict__, "rule": "anytime"})
+    anytime = replace(RULES, rule="anytime")
     assert simrule.blocked(anytime, HERE, SIM, None) is None
 
 
@@ -49,9 +50,9 @@ def test_the_owners_allow_starts_it_while_they_are_here_and_their_hold_stops_it(
 def test_a_full_screen_game_or_battery_stops_a_launch_even_when_allowed():
     allow = simrule.Override("allow", None)
     assert simrule.blocked(RULES, GAMING, SIM, allow) is not None
-    on_battery = Presence(**{**AWAY.__dict__, "battery": True})
+    on_battery = replace(AWAY, battery=True)
     assert simrule.blocked(RULES, on_battery, SIM, allow) is not None
-    lenient = Launch(**{**RULES.__dict__, "full_screen_stops": False, "battery_stops": False})
+    lenient = replace(RULES, full_screen_stops=False, battery_stops=False)
     assert simrule.blocked(lenient, GAMING, SIM, allow) is None
 
 
