@@ -149,7 +149,7 @@ def wait_ready(log: Callable[[str], object], timeout: float = 0.0) -> dict:
         if h.get("phase") != said:
             said = h.get("phase")
             log(f"sim host: {said}")
-        if said == "ready":
+        if h.get("ready_s") is not None:  # it got there, even if it has moved on since
             return {"file": h.get("file"), "ready_s": h.get("ready_s") or 0.0, "sim": h.get("sim")}
         time.sleep(POLL_S)
     raise LaunchError(f"the replay didn't open within {timeout / 60:.0f} min")
@@ -436,6 +436,7 @@ def _watch(cfg: Config, record: dict, sim: dict, log: Callable[[str], None]) -> 
             if _replay_open(cfg):
                 ready = True
                 _write(record, phase="ready", ready_s=round(now - launched, 1))
+                quiet_since = now  # unwanted from the moment it's ready, not while it loads
                 log(f"the replay is open, {now - launched:.0f} s after the launch")
             elif now - launched > READY_S:
                 raise LaunchError(f"the replay didn't open within {READY_S / 60:.0f} min")

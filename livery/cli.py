@@ -840,7 +840,8 @@ def sim_up(
     if simhost.host() is None:
         simhost.spawn(file)
     log(f"starting the sim on {file}; a launch takes a few minutes")
-    result = simhost.wait_ready(log)
+    with simhost.want("livery sim up"):  # so it isn't closed as unwanted before it's ready
+        result = simhost.wait_ready(log)
     _emit(as_json, result, f"the replay is open, {result['ready_s']:.0f} s after the launch")
 
 

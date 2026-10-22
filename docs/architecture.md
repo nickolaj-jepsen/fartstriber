@@ -232,11 +232,12 @@ flowchart LR
 |---|---|
 | `livery.simrule` | the launch rule: `launch = "idle"` waits until the owner has had `idle_minutes` without input; a full-screen app or game in front, battery, or the owner's `sim hold` stops a launch; `sim allow` starts it while they're here |
 | `livery.simhost` | one host at a time (a mutex), spawned detached so it outlives the run that asked. It records the sim it started in `sim-host.json`: only that sim is ever closed |
-| `livery.simlaunch` | the launch as the iRacing UI does it (`docs/sim.md`, Opening a replay), and the close: WM_CLOSE to its windows, a kill if it stays |
+| `livery.simlaunch` | the launch as the iRacing UI does it (`docs/sim.md`, Opening and closing the sim), and the close: WM_CLOSE to its windows, a kill if it stays |
 | `livery.members` | the `livery sim login` session, checked with a benign call before each launch |
 
-- Every run on a replay says it wants the sim while it queues and runs (`sim-demand/`). The host closes the sim once none has for `close_after_minutes`, and, while the sim is in front, only once the owner has been away.
-- It closes at once, stopping the run under way, when a full-screen app or game comes to the front. A hold, or the owner in the iRacing UI, closes it after the run.
+- Every run on a replay says it wants the sim while it queues and runs (`sim-demand/`). The host closes the sim once none has for `close_after_minutes` and the owner has been away `idle_minutes`: a sim's exit brings the iRacing UI to the front (`docs/sim.md`).
+- A hold, or the owner in the iRacing UI, closes it once the run under way ends; every close waits for the lock, and a run that holds the lock while the host waits closes the sim itself.
+- A full-screen app or game in front stops runs at once and starts nothing, but closes nothing: the UI would come up over the game.
 - An agent-started sim in front is driven while the owner is away: from `idle_minutes` without input until their next input.
 - A lock holder may close an agent-started sim: a run that needs another replay, and `preview cameras --arm` when `camera.ini` has to change. The next run starts it again.
 - A failed launch is recorded, and runs don't try again for 30 minutes; `livery sim up` does. A host that died leaves its record, and the next one adopts the sim.
