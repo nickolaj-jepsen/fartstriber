@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import functools
 import json
@@ -684,6 +685,127 @@ def sim_pick_frame(
     else:
         text = [f"frame {report['frame']}" + ("" if dry_run else f" -> {report.get('written')}")]
     _emit(as_json, report, [*text, report["out"]])
+
+
+@sim_app.command("login")
+def sim_login(as_json: AsJson = False) -> None:
+    """Sign in to iRacing in a throwaway browser profile and keep the session for `sim open`.
+
+    Opens your own Chrome or Edge (none is bundled) on the iRacing sign-in page, in a fresh profile that is
+    removed afterwards: you type your password into iRacing's real page, never into the tool. When you are
+    signed in, the session is saved to the machine state dir, out of the checkout, for you alone.
+    """
+    from livery import members
+
+    result = members.login(_progress(as_json))
+    _emit(as_json, result, f"signed in; session saved to {result['store']}")
+
+
+@sim_app.command("open")
+def sim_open(
+    session_id: Annotated[
+        int | None,
+        typer.Option("--session-id", help="An online replay's subsession id."),
+    ] = None,
+    track_id: Annotated[
+        int | None,
+        typer.Option("--track-id", help="A saved local replay's track id (with --car-id)."),
+    ] = None,
+    car_id: Annotated[
+        int | None,
+        typer.Option("--car-id", help="A saved local replay's car id (with --track-id)."),
+    ] = None,
+    replay_file: Annotated[
+        str | None,
+        typer.Option("--file", help="The replay .rpy file name to launch [default: from settings]."),
+    ] = None,
+    display_mode: Annotated[
+        str,
+        typer.Option("--display-mode", help="monitor, oculus, openvr or openxr (with --launch)."),
+    ] = "monitor",
+    launch: Annotated[
+        bool,
+        typer.Option(
+            "--launch",
+            help="Actually hand the replay to the sim, which opens and takes focus. Without it, only fetch "
+            "and report.",
+        ),
+    ] = False,
+    as_json: AsJson = False,
+) -> None:
+    """Fetch the credentials that open a replay, over iRacing's client-proxy service, and report.
+
+    Needs `livery sim login` first. It requests the replay credentials over CPS (a cookie-authenticated
+    websocket) and reports whether they came back (never the values). The replay is the one named by
+    --file, --track-id/--car-id or --session-id, else the preview replay from your settings. With --launch it
+    starts the sim on that replay and serves it until it exits.
+    """
+    from livery import cps, members, simlaunch
+
+    log = _progress(as_json)
+    cookies = members.session_or_raise()
+    if not members.has_session(cookies):
+        raise members.NotSignedIn("the saved iRacing session has expired: run `livery sim login`")
+    # How the replay is identified to CPS: a saved local .rpy by its track + car (offline, plus every
+    # participant so the sim can load all cars), else a subsession id (online). A local replay opens from the
+    # file; an online one streams from the server. Given just a file name, its ids come from the replay list.
+    args: dict[str, Any] | None = None
+    label, file = None, replay_file
+    if session_id is not None:
+        args, label = cps.request_args(session_id=session_id), f"session {session_id}"
+    elif track_id is not None and car_id is not None:
+        args, label = cps.request_args(track_id=track_id, car_id=car_id), f"track {track_id}, car {car_id}"
+    elif replay_file is not None:
+        entry = simlaunch.replay_entry(replay_file)
+        if entry is None or entry.get("track_id") is None:
+            _emit(
+                as_json,
+                {"note": f"{replay_file} not found in the local replay list"},
+                [f"no replay: {replay_file} is not in the local replay list"],
+            )
+            return
+        args = cps.request_args(
+            track_id=entry["track_id"], car_id=entry["car_id"], sess_carids=entry["sess_carids"]
+        )
+        label = f"{replay_file} (track {entry['track_id']}, car {entry['car_id']})"
+    else:  # fall back to the preview replay, if the settings are present
+        from livery import config
+
+        with contextlib.suppress(config.ConfigError):
+            cfg = config.load()
+            args, label = cps.request_args(session_id=cfg.replay.subsession), cfg.replay.label
+            file = cfg.replay.file
+    if args is None:
+        _emit(
+            as_json,
+            {"note": "name the replay: --file (saved), --track-id/--car-id, or --session-id (online)"},
+            ["no replay: pass --file (a saved replay), --track-id and --car-id, or --session-id (online)"],
+        )
+        return
+    log(f"requesting replay credentials for {label} over CPS")
+    creds = cps.replay_credentials(cookies, args)
+    fields = members.credential_fields(creds)
+    ok = bool(creds.get("success")) and all(fields.values())
+    result: dict = {"replay": label, "success": creds.get("success"), "credentials": fields}
+    text = [
+        f"replay: {label}",
+        f"credentials: {'ok' if ok else 'incomplete'} ("
+        + ", ".join(f"{k}={'ok' if present else 'missing'}" for k, present in fields.items())
+        + ")",
+    ]
+    if launch and ok:
+        from livery import config
+
+        install = Path(r"C:\Program Files (x86)\iRacing")
+        with contextlib.suppress(config.ConfigError):
+            install = config.load().install
+        log("opening the replay in the sim — it takes focus; this stays running while the sim is open")
+        info = simlaunch.launch_replay(creds, file or "", install, log, display_mode=display_mode)
+        result["launched"] = info
+        text.append(f"sim session ended (pid {info['pid']}, ui_port {info['port']})")
+    elif launch:
+        text.append("not launched: credentials incomplete")
+    _emit(as_json, result, text)
 
 
 @config_app.command("show")
