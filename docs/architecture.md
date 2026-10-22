@@ -363,7 +363,7 @@ flowchart TD
 | Telemetry | `telemetry.jsonl` in the state dir: every livery command, sim run, install and review decision | no |
 
 - `livery status [design]` builds nothing. It reports the check, the TGAs, the approvals, whether the previews are fresh, and the critic's last round.
-- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage and waits for the sim lock.
+- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage, waits for the sim lock, and the sims agents started.
 - Every command takes `--json`.
 
 ## Settings
