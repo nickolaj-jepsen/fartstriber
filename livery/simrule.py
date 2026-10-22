@@ -15,7 +15,7 @@ from typing import Any
 
 from livery import config, state
 from livery.config import ConfigError
-from livery.presence import Presence
+from livery.presence import FULL_SCREEN, Presence
 
 OVERRIDE_FILE = "sim-override.json"
 UI_EXE = "iRacingUI.exe"
@@ -122,34 +122,39 @@ def set_override(mode: str | None, seconds: float | None = None) -> Override | N
     return o
 
 
-def must_close(
-    launch: Launch | None, p: Presence, sim_exe: str, o: Override | None
-) -> tuple[str, bool] | None:
-    """Why an agent-started sim has to close now, whatever the runs want: (reason, at once). At once stops
-    the run under way; otherwise the sim closes once it ends."""
-    owner = config.owner()
+def paused(launch: Launch | None, p: Presence, sim_exe: str) -> str | None:
+    """Why runs have to stop at once and no sim may start: a full-screen app or game in front. The sim isn't
+    closed then: its exit brings the iRacing UI to the front, over the game (docs/sim.md)."""
     if launch is not None and launch.full_screen_stops and (what := p.full_screen(sim_exe)):
-        return f"{owner} has {what} in front", True
+        return f"{config.owner()} has {what} in front"
+    return None
+
+
+def must_close(launch: Launch | None, p: Presence, sim_exe: str, o: Override | None) -> str | None:
+    """Why an agent-started sim has to close once the run under way ends, whatever the runs want."""
+    owner = config.owner()
+    if paused(launch, p, sim_exe):
+        return None  # not while a game is in front; once it's gone, the reason below or an idle close
     if o is not None and o.mode == "hold":
-        return f"{owner} holds the sim ({o.describe()})", False
+        return f"{owner} holds the sim ({o.describe()})"
     if (
         launch is not None
         and launch.ui_closes
         and (p.foreground or "").lower() == UI_EXE.lower()
         and p.idle_s < UI_ACTIVE_S
     ):
-        return f"{owner} is in the iRacing UI", False
+        return f"{owner} is in the iRacing UI"
     return None
 
 
 def blocked(launch: Launch | None, p: Presence, sim_exe: str, o: Override | None) -> str | None:
-    """Why agents may not start the sim now, or None when they may. Whatever would close an agent-started
-    sim also stops its launch."""
+    """Why agents may not start the sim now, or None when they may. Whatever would pause the runs or close
+    an agent-started sim also stops its launch."""
     owner = config.owner()
     if launch is None:
         return f"agents don't start the sim: {config.USER_FILE} has no [sim] table ({config.EXAMPLE} describes it)"
-    if (closes := must_close(launch, p, sim_exe, o)) is not None:
-        return closes[0]
+    if (why := paused(launch, p, sim_exe) or must_close(launch, p, sim_exe, o)) is not None:
+        return why
     if launch.battery_stops and p.battery:
         return "the PC is on battery"
     if o is not None and o.mode == "allow":
@@ -164,10 +169,10 @@ def blocked(launch: Launch | None, p: Presence, sim_exe: str, o: Override | None
     return None
 
 
-def idle_close(launch: Launch | None, p: Presence, quiet_s: float, in_front: bool) -> bool:
+def idle_close(launch: Launch | None, p: Presence, quiet_s: float) -> bool:
     """Whether an agent-started sim no run has wanted for `quiet_s` seconds can close: after
-    close_after_minutes, and, while it is in front, only once the owner has been away idle_minutes."""
+    close_after_minutes, once the owner has been away idle_minutes (its exit brings the iRacing UI to the
+    front), and not while a full-screen game is in front."""
     after = (launch.close_after_minutes if launch else 30.0) * 60
-    if quiet_s < after:
-        return False
-    return not in_front or p.idle_s >= (launch.idle_minutes if launch else 5.0) * 60
+    away = (launch.idle_minutes if launch else 5.0) * 60
+    return quiet_s >= after and p.idle_s >= away and p.notification not in FULL_SCREEN

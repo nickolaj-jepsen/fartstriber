@@ -75,18 +75,36 @@ def _num(block: str, key: str) -> int | None:
 
 
 def parse_replay_entry(body: str, file: str) -> dict | None:
-    """Pull one saved replay's track, car and participant ids out of the service's replay list (a JS object
-    literal `var replaydata={replays:[{file:"..",trackID:..,carID:..,allCustIDs:[..]},..]}`)."""
+    """Pull one saved replay's ids out of the service's replay list (a JS object literal
+    `var replaydata={replays:[{file:"..",sessionID:..,trackID:..,carID:..,allCarIDs:[..]},..]}`): its session,
+    track and car, and the car models in it."""
     for block in re.findall(r"\{[^{}]*\}", body):  # each replay entry has no nested braces, only [] arrays
         name = re.search(r'file:"([^"]+)"', block)
         if not name or name.group(1) != file:
             continue
-        custs = re.search(r"allCustIDs:\[([^\]]*)\]", block)
-        raw = [int(x) for x in custs.group(1).split(",") if x.strip().lstrip("-").isdigit()] if custs else []
-        # 4294967295 (0xFFFFFFFF) is the empty-grid-slot sentinel, not a participant; drop it and non-ids
-        ids = [i for i in raw if 0 < i < 0xFFFFFFFF]
-        return {"track_id": _num(block, "trackID"), "car_id": _num(block, "carID"), "sess_carids": ids}
+        cars = re.search(r"allCarIDs:\[([^\]]*)\]", block)
+        raw = [int(x) for x in cars.group(1).split(",") if x.strip().lstrip("-").isdigit()] if cars else []
+        session = _num(block, "sessionID")
+        return {
+            "session_id": session if session and session > 0 else None,
+            "track_id": _num(block, "trackID"),
+            "car_id": _num(block, "carID"),
+            "sess_carids": [i for i in raw if 0 < i < 0xFFFFFFFF],  # 0xFFFFFFFF marks an empty slot
+        }
     return None
+
+
+def request_args(entry: dict) -> dict:
+    """How the replay is asked for, as the web app asks: a replay of an online session by its session id;
+    else by track and car, with the car models when there are several."""
+    from livery import cps
+
+    if entry.get("session_id"):
+        return cps.request_args(session_id=entry["session_id"])
+    cars = entry.get("sess_carids") or []
+    return cps.request_args(
+        track_id=entry["track_id"], car_id=entry["car_id"], sess_carids=cars if len(cars) > 1 else None
+    )
 
 
 def replay_entry(file: str) -> dict | None:

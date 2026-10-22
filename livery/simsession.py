@@ -42,7 +42,7 @@ UI_ROWS = ((0.02, 0.12), (0.87, 0.97))
 UI_COLS = (0.12, 0.88)
 UI_SHARE = 25.0  # percent of the bands' pixels that changed clearly
 UI_RETRY_S = 3.0
-CLOSING_POLL_S = 0.5  # how often the guard reads whether the agent-started sim is closing
+CLOSING_POLL_S = 0.5  # how often the guard looks for a full-screen game in front
 PREVIEW_GROUPS_FIX = "run livery preview cameras and reopen the replay"
 
 
@@ -50,8 +50,8 @@ class UIOverCar(CaptureError):
     pass
 
 
-class SimClosing(SimNotReady):
-    """The agent-started sim has to close at once (a full-screen game in front, say): the run stops."""
+class SimPaused(SimNotReady):
+    """A full-screen app or game came to the front: the run stops, under the owner's [sim] settings."""
 
 
 def near_grey(tga: bytes | None) -> bool:
@@ -140,7 +140,7 @@ class SimSession:
         self._front_input: int | None = None  # the owner's last input, once an agent's sim in front is ok
         self._rules_read: tuple[simrule.Launch | None] | None = None
         self._closed_agent = False
-        self._closing: tuple[float, tuple[str, bool] | None] = (0.0, None)
+        self._paused: tuple[float, str | None] = (-1e9, None)
 
     # Entering.
 
@@ -205,8 +205,10 @@ class SimSession:
         if self.window.minimised():
             return "the sim window is minimised; restore it (behind other windows is fine)"
         self._agent = simhost.is_agent(getattr(self.window, "pid", None))
-        if self._agent and (c := simhost.closing()) is not None:
-            return f"the agent-started sim is closing: {c[0]}"
+        if self._agent and (closing := simhost.closing()) is not None:
+            return f"the agent-started sim is closing: {closing}"
+        if (paused := self._paused_now()) is not None:
+            return paused
         if self.window.in_front() and not self._front_ok():
             return "in front"
         if self.size is not None and (now := self.window.client_size()) != self.size:
@@ -242,12 +244,12 @@ class SimSession:
         (it waits for the lock this run holds); and for a run on a replay with a file, while agents may start
         the sim (`livery.simhost`), start it when it isn't running, and switch an agent-started sim on another
         replay. Returns what the run waits for."""
-        c = simhost.closing()
-        if c is not None and not self._closed_agent:
+        closing = simhost.closing()
+        if closing is not None and not self._closed_agent:
             self._closed_agent = True
             sim.close()
-            simhost.close_agent(self.cfg, c[0], self.log)
-            return f"the agent-started sim closed: {c[0]}"
+            simhost.close_agent(self.cfg, closing, self.log)
+            return f"the agent-started sim closed: {closing}"
         if self.mode != "replay" or not self.replay.file or self._rules() is None:
             return problem
         h = simhost.host()
@@ -314,8 +316,8 @@ class SimSession:
     def _guard(self) -> None:
         if self.window is None:
             return
-        if self._agent and (c := self._closing_now()) is not None and c[1]:
-            raise SimClosing(f"the agent-started sim is closing at once: {c[0]}")
+        if (paused := self._paused_now()) is not None:
+            raise SimPaused(f"stopping: {paused}")
         if self.window.in_front() and not self._front_ok():
             raise SimInFront("the sim came to the front; stopping so as not to drive it under you")
         if self.window.minimised():
@@ -323,13 +325,13 @@ class SimSession:
                 "the sim window was minimised; it has to stay open (behind other windows is fine)"
             )
 
-    def _closing_now(self) -> tuple[str, bool] | None:
-        """`simhost.closing`, read at most every half second: the guard runs before every broadcast and
+    def _paused_now(self) -> str | None:
+        """`simrule.paused`, read at most every CLOSING_POLL_S: the guard runs before every broadcast and
         frame."""
-        at, seen = self._closing
+        at, seen = self._paused
         if time.monotonic() - at >= CLOSING_POLL_S:
-            seen = simhost.closing()
-            self._closing = (time.monotonic(), seen)
+            seen = simrule.paused(self._rules(), presence.read(), self.cfg.process)
+            self._paused = (time.monotonic(), seen)
         return seen
 
     def _need(self) -> tuple[Sim, Car]:
@@ -540,11 +542,6 @@ class SimSession:
 
     def _leave_sim(self, problems: list[str]) -> None:
         if not (self._differs or self._touched):
-            return
-        if self._agent and (c := simhost.closing()) is not None and c[1]:
-            problems.append(
-                f"the agent-started sim is closing at once ({c[0]}), so it was left as the run had it"
-            )
             return
         if self.window is not None and self.window.in_front() and not self._front_ok():
             shows = "it shows the run's paint until its next reload, and " if self._differs else ""

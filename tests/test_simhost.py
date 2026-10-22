@@ -66,8 +66,8 @@ def test_closing_is_told_only_while_the_host_closes_its_sim():
     me = state.me()
     record(**me, phase="ready", sim=me)
     assert simhost.closing() is None
-    record(**me, phase="closing", closing="a full-screen game", at_once=True, sim=me)
-    assert simhost.closing() == ("a full-screen game", True)
+    record(**me, phase="closing", closing="a hold", sim=me)
+    assert simhost.closing() == "a hold"
 
 
 def test_a_failed_launch_holds_off_a_retry_of_that_replay_for_a_while():
@@ -137,7 +137,6 @@ def closes(monkeypatch) -> list[dict]:
         simhost.simlaunch, "close", lambda sim, log, timeout=90.0: (asked.append(sim), (True, "closed"))[1]
     )
     monkeypatch.setattr(simhost, "LOCK_SLICE_S", 0.2)
-    monkeypatch.setattr(simhost, "CLOSE_LOCK_S", 1.0)
     return asked
 
 
@@ -186,13 +185,16 @@ def test_an_unwanted_sim_stays_while_a_run_holds_the_lock(closes, held):
     assert closes == []
 
 
-def test_a_close_at_once_gives_the_run_a_moment_then_closes(closes, held, monkeypatch):
+def test_a_close_waits_for_the_run_under_way(closes, held, monkeypatch):
+    import threading
+
     me = state.me()
-    monkeypatch.setattr(simrule, "must_close", lambda *a: ("a full-screen game", True))
+    monkeypatch.setattr(simrule, "must_close", lambda *a: "a hold")
     rec = {**me, "phase": "ready", "sim": me}
+    threading.Timer(1.0, held.set).start()  # the run ends
     t0 = time.monotonic()
-    assert simhost._close(config.load(), rec, me, "a full-screen game", True, print) is True
-    assert time.monotonic() - t0 >= simhost.CLOSE_LOCK_S
+    assert simhost._close(config.load(), rec, me, "a hold", print) is True
+    assert time.monotonic() - t0 >= 1.0
     assert closes == [me]
 
 
@@ -200,17 +202,9 @@ def test_a_close_after_the_run_is_dropped_once_its_reason_passes(closes, held, m
     me = state.me()
     monkeypatch.setattr(simrule, "must_close", lambda *a: None)
     rec = {**me, "phase": "ready", "sim": me}
-    assert simhost._close(config.load(), rec, me, "a hold", False, print) is False
+    assert simhost._close(config.load(), rec, me, "a hold", print) is False
     assert closes == []
     assert rec["phase"] == "ready"
-
-
-def test_a_close_after_the_run_turns_into_one_at_once_when_a_game_starts(closes, held, monkeypatch):
-    me = state.me()
-    monkeypatch.setattr(simrule, "must_close", lambda *a: ("a full-screen game", True))
-    rec = {**me, "phase": "ready", "sim": me}
-    assert simhost._close(config.load(), rec, me, "a hold", False, print) is True
-    assert closes == [me]
 
 
 def test_a_launch_that_fails_any_way_is_recorded(monkeypatch, closes):

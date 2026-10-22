@@ -65,16 +65,31 @@ def test_handle_rejects_an_unknown_method():
 
 REPLAY_LIST = (
     "var replaydata=\n{\n   replays:[\n"
-    '     {\n       file:"fartstriper.rpy"\n      ,carID:188\n      ,trackID:192\n'
-    "      ,subSessionID:84333072\n      ,allCustIDs:[\n         4294967295,654027,965736]\n     }\n"
-    '     ,{\n       file:"other.rpy"\n      ,carID:1\n      ,trackID:2\n      ,allCustIDs:[5]\n     }]\n};\n'
+    '     {\n       file:"online.rpy"\n      ,carID:188\n      ,trackID:192\n      ,sessionID:303769796\n'
+    "      ,subSessionID:84333072\n      ,allCarIDs:[\n         197,128,188]\n"
+    "      ,allCustIDs:[\n         4294967295,654027,965736]\n     }\n"
+    '     ,{\n       file:"offline.rpy"\n      ,carID:1\n      ,trackID:2\n      ,sessionID:0\n'
+    "      ,allCarIDs:[1,4294967295,3]\n     }\n"
+    '     ,{\n       file:"solo.rpy"\n      ,carID:1\n      ,trackID:2\n      ,allCarIDs:[1]\n     }]\n};\n'
 )
 
 
-def test_parse_replay_entry_pulls_track_car_and_participants():
-    entry = simlaunch.parse_replay_entry(REPLAY_LIST, "fartstriper.rpy")
-    # the 4294967295 empty-slot sentinel is dropped; real participants kept
-    assert entry == {"track_id": 192, "car_id": 188, "sess_carids": [654027, 965736]}
+def test_a_replay_of_an_online_session_is_asked_for_by_its_session():
+    entry = simlaunch.parse_replay_entry(REPLAY_LIST, "online.rpy")
+    assert entry is not None
+    assert simlaunch.request_args(entry) == {"session_id": 303769796}
+
+
+def test_an_offline_replay_is_asked_for_by_track_car_and_its_car_models():
+    entry = simlaunch.parse_replay_entry(REPLAY_LIST, "offline.rpy")
+    assert entry is not None
+    assert simlaunch.request_args(entry) == {"track_id": 2, "car_id": 1, "sess_carids": [1, 3]}
+
+
+def test_an_offline_replay_of_one_car_names_no_car_models():
+    entry = simlaunch.parse_replay_entry(REPLAY_LIST, "solo.rpy")
+    assert entry is not None
+    assert simlaunch.request_args(entry) == {"track_id": 2, "car_id": 1}
 
 
 def test_parse_replay_entry_missing_file_is_none():

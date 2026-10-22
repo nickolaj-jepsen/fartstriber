@@ -62,10 +62,11 @@ def test_the_sim_itself_in_front_isnt_a_full_screen_app():
     assert simrule.must_close(RULES, sim_in_front, SIM, None) is None
 
 
-def test_a_full_screen_game_closes_an_agent_sim_at_once():
-    found = simrule.must_close(RULES, GAMING, SIM, None)
-    assert found is not None
-    assert found[1] is True
+def test_a_full_screen_game_pauses_the_runs_and_keeps_the_sim_open():
+    # closing it would bring the iRacing UI to the front, over the game
+    assert simrule.paused(RULES, GAMING, SIM) is not None
+    assert simrule.must_close(RULES, GAMING, SIM, simrule.Override("hold", None)) is None
+    assert not simrule.idle_close(RULES, GAMING, quiet_s=10**6)
 
 
 @pytest.mark.parametrize(
@@ -76,9 +77,7 @@ def test_a_full_screen_game_closes_an_agent_sim_at_once():
     ],
 )
 def test_a_hold_or_the_owner_in_the_iracing_ui_closes_it_after_the_run(p, o):
-    found = simrule.must_close(RULES, p, SIM, o)
-    assert found is not None
-    assert found[1] is False
+    assert simrule.must_close(RULES, p, SIM, o) is not None
 
 
 def test_the_iracing_ui_left_in_front_while_the_owner_is_away_closes_nothing():
@@ -87,13 +86,13 @@ def test_the_iracing_ui_left_in_front_while_the_owner_is_away_closes_nothing():
 
 
 def test_an_unwanted_sim_closes_after_close_after_minutes():
-    assert not simrule.idle_close(RULES, AWAY, quiet_s=29 * 60, in_front=False)
-    assert simrule.idle_close(RULES, AWAY, quiet_s=30 * 60, in_front=False)
+    assert not simrule.idle_close(RULES, AWAY, quiet_s=29 * 60)
+    assert simrule.idle_close(RULES, AWAY, quiet_s=30 * 60)
 
 
-def test_an_unwanted_sim_in_front_waits_until_the_owner_is_away():
-    assert not simrule.idle_close(RULES, HERE, quiet_s=3600, in_front=True)
-    assert simrule.idle_close(RULES, AWAY, quiet_s=3600, in_front=True)
+def test_an_unwanted_sim_waits_until_the_owner_is_away():
+    # its exit brings the iRacing UI to the front
+    assert not simrule.idle_close(RULES, HERE, quiet_s=3600)
 
 
 def test_an_override_lasts_until_it_expires_or_is_lifted():

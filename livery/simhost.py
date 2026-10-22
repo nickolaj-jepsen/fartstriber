@@ -5,8 +5,7 @@ A run that finds no sim asks for one (`ensure`); the launch rule (`livery.simrul
 may start it now. The host is spawned detached, so it outlives the command that asked, and a mutex keeps it
 alone. It records the sim it started in the state dir as soon as the sim's process appears, which is how
 anything tells an agent-started sim from one the owner opened: only an agent-started sim is ever closed,
-and only with the sim lock held, so never under a run (but for a close at once, which gives the run
-CLOSE_LOCK_S to stop). A sim the owner opened is never touched.
+and only with the sim lock held, so never under a run. A sim the owner opened is never touched.
 
 Every run says it wants the sim while it queues and runs (`want`), so the host can tell when none does. A
 launch that fails, however it fails, is recorded, and no run asks again for RETRY_AFTER_S.
@@ -38,7 +37,6 @@ DEMAND_DIR = "sim-demand"
 POLL_S = 2.0
 CONNECT_S = 300.0  # the wrapper and the sim's own start, until it asks for its task
 READY_S = 900.0  # from the launch until the replay is open
-CLOSE_LOCK_S = 10.0  # how long a run gets to stop when the sim has to close at once
 LOCK_SLICE_S = 5.0  # a close waits for the lock in slices, looking again at why between them
 RETRY_AFTER_S = 1800.0  # a launch that failed isn't tried again this soon, except by `livery sim up`
 LAUNCHING = ("starting", "launching", "connecting", "loading")
@@ -102,12 +100,12 @@ def is_agent(pid: int | None) -> bool:
     return sim is not None and pid is not None and sim["pid"] == pid
 
 
-def closing() -> tuple[str, bool] | None:
-    """(why, at once) while the agent-started sim is closing; at once, the run under way has to stop."""
+def closing() -> str | None:
+    """Why the agent-started sim is closing, while it is."""
     info = _record()
     if info.get("phase") != "closing" or agent_sim() is None:
         return None
-    return str(info.get("closing")), bool(info.get("at_once"))
+    return str(info.get("closing"))
 
 
 def last_failure(file: str) -> dict | None:
@@ -250,7 +248,7 @@ def close_agent(cfg: Config, why: str, log: Callable[[str], object]) -> bool:
     sim = agent_sim()
     if sim is None:
         return False
-    _mark_closing(why, at_once=False)
+    _mark_closing(why)
     log(f"closing the agent-started sim: {why}")
     ended, how = simlaunch.close(sim, log)
     log(how)
@@ -265,10 +263,10 @@ def close_agent_locked(cfg: Config, why: str, log: Callable[[str], object]) -> b
         return close_agent(cfg, why, log)
 
 
-def _mark_closing(why: str, at_once: bool) -> None:
+def _mark_closing(why: str) -> None:
     info = _record()
     if info:
-        _put(_path(STATE_FILE), {**info, "phase": "closing", "closing": why, "at_once": at_once})
+        _put(_path(STATE_FILE), {**info, "phase": "closing", "closing": why})
 
 
 # What a launch needs.
@@ -338,10 +336,7 @@ def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) ->
         raise LaunchError("; ".join(problems))
     launch_rules = simrule.settings()
     assert launch_rules is not None
-    entry = simlaunch.replay_entry(file) or {}
-    args = cps.request_args(
-        track_id=entry["track_id"], car_id=entry["car_id"], sess_carids=entry["sess_carids"]
-    )
+    args = simlaunch.request_args(simlaunch.replay_entry(file) or {})
     creds = cps.replay_credentials(members.fresh_session(), args)
     if not creds.get("success") or not all(members.credential_fields(creds).values()):
         raise LaunchError("iRacing didn't hand out the replay's credentials")
@@ -374,25 +369,18 @@ def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) ->
     return stop
 
 
-def _in_front(cfg: Config) -> bool:
-    w = capture.Window.find(cfg.process)
-    return w is not None and w.in_front()
-
-
 def _wanted() -> bool:
     return bool(demand()) or simlock.holder() is not None
 
 
-def _close(cfg: Config, record: dict, sim: dict, why: str, at_once: bool, log: Callable[[str], None]) -> bool:
+def _close(cfg: Config, record: dict, sim: dict, why: str, log: Callable[[str], None]) -> bool:
     """Close the sim the launch rule says must go, with the sim lock held, so never under a run. The record
-    says it's closing first, so no run starts on it. The lock is waited for in slices: between them, a close
-    that has to happen at once after all is escalated (the run under way stops), and one whose reason has
-    passed is dropped. At once, the run gets CLOSE_LOCK_S, then the sim closes regardless. Returns whether the
-    sim is gone."""
+    says it's closing first, so no run starts on it; a run waiting with the lock closes it itself. The lock
+    is waited for in slices, and the close is dropped once its reason has passed. Returns whether the sim is
+    gone."""
     before = record.get("phase")
-    _write(record, phase="closing", closing=why, at_once=at_once)
-    log(f"closing the sim: {why}" + (" (at once)" if at_once else ""))
-    t0 = time.monotonic()
+    _write(record, phase="closing", closing=why)
+    log(f"closing the sim: {why}")
     while state.alive(sim):
         try:
             with simlock.sim_lock(f"close the agent-started sim: {why}", LOCK_SLICE_S):
@@ -401,22 +389,12 @@ def _close(cfg: Config, record: dict, sim: dict, why: str, at_once: bool, log: C
                 return ended
         except simlock.SimBusy:
             pass
-        if at_once and time.monotonic() - t0 >= CLOSE_LOCK_S:
-            log("the run didn't stop in time; closing anyway")
-            ended, how = simlaunch.close(sim, log)
-            log(how)
-            return ended
-        now = simrule.must_close(simrule.settings(), presence.read(), cfg.process, simrule.override())
-        if now is None:
+        if simrule.must_close(simrule.settings(), presence.read(), cfg.process, simrule.override()) is None:
             log("the reason to close has passed; the sim stays")
             break
-        if now[1] and not at_once:
-            why, at_once, t0 = now[0], True, time.monotonic()
-            _write(record, closing=why, at_once=True)
-            log(f"closing at once now: {why}")
     if not state.alive(sim):
         return True
-    _write(record, phase=before, closing=None, at_once=None)
+    _write(record, phase=before, closing=None)
     return False
 
 
@@ -428,12 +406,12 @@ def _close_unwanted(record: dict, sim: dict, why: str, log: Callable[[str], None
             if demand():
                 return False
             before = record.get("phase")
-            _write(record, phase="closing", closing=why, at_once=False)
+            _write(record, phase="closing", closing=why)
             log(f"closing the sim: {why}")
             ended, how = simlaunch.close(sim, log)
             log(how)
             if not ended:
-                _write(record, phase=before, closing=None, at_once=None)
+                _write(record, phase=before, closing=None)
             return ended
     except simlock.SimBusy:
         return False
@@ -471,11 +449,9 @@ def _watch(cfg: Config, record: dict, sim: dict, log: Callable[[str], None]) -> 
             quiet_since = now
         if now >= backoff_until:
             must = simrule.must_close(launch_rules, p, cfg.process, simrule.override())
-            if must is not None and _close(cfg, record, sim, must[0], must[1], log):
-                return must[0]
-            unwanted = not _wanted() and simrule.idle_close(
-                launch_rules, p, now - quiet_since, _in_front(cfg)
-            )
+            if must is not None and _close(cfg, record, sim, must, log):
+                return must
+            unwanted = not _wanted() and simrule.idle_close(launch_rules, p, now - quiet_since)
             if ready and unwanted:
                 why = f"no run has wanted it for {(now - quiet_since) / 60:.0f} min"
                 if _close_unwanted(record, sim, why, log):

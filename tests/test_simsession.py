@@ -704,16 +704,20 @@ def test_an_agents_sim_in_front_waits_while_the_owner_is_at_the_pc(agent, monkey
     assert agent.sent == []
 
 
-def test_a_run_stops_when_the_agents_sim_has_to_close_at_once(agent, monkeypatch):
-    why: list = [None]
-    monkeypatch.setattr(simhost, "closing", lambda: why[0])
+def test_a_run_stops_when_a_full_screen_game_comes_to_the_front(agent, monkeypatch):
+    here = presence.Presence(idle_s=3600, notification=presence.ACCEPTS, foreground="x.exe", battery=False)
+    gaming = presence.Presence(
+        idle_s=0, notification=presence.D3D_FULL_SCREEN, foreground="g.exe", battery=False
+    )
+    now = [here]
+    monkeypatch.setattr(presence, "read", lambda: now[0])
 
     def body(s):
         s.shoot("side", SIDE)
-        why[0] = ("a full-screen game", True)
+        now[0] = gaming
         s.shoot("top", TOP)
 
-    with pytest.raises(simsession.SimClosing):
+    with pytest.raises(simsession.SimPaused):
         run(agent, body)
 
 
@@ -739,7 +743,7 @@ def test_an_agents_sim_on_another_replay_is_switched_for_the_run(agent, monkeypa
 
 
 def test_a_run_holding_the_lock_closes_the_agents_sim_the_host_waits_to_close(agent, monkeypatch):
-    why: list = [("a hold", False)]
+    why: list = ["a hold"]
     closed = []
 
     def close_agent(cfg, reason, log):
