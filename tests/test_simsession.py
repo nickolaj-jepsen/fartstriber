@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from livery import capture, config, install, paintfolder, presence, simhost, simlock, simsession
+from livery import capture, config, install, paintfolder, presence, simhost, simlock, simrule, simsession
 from livery.capture import SimInFront
 from livery.check import run_build
 from livery.config import Shot
@@ -201,7 +201,7 @@ def world(tmp_path, monkeypatch) -> World:
     monkeypatch.setattr(capture, "Capture", FakeCapture)
     monkeypatch.setattr(capture, "processes", lambda: ["explorer.exe"])
     quick = {"POLL_S": 0.01, "SETTLE_S": 0.0, "GREY_S": 0.2, "PAINT_S": 0.2, "LOAD_S": 0.0, "STEADY_S": 0.5}
-    quick["UI_RETRY_S"] = 0.0
+    quick["UI_RETRY_S"] = quick["CLOSING_POLL_S"] = 0.0
     for name, value in quick.items():
         monkeypatch.setattr(simsession, name, value)
     return w
@@ -512,7 +512,7 @@ def test_install_and_restore_write_the_folder_only_under_the_lock(world, ws, mon
 
 # Agents starting the sim (livery.simhost).
 
-LAUNCH = config.Launch(
+LAUNCH = simrule.Launch(
     rule="idle",
     idle_minutes=5,
     close_after_minutes=30,
@@ -527,7 +527,7 @@ LAUNCH = config.Launch(
 def agent(world, monkeypatch) -> World:
     """The world's sim is one an agent started, under [sim] settings, and the owner has been away an hour;
     `world.input` is the tick of their last input."""
-    world.cfg = replace(world.cfg, launch=LAUNCH)
+    monkeypatch.setattr(simrule, "settings", lambda path=None: LAUNCH)
     world.input = 1000
     monkeypatch.setattr(simhost, "is_agent", lambda pid: True)
     monkeypatch.setattr(presence, "idle_s", lambda: 3600.0)
@@ -543,7 +543,7 @@ def test_a_run_wants_the_sim_while_it_queues_and_runs(world):
 
 
 def test_a_run_that_finds_no_sim_asks_an_agent_to_start_it_and_waits(world, monkeypatch):
-    world.cfg = replace(world.cfg, launch=LAUNCH)
+    monkeypatch.setattr(simrule, "settings", lambda path=None: LAUNCH)
     world.running = False
     asked = []
 
@@ -623,13 +623,41 @@ def test_an_agents_sim_on_another_replay_is_switched_for_the_run(agent, monkeypa
 
     monkeypatch.setattr(simsession, "sim_running", lambda cfg: agent.running)
     monkeypatch.setattr(simhost, "host", lambda: None)
-    monkeypatch.setattr(simhost, "adopt", lambda cfg: False)
+    monkeypatch.setattr(simhost, "adopt", lambda: False)
+    monkeypatch.setattr(simhost, "launched_file", lambda: "another.rpy")
     monkeypatch.setattr(simhost, "agent_sim", lambda: {"pid": 1, "started": 1})
     monkeypatch.setattr(simhost, "close_agent", close_agent)
 
     run(agent, lambda s: s.shoot("side", SIDE), ready_timeout=10)
 
     assert len(closed) == 1
+
+
+def test_a_run_holding_the_lock_closes_the_agents_sim_the_host_waits_to_close(agent, monkeypatch):
+    why: list = [("a hold", False)]
+    closed = []
+
+    def close_agent(cfg, reason, log):
+        closed.append(reason)
+        why[0] = None  # gone, and started again for the run
+        return True
+
+    monkeypatch.setattr(simhost, "closing", lambda: why[0])
+    monkeypatch.setattr(simhost, "close_agent", close_agent)
+
+    run(agent, lambda s: s.shoot("side", SIDE), ready_timeout=10)
+
+    assert closed == ["a hold"]
+
+
+def test_the_owners_sim_on_another_replay_is_never_closed(world, monkeypatch):
+    monkeypatch.setattr(simrule, "settings", lambda path=None: LAUNCH)
+    world.info["WeekendInfo"]["SubSessionID"] = 1
+    monkeypatch.setattr(simsession, "sim_running", lambda cfg: True)
+    monkeypatch.setattr(simhost, "close_agent", lambda *a: pytest.fail("closed the owner's sim"))
+
+    with pytest.raises(SimNotReady):
+        run(world)
 
 
 def test_status_only_reads(world, ws):

@@ -732,11 +732,11 @@ def sim_up(
     by itself once no run has wanted it for close_after_minutes, as an agent-started sim does. It tries
     again after a failed launch, which agents wait out. Never starts a second sim.
     """
-    from livery import config, simhost
+    from livery import config, simhost, simrule
     from livery.iracing import sim_running
 
     cfg = config.load()
-    if cfg.launch is None:
+    if simrule.settings() is None:
         raise config.ConfigError(f"{config.user_file()} has no [sim] table; {config.EXAMPLE} describes it")
     file = replay_file or cfg.replay.file
     log = _progress(as_json)
@@ -824,15 +824,20 @@ def sim_host(replay_file: Annotated[str, typer.Option("--file")]) -> None:
 @config_app.command("show")
 def config_show(as_json: AsJson = False) -> None:
     """Print the settings every worktree reads, the owner's name among them, and the file they are in."""
-    from livery import config
+    from livery import config, simrule
 
-    settings = {"file": config.user_file(), **dataclasses.asdict(config.load())}
+    launch = simrule.settings()
+    settings = {
+        "file": config.user_file(),
+        **dataclasses.asdict(config.load()),
+        "sim": dataclasses.asdict(launch) if launch else None,
+    }
     text = []
     for key, value in settings.items():
         if isinstance(value, dict):
             text += [f"{key}.{k}: {v}" for k, v in value.items()]
-        elif key == "launch" and value is None:
-            text.append("launch: off (no [sim] table: agents don't start the sim)")
+        elif key == "sim" and value is None:
+            text.append("sim: none (no [sim] table: agents don't start the sim)")
         else:
             text.append(f"{key}: {value}")
     _emit(as_json, settings, text)

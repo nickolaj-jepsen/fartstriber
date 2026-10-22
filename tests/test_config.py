@@ -65,51 +65,6 @@ def test_a_missing_setting_is_an_error_that_names_it(tmp_path):
     assert "replay.sha256" in str(e.value)
 
 
-LAUNCH = {
-    "launch": '"idle"',
-    "idle_minutes": "5",
-    "close_after_minutes": "30",
-    "display_mode": '"monitor"',
-    "full_screen_stops": "true",
-    "battery_stops": "true",
-    "ui_closes": "true",
-}
-
-
-def with_launch(tmp_path: Path, **change: str | None) -> Path:
-    """The fixture settings plus a [sim] table; a value of None leaves its key out."""
-    p = settings(tmp_path)
-    rows = [f"{k} = {v}" for k, v in {**LAUNCH, **change}.items() if v is not None]
-    p.write_text(p.read_text(encoding="utf-8") + "\n[sim]\n" + "\n".join(rows) + "\n", encoding="utf-8")
-    return p
-
-
-def test_without_a_sim_table_agents_dont_launch(tmp_path):
-    assert config.load(settings(tmp_path)).launch is None
-
-
-def test_the_sim_table_says_when_agents_launch(tmp_path):
-    launch = config.load(with_launch(tmp_path, idle_minutes="2.5")).launch
-    assert launch is not None
-    assert (launch.rule, launch.idle_minutes, launch.full_screen_stops) == ("idle", 2.5, True)
-
-
-def test_a_sim_table_needs_every_key(tmp_path):
-    with pytest.raises(config.ConfigError) as e:
-        config.load(with_launch(tmp_path, ui_closes=None))
-    assert "sim.ui_closes" in str(e.value)
-
-
-@pytest.mark.parametrize(
-    "change",
-    [{"launch": '"sometimes"'}, {"display_mode": '"vr"'}, {"idle_minutes": "-1"}, {"battery_stops": '"yes"'}],
-)
-def test_a_sim_setting_outside_its_choices_is_an_error_that_names_it(tmp_path, change):
-    with pytest.raises(config.ConfigError) as e:
-        config.load(with_launch(tmp_path, **change))
-    assert f"sim.{next(iter(change))}" in str(e.value)
-
-
 def test_the_first_run_writes_the_users_settings_from_the_old_livery_toml(tmp_path):
     docs = tmp_path / "docs"
     (docs / "replay").mkdir(parents=True)

@@ -55,23 +55,6 @@ class Replay:
         return self.file or f"the replay of subsession {self.subsession} at {self.track_name}"
 
 
-LAUNCH_RULES = ("idle", "anytime", "never")
-DISPLAY_MODES = ("monitor", "oculus", "openvr", "openxr")
-
-
-@dataclass(frozen=True)
-class Launch:
-    """When agents may start the sim themselves, and when they close it (the `[sim]` table)."""
-
-    rule: str  # LAUNCH_RULES: "idle" waits until the owner has been away idle_minutes
-    idle_minutes: float
-    close_after_minutes: float  # closed once no run has wanted it this long
-    display_mode: str
-    full_screen_stops: bool  # a full-screen app or game in front: no launch, and an agent-started sim closes
-    battery_stops: bool  # on battery: no launch
-    ui_closes: bool  # the owner in the iRacing UI: an agent-started sim closes after the current run
-
-
 def track_path(track_name: str) -> str:
     """The track's path in camera.ini and under cameras/tracks: its SDK name with backslashes for spaces,
     as a car's paint folder 'mx5 mx52016' is 'mx5\\mx52016' there."""
@@ -88,7 +71,6 @@ class Config:
     install: Path  # the iRacing install, for the UI's car previews
     process: str
     replay: Replay
-    launch: Launch | None = None  # None without a [sim] table: runs wait for the owner to open the replay
 
     @property
     def paint_root(self) -> Path:
@@ -147,41 +129,6 @@ def user_file() -> Path:
     return state.root() / USER_FILE
 
 
-def _choice(raw: dict, key: str, where: Path, choices: tuple[str, ...]) -> str:
-    value = _get(raw, key, where)
-    if value not in choices:
-        raise ConfigError(f"{where}: {key} is {value!r}; it takes {', '.join(choices)}")
-    return value
-
-
-def _minutes(raw: dict, key: str, where: Path) -> float:
-    value = _get(raw, key, where)
-    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
-        raise ConfigError(f"{where}: {key} is {value!r}; it takes minutes, 0 or more")
-    return float(value)
-
-
-def _flag(raw: dict, key: str, where: Path) -> bool:
-    value = _get(raw, key, where)
-    if not isinstance(value, bool):
-        raise ConfigError(f"{where}: {key} is {value!r}; it takes true or false")
-    return value
-
-
-def _launch(raw: dict, where: Path) -> Launch | None:
-    if "sim" not in raw:
-        return None
-    return Launch(
-        rule=_choice(raw, "sim.launch", where, LAUNCH_RULES),
-        idle_minutes=_minutes(raw, "sim.idle_minutes", where),
-        close_after_minutes=_minutes(raw, "sim.close_after_minutes", where),
-        display_mode=_choice(raw, "sim.display_mode", where, DISPLAY_MODES),
-        full_screen_stops=_flag(raw, "sim.full_screen_stops", where),
-        battery_stops=_flag(raw, "sim.battery_stops", where),
-        ui_closes=_flag(raw, "sim.ui_closes", where),
-    )
-
-
 def _owner(raw: dict) -> str:
     name = raw.get("owner")
     return name.strip() if isinstance(name, str) and name.strip() else NO_OWNER
@@ -218,7 +165,6 @@ def load(path: Path | None = None) -> Config:
             track_name=str(_get(raw, "replay.track_name", path)),
             track=str(_get(raw, "replay.track", path)),
         ),
-        launch=_launch(raw, path),
     )
 
 

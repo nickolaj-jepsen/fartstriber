@@ -4,14 +4,13 @@ that finds no sim is told."""
 import subprocess
 import sys
 import time
-from dataclasses import replace
 
 import pytest
 
-from livery import config, presence, simhost, state
-from livery.config import Launch
+from livery import config, presence, simhost, simrule, state
 from livery.presence import Presence
 from livery.simlaunch import LaunchError
+from livery.simrule import Launch
 
 RULES = Launch(
     rule="idle",
@@ -88,7 +87,8 @@ def spawned(monkeypatch) -> list[str]:
 
 
 def test_a_run_that_finds_no_sim_starts_one_once_the_owner_is_away(monkeypatch, spawned):
-    cfg = replace(config.load(), launch=RULES)
+    cfg = config.load()
+    monkeypatch.setattr(simrule, "settings", lambda path=None: RULES)
     monkeypatch.setattr(presence, "read", lambda: HERE)
     simhost.ensure(cfg, "a.rpy")
     assert spawned == []
@@ -98,7 +98,8 @@ def test_a_run_that_finds_no_sim_starts_one_once_the_owner_is_away(monkeypatch, 
 
 
 def test_a_run_doesnt_start_a_second_host(monkeypatch, spawned):
-    cfg = replace(config.load(), launch=RULES)
+    cfg = config.load()
+    monkeypatch.setattr(simrule, "settings", lambda path=None: RULES)
     monkeypatch.setattr(presence, "read", lambda: AWAY)
     record(**state.me(), phase="loading")
     simhost.ensure(cfg, "a.rpy")
@@ -106,9 +107,119 @@ def test_a_run_doesnt_start_a_second_host(monkeypatch, spawned):
 
 
 def test_a_run_after_a_failed_launch_is_told_why_and_starts_nothing(monkeypatch, spawned):
-    cfg = replace(config.load(), launch=RULES)
+    cfg = config.load()
+    monkeypatch.setattr(simrule, "settings", lambda path=None: RULES)
     monkeypatch.setattr(presence, "read", lambda: AWAY)
     state.write_json(state.root() / simhost.FAILED_FILE, {"at": time.time(), "file": "a.rpy", "reason": "x"})
     with pytest.raises(LaunchError):
         simhost.ensure(cfg, "a.rpy")
     assert spawned == []
+
+
+def test_a_host_that_died_while_launching_holds_off_the_next_try(dead, monkeypatch, spawned):
+    cfg = config.load()
+    monkeypatch.setattr(simrule, "settings", lambda path=None: RULES)
+    monkeypatch.setattr(presence, "read", lambda: AWAY)
+    record(**dead, phase="connecting", file="a.rpy", since=time.time())
+    with pytest.raises(LaunchError):
+        simhost.ensure(cfg, "a.rpy")
+    assert spawned == []
+
+
+# Closing: only an agent's sim, only under the sim lock, and never one a run wants.
+
+
+@pytest.fixture
+def closes(monkeypatch) -> list[dict]:
+    """Every sim `simlaunch.close` is asked to close; the sim 'ends' when it is."""
+    asked: list[dict] = []
+    monkeypatch.setattr(
+        simhost.simlaunch, "close", lambda sim, log, timeout=90.0: (asked.append(sim), (True, "closed"))[1]
+    )
+    monkeypatch.setattr(simhost, "LOCK_SLICE_S", 0.2)
+    monkeypatch.setattr(simhost, "CLOSE_LOCK_S", 1.0)
+    return asked
+
+
+@pytest.fixture
+def held():
+    """The sim lock, held by a run on another thread until the test lets go."""
+    import threading
+
+    from livery import simlock
+
+    go, taken = threading.Event(), threading.Event()
+
+    def hold():
+        with simlock.sim_lock("a run", timeout=5):
+            taken.set()
+            go.wait(30)
+
+    t = threading.Thread(target=hold)
+    t.start()
+    taken.wait(5)
+    yield go
+    go.set()
+    t.join(10)
+
+
+def test_closing_without_an_agents_sim_closes_nothing(closes):
+    assert simhost.agent_sim() is None
+    assert simhost.close_agent(config.load(), "x", print) is False
+    assert simhost.close_agent_locked(config.load(), "x", print) is False
+    assert closes == []
+
+
+def test_an_unwanted_sim_stays_while_a_run_wants_it(closes):
+    me = state.me()
+    rec = {**me, "phase": "ready", "sim": me}
+    with simhost.want("a queued run"):
+        assert simhost._close_unwanted(rec, me, "unwanted", print) is False
+    assert closes == []
+    assert simhost._close_unwanted(rec, me, "unwanted", print) is True
+    assert closes == [me]
+
+
+def test_an_unwanted_sim_stays_while_a_run_holds_the_lock(closes, held):
+    me = state.me()
+    assert simhost._close_unwanted({**me, "phase": "ready", "sim": me}, me, "unwanted", print) is False
+    assert closes == []
+
+
+def test_a_close_at_once_gives_the_run_a_moment_then_closes(closes, held, monkeypatch):
+    me = state.me()
+    monkeypatch.setattr(simrule, "must_close", lambda *a: ("a full-screen game", True))
+    rec = {**me, "phase": "ready", "sim": me}
+    t0 = time.monotonic()
+    assert simhost._close(config.load(), rec, me, "a full-screen game", True, print) is True
+    assert time.monotonic() - t0 >= simhost.CLOSE_LOCK_S
+    assert closes == [me]
+
+
+def test_a_close_after_the_run_is_dropped_once_its_reason_passes(closes, held, monkeypatch):
+    me = state.me()
+    monkeypatch.setattr(simrule, "must_close", lambda *a: None)
+    rec = {**me, "phase": "ready", "sim": me}
+    assert simhost._close(config.load(), rec, me, "a hold", False, print) is False
+    assert closes == []
+    assert rec["phase"] == "ready"
+
+
+def test_a_close_after_the_run_turns_into_one_at_once_when_a_game_starts(closes, held, monkeypatch):
+    me = state.me()
+    monkeypatch.setattr(simrule, "must_close", lambda *a: ("a full-screen game", True))
+    rec = {**me, "phase": "ready", "sim": me}
+    assert simhost._close(config.load(), rec, me, "a hold", False, print) is True
+    assert closes == [me]
+
+
+def test_a_launch_that_fails_any_way_is_recorded(monkeypatch, closes):
+    def boom(*a):
+        raise RuntimeError("socket trouble")
+
+    monkeypatch.setattr(simhost, "_launch", boom)
+    monkeypatch.setattr(simhost.metrics, "log", lambda *a, **k: None)
+    monkeypatch.setattr("livery.iracing.sim_running", lambda cfg: False)
+    with pytest.raises(RuntimeError):
+        simhost._host(config.load(), "a.rpy", print)
+    assert simhost.last_failure("a.rpy") is not None

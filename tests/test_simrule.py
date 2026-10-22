@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from livery import presence, simrule
-from livery.config import Launch
+from livery import config, presence, simrule
 from livery.presence import Presence
+from livery.simrule import Launch
 
 SIM = "iRacingSim64DX11.exe"
 RULES = Launch(
@@ -106,3 +106,62 @@ def test_an_override_lasts_until_it_expires_or_is_lifted():
     assert simrule.override(now=time.time() + 10**6) is not None
     simrule.set_override(None)
     assert simrule.override() is None
+
+
+SETTINGS = {
+    "launch": '"idle"',
+    "idle_minutes": "5",
+    "close_after_minutes": "30",
+    "display_mode": '"monitor"',
+    "full_screen_stops": "true",
+    "battery_stops": "true",
+    "ui_closes": "true",
+}
+
+
+def with_sim(**change: str | None) -> None:
+    """The fixture settings plus a [sim] table; a value of None leaves its key out."""
+    rows = [f"{k} = {v}" for k, v in {**SETTINGS, **change}.items() if v is not None]
+    path = config.user_file()
+    path.write_text(path.read_text(encoding="utf-8") + "\n[sim]\n" + "\n".join(rows) + "\n", encoding="utf-8")
+
+
+def test_without_a_sim_table_agents_dont_start_the_sim():
+    assert simrule.settings() is None
+
+
+def test_the_sim_table_says_when_agents_start_the_sim():
+    with_sim(idle_minutes="2.5")
+    launch = simrule.settings()
+    assert launch is not None
+    assert (launch.rule, launch.idle_minutes, launch.full_screen_stops) == ("idle", 2.5, True)
+
+
+def test_a_sim_table_needs_every_key():
+    with_sim(ui_closes=None)
+    with pytest.raises(config.ConfigError) as e:
+        simrule.settings()
+    assert "sim.ui_closes" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"launch": '"sometimes"'},
+        {"display_mode": '"vr"'},
+        {"idle_minutes": "-1"},
+        {"close_after_minutes": "0"},
+        {"battery_stops": '"yes"'},
+    ],
+)
+def test_a_sim_setting_outside_its_choices_is_an_error_that_names_it(change):
+    with_sim(**change)
+    with pytest.raises(config.ConfigError) as e:
+        simrule.settings()
+    assert f"sim.{next(iter(change))}" in str(e.value)
+
+
+def test_the_sim_settings_leave_the_build_toolchain_alone():
+    from livery import hashing
+
+    assert "livery.simrule" not in hashing.build_modules()

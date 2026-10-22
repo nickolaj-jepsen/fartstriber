@@ -3,15 +3,18 @@ run has wanted it for a while.
 
 A run that finds no sim asks for one (`ensure`); the launch rule (`livery.simrule`) says whether an agent
 may start it now. The host is spawned detached, so it outlives the command that asked, and a mutex keeps it
-alone. It records the sim it started in the state dir, which is how anything tells an agent-started sim from
-one the owner opened: only an agent-started sim is ever closed, and only with the sim lock held, so never
-under a run. A sim the owner opened is never touched.
+alone. It records the sim it started in the state dir as soon as the sim's process appears, which is how
+anything tells an agent-started sim from one the owner opened: only an agent-started sim is ever closed,
+and only with the sim lock held, so never under a run (but for a close at once, which gives the run
+CLOSE_LOCK_S to stop). A sim the owner opened is never touched.
 
-Every run says it wants the sim while it queues and runs (`want`), so the host can tell when none does.
+Every run says it wants the sim while it queues and runs (`want`), so the host can tell when none does. A
+launch that fails, however it fails, is recorded, and no run asks again for RETRY_AFTER_S.
 """
 
 import ctypes
 import ctypes.wintypes as wt
+import json
 import os
 import subprocess
 import sys
@@ -36,7 +39,9 @@ POLL_S = 2.0
 CONNECT_S = 300.0  # the wrapper and the sim's own start, until it asks for its task
 READY_S = 900.0  # from the launch until the replay is open
 CLOSE_LOCK_S = 10.0  # how long a run gets to stop when the sim has to close at once
+LOCK_SLICE_S = 5.0  # a close waits for the lock in slices, looking again at why between them
 RETRY_AFTER_S = 1800.0  # a launch that failed isn't tried again this soon, except by `livery sim up`
+LAUNCHING = ("starting", "launching", "connecting", "loading")
 
 DETACHED_PROCESS, NEW_GROUP, BREAKAWAY = 0x00000008, 0x00000200, 0x01000000
 
@@ -53,7 +58,26 @@ def _path(name: str) -> Path:
     return state.root() / name
 
 
+def _put(path: Path, data: dict) -> None:
+    """`state.write_json`, retried: a run reading the record holds it open for a moment, and Windows won't
+    replace a file that is open."""
+    for attempt in range(20):
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(data, indent=1), encoding="utf-8", newline="\n")
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05 * (attempt + 1))
+    raise OSError(f"couldn't write {path}: it stayed open")
+
+
 # What the state dir says.
+
+
+def _record() -> dict:
+    return state.read_json(_path(STATE_FILE)) or {}
 
 
 def host() -> dict | None:
@@ -64,9 +88,13 @@ def host() -> dict | None:
 
 def agent_sim() -> dict | None:
     """The sim ({pid, started}) a host started, while it still runs, even if that host died."""
-    info = state.read_json(_path(STATE_FILE))
-    sim = (info or {}).get("sim")
+    sim = _record().get("sim")
     return sim if sim and state.alive(sim) else None
+
+
+def launched_file() -> str | None:
+    """The replay file the agent-started sim was launched on."""
+    return _record().get("file") if agent_sim() is not None else None
 
 
 def is_agent(pid: int | None) -> bool:
@@ -75,23 +103,36 @@ def is_agent(pid: int | None) -> bool:
 
 
 def closing() -> tuple[str, bool] | None:
-    """(why, at once) while the host is closing its sim; at once, the run under way has to stop."""
-    h = host()
-    if h is None or h.get("phase") != "closing":
+    """(why, at once) while the agent-started sim is closing; at once, the run under way has to stop."""
+    info = _record()
+    if info.get("phase") != "closing" or agent_sim() is None:
         return None
-    return str(h.get("closing")), bool(h.get("at_once"))
+    return str(info.get("closing")), bool(info.get("at_once"))
 
 
 def last_failure(file: str) -> dict | None:
-    """The last launch of `file` that failed, while it is recent enough to stop another try."""
+    """The last launch of `file` that failed, while it is recent enough to stop another try. A host that
+    died while launching, before it could say so, counts."""
     f = state.read_json(_path(FAILED_FILE))
-    if not f or f.get("file") != file or time.time() - float(f.get("at", 0)) > RETRY_AFTER_S:
-        return None
-    return f
+    if f and f.get("file") == file and time.time() - float(f.get("at", 0)) <= RETRY_AFTER_S:
+        return f
+    info = _record()
+    since = float(info.get("since") or 0)
+    if (
+        info.get("phase") in LAUNCHING
+        and info.get("file") == file
+        and not state.alive(info)
+        and agent_sim() is None
+        and time.time() - since <= RETRY_AFTER_S
+    ):
+        return {"at": since, "file": file, "reason": f"the sim host died while {info['phase']}"}
+    return None
 
 
 def clear_failure() -> None:
     _path(FAILED_FILE).unlink(missing_ok=True)
+    if host() is None and agent_sim() is None:
+        _path(STATE_FILE).unlink(missing_ok=True)
 
 
 def wait_ready(log: Callable[[str], object], timeout: float = 0.0) -> dict:
@@ -145,32 +186,40 @@ def demand() -> list[dict]:
 
 def spawn(file: str) -> int:
     """Start a host for `file`, detached from this process (and from its job, where the job allows it) so it
-    outlives the command that asked. Records it before returning, so the next look finds it starting."""
+    outlives the command that asked. Records it before returning, so the next look finds it starting; a
+    dead host's sim, and how far it had got, carry over for the new host to adopt."""
     args = [sys.executable, "-m", "livery", "sim", "host", "--file", file]
 
     def start(flags: int) -> subprocess.Popen[bytes]:
         with open(_path(LOG_FILE), "ab") as out:
             return subprocess.Popen(
-                args, cwd=str(REPO), stdin=subprocess.DEVNULL, stdout=out, stderr=out, creationflags=flags
+                args,
+                cwd=str(state.root()),
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=out,
+                creationflags=flags,
             )
 
+    old, orphan = _record(), agent_sim()
     try:
         proc = start(DETACHED_PROCESS | NEW_GROUP | BREAKAWAY)
     except OSError:  # the job this process runs in doesn't allow breaking away
         proc = start(DETACHED_PROCESS | NEW_GROUP)
-    record = {"pid": proc.pid, "started": state.started(proc.pid), "file": file, "phase": "starting"}
-    orphan = agent_sim()  # a dead host's sim, which the new host adopts
-    record |= {"since": time.time(), "checkout": str(REPO), "sim": orphan}
-    state.write_json(_path(STATE_FILE), record)
+    record: dict[str, Any] = {"pid": proc.pid, "started": state.started(proc.pid), "file": file}
+    record |= {"phase": "starting", "since": time.time(), "checkout": str(REPO)}
+    if orphan is not None:
+        record |= {"sim": orphan, "adopt_phase": old.get("phase"), "launched_at": old.get("launched_at")}
+        record["file"] = old.get("file") or file
+    _put(_path(STATE_FILE), record)
     return proc.pid
 
 
-def adopt(cfg: Config) -> bool:
+def adopt() -> bool:
     """Start a host for the agent-started sim a dead host left running, so it still closes when unwanted."""
-    info = state.read_json(_path(STATE_FILE)) or {}
     if agent_sim() is None or host() is not None:
         return False
-    spawn(str(info.get("file") or cfg.replay.file))
+    spawn(str(_record().get("file") or ""))
     return True
 
 
@@ -188,7 +237,7 @@ def ensure(cfg: Config, file: str) -> str:
             f"the agent launch of {file} failed {ago:.0f} min ago: {failed['reason']}; "
             "`livery sim up` tries again now"
         )
-    why = simrule.blocked(cfg.launch, presence.read(), cfg.process, simrule.override())
+    why = simrule.blocked(simrule.settings(), presence.read(), cfg.process, simrule.override())
     if why is not None:
         return f"waiting to start the sim: {why}"
     spawn(file)
@@ -197,14 +246,15 @@ def ensure(cfg: Config, file: str) -> str:
 
 def close_agent(cfg: Config, why: str, log: Callable[[str], object]) -> bool:
     """Close the agent-started sim, for a caller that holds the sim lock. False when the running sim isn't
-    one an agent started (or none runs)."""
+    one an agent started (or none runs), or it wouldn't end."""
     sim = agent_sim()
     if sim is None:
         return False
     _mark_closing(why, at_once=False)
     log(f"closing the agent-started sim: {why}")
-    log(simlaunch.close(sim, log))
-    return True
+    ended, how = simlaunch.close(sim, log)
+    log(how)
+    return ended
 
 
 def close_agent_locked(cfg: Config, why: str, log: Callable[[str], object]) -> bool:
@@ -216,9 +266,9 @@ def close_agent_locked(cfg: Config, why: str, log: Callable[[str], object]) -> b
 
 
 def _mark_closing(why: str, at_once: bool) -> None:
-    info = state.read_json(_path(STATE_FILE))
-    if info is not None:
-        state.write_json(_path(STATE_FILE), {**info, "phase": "closing", "closing": why, "at_once": at_once})
+    info = _record()
+    if info:
+        _put(_path(STATE_FILE), {**info, "phase": "closing", "closing": why, "at_once": at_once})
 
 
 # What a launch needs.
@@ -229,7 +279,11 @@ def preflight(cfg: Config, file: str) -> list[tuple[str, str | None]]:
     from livery import members
 
     checks: list[tuple[str, str | None]] = []
-    checks.append(("settings", None if cfg.launch else "config.toml has no [sim] table"))
+    try:
+        launch = simrule.settings()
+        checks.append(("settings", None if launch else "config.toml has no [sim] table"))
+    except LiveryError as e:
+        checks.append(("settings", str(e)))
     launcher = cfg.install / simlaunch.LAUNCHER
     checks.append(("launcher", None if launcher.is_file() else f"no {launcher}"))
     replay = cfg.documents / "replay" / file
@@ -260,7 +314,7 @@ def _log_to(path: Path) -> Callable[[str], None]:
 
 def _write(record: dict, **change) -> None:
     record.update(change)
-    state.write_json(_path(STATE_FILE), record)
+    _put(_path(STATE_FILE), record)
 
 
 def _replay_open(cfg: Config) -> bool:
@@ -273,14 +327,17 @@ def _replay_open(cfg: Config) -> bool:
         sim.close()
 
 
-def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) -> tuple[dict, threading.Event]:
-    """Credentials, the wrapper, the sim's connection: returns the sim and the event that stops serving it."""
+def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) -> threading.Event:
+    """Credentials, the wrapper, the sim's connection. Records the sim in `record` as soon as its process
+    appears, so even a launch that hangs leaves a sim the host can close. Returns the event that stops
+    serving it."""
     from livery import cps, members
 
     problems = [f"{what}: {p}" for what, p in preflight(cfg, file) if p]
     if problems:
         raise LaunchError("; ".join(problems))
-    assert cfg.launch is not None
+    launch_rules = simrule.settings()
+    assert launch_rules is not None
     entry = simlaunch.replay_entry(file) or {}
     args = cps.request_args(
         track_id=entry["track_id"], car_id=entry["car_id"], sess_carids=entry["sess_carids"]
@@ -288,12 +345,21 @@ def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) ->
     creds = cps.replay_credentials(members.fresh_session(), args)
     if not creds.get("success") or not all(members.credential_fields(creds).values()):
         raise LaunchError("iRacing didn't hand out the replay's credentials")
-    launch = simlaunch.Launch(creds, file, cfg.install, cfg.launch.display_mode)
+    launch = simlaunch.Launch(creds, file, cfg.install, launch_rules.display_mode)
     log(f"started {simlaunch.LAUNCHER} (pid {launch.proc.pid}) on ui_port {launch.port}")
     _write(record, phase="connecting", launched_at=launch.at)
-    conn = launch.accept(CONNECT_S)
-    sim = simlaunch.newest(capture.pids(cfg.process), launch.at)
-    if sim is None:
+    conn = None
+    while conn is None:
+        conn = launch.accept(POLL_S)
+        if record.get("sim") is None:
+            sim = simlaunch.newest(capture.pids(cfg.process), launch.at)
+            if sim is not None:
+                _write(record, sim=sim)
+                log(f"the sim's process is up (pid {sim['pid']})")
+        if conn is None and time.time() - launch.at > CONNECT_S:
+            launch.give_up()
+            raise LaunchError(f"the sim didn't ask for its replay within {CONNECT_S:.0f} s")
+    if record.get("sim") is None:
         conn.close()
         raise LaunchError(f"the sim connected, but no {cfg.process} started")
     stop = threading.Event()
@@ -303,9 +369,9 @@ def _launch(cfg: Config, file: str, record: dict, log: Callable[[str], None]) ->
             log(simlaunch.serve(conn, launch.task, log, stop))
 
     threading.Thread(target=serve, daemon=True).start()
-    _write(record, phase="loading", sim=sim, connected_s=round(time.time() - launch.at, 1))
-    log(f"the sim (pid {sim['pid']}) connected {time.time() - launch.at:.0f} s after the launch")
-    return sim, stop
+    _write(record, phase="loading", connected_s=round(time.time() - launch.at, 1))
+    log(f"the sim asked for its replay {time.time() - launch.at:.0f} s after the launch")
+    return stop
 
 
 def _in_front(cfg: Config) -> bool:
@@ -313,22 +379,64 @@ def _in_front(cfg: Config) -> bool:
     return w is not None and w.in_front()
 
 
+def _wanted() -> bool:
+    return bool(demand()) or simlock.holder() is not None
+
+
 def _close(cfg: Config, record: dict, sim: dict, why: str, at_once: bool, log: Callable[[str], None]) -> bool:
-    """Close the sim with the sim lock held, so never under a run: at once gives the run CLOSE_LOCK_S to
-    stop, then closes regardless. False when an unwanted sim's lock was taken meanwhile: it stays."""
+    """Close the sim the launch rule says must go, with the sim lock held, so never under a run. The record
+    says it's closing first, so no run starts on it. The lock is waited for in slices: between them, a close
+    that has to happen at once after all is escalated (the run under way stops), and one whose reason has
+    passed is dropped. At once, the run gets CLOSE_LOCK_S, then the sim closes regardless. Returns whether the
+    sim is gone."""
+    before = record.get("phase")
     _write(record, phase="closing", closing=why, at_once=at_once)
-    log(f"closing the sim: {why}")
-    timeout = CLOSE_LOCK_S if at_once else 3600.0
+    log(f"closing the sim: {why}" + (" (at once)" if at_once else ""))
+    t0 = time.monotonic()
+    while state.alive(sim):
+        try:
+            with simlock.sim_lock(f"close the agent-started sim: {why}", LOCK_SLICE_S):
+                ended, how = simlaunch.close(sim, log)
+                log(how)
+                return ended
+        except simlock.SimBusy:
+            pass
+        if at_once and time.monotonic() - t0 >= CLOSE_LOCK_S:
+            log("the run didn't stop in time; closing anyway")
+            ended, how = simlaunch.close(sim, log)
+            log(how)
+            return ended
+        now = simrule.must_close(simrule.settings(), presence.read(), cfg.process, simrule.override())
+        if now is None:
+            log("the reason to close has passed; the sim stays")
+            break
+        if now[1] and not at_once:
+            why, at_once, t0 = now[0], True, time.monotonic()
+            _write(record, closing=why, at_once=True)
+            log(f"closing at once now: {why}")
+    if not state.alive(sim):
+        return True
+    _write(record, phase=before, closing=None, at_once=None)
+    return False
+
+
+def _close_unwanted(record: dict, sim: dict, why: str, log: Callable[[str], None]) -> bool:
+    """Close a sim no run wants, if the sim lock is free and no run asks for it meanwhile; the record says
+    so only once the lock is held. Returns whether the sim is gone."""
     try:
-        with simlock.sim_lock(f"close the agent-started sim: {why}", timeout):
-            log(simlaunch.close(sim, log))
+        with simlock.sim_lock(f"close the agent-started sim: {why}", LOCK_SLICE_S):
+            if demand():
+                return False
+            before = record.get("phase")
+            _write(record, phase="closing", closing=why, at_once=False)
+            log(f"closing the sim: {why}")
+            ended, how = simlaunch.close(sim, log)
+            log(how)
+            if not ended:
+                _write(record, phase=before, closing=None, at_once=None)
+            return ended
     except simlock.SimBusy:
-        if not at_once:
-            _write(record, phase="ready", closing=None, at_once=None)
-            return False
-        log("the run didn't stop in time; closing anyway")
-        log(simlaunch.close(sim, log))
-    return True
+        return False
 
 
 def _watch(cfg: Config, record: dict, sim: dict, log: Callable[[str], None]) -> str:
@@ -337,8 +445,11 @@ def _watch(cfg: Config, record: dict, sim: dict, log: Callable[[str], None]) -> 
     launched = float(record.get("launched_at") or time.time())
     ready = record.get("phase") == "ready"
     quiet_since = time.time()
+    backoff_until = 0.0
     while True:
         if not state.alive(sim):
+            if _record().get("phase") == "closing":
+                return f"closed: {_record().get('closing')}"
             if not ready:
                 raise LaunchError("the sim exited before the replay opened")
             return "the sim exited"
@@ -350,17 +461,28 @@ def _watch(cfg: Config, record: dict, sim: dict, log: Callable[[str], None]) -> 
                 log(f"the replay is open, {now - launched:.0f} s after the launch")
             elif now - launched > READY_S:
                 raise LaunchError(f"the replay didn't open within {READY_S / 60:.0f} min")
+        try:
+            launch_rules = simrule.settings()
+        except LiveryError as e:
+            log(f"the [sim] settings don't read ({e}); closing on the defaults")
+            launch_rules = None
         p = presence.read()
-        if demand() or simlock.holder() is not None:
+        if _wanted():
             quiet_since = now
-        must = simrule.must_close(cfg.launch, p, cfg.process, simrule.override())
-        if must is not None and _close(cfg, record, sim, must[0], must[1], log):
-            return must[0]
-        if ready and simrule.idle_close(cfg.launch, p, now - quiet_since, _in_front(cfg)):
-            why = f"no run has wanted it for {(now - quiet_since) / 60:.0f} min"
-            if _close(cfg, record, sim, why, False, log):
-                return why
-            quiet_since = time.time()
+        if now >= backoff_until:
+            must = simrule.must_close(launch_rules, p, cfg.process, simrule.override())
+            if must is not None and _close(cfg, record, sim, must[0], must[1], log):
+                return must[0]
+            unwanted = not _wanted() and simrule.idle_close(
+                launch_rules, p, now - quiet_since, _in_front(cfg)
+            )
+            if ready and unwanted:
+                why = f"no run has wanted it for {(now - quiet_since) / 60:.0f} min"
+                if _close_unwanted(record, sim, why, log):
+                    return why
+                quiet_since = time.time()
+            if state.alive(sim) and _record().get("phase") == "closing":
+                backoff_until = time.time() + 300  # a close that didn't take: try again in a while
         time.sleep(POLL_S)
 
 
@@ -386,44 +508,43 @@ def run(cfg: Config, file: str) -> None:
 def _host(cfg: Config, file: str, log: Callable[[str], None]) -> None:
     from livery.iracing import sim_running
 
+    old = _record()
     orphan = agent_sim()
-    record: dict[str, Any] = {
-        **state.me(),
-        "checkout": str(REPO),
-        "file": file,
-        "phase": "launching",
-        "since": time.time(),
-    }
+    record: dict[str, Any] = {**state.me(), "checkout": str(REPO), "file": file, "since": time.time()}
     t0 = time.time()
-    sim: dict | None = None
     stop: threading.Event | None = None
     ended = "failed"
     try:
         if orphan is not None:
-            sim = orphan
-            _write(record, phase="ready", sim=sim, adopted=True, launched_at=time.time())
-            log(f"adopted the agent-started sim (pid {sim['pid']}) its host left")
+            adopted = old.get("adopt_phase") or "ready"
+            phase = adopted if adopted in ("loading", "ready") else "loading"
+            launched_at = old.get("launched_at") or time.time()
+            _write(record, phase=phase, sim=orphan, adopted=True, launched_at=launched_at)
+            log(f"adopted the agent-started sim (pid {orphan['pid']}) its host left, {phase}")
         else:
-            _write(record)
+            _write(record, phase="launching")
             if sim_running(cfg):
                 raise LaunchError("the sim is already running, and no agent started it")
             log(f"launching the sim on {file}")
-            sim, stop = _launch(cfg, file, record, log)
-        ended = _watch(cfg, record, sim, log)
+            stop = _launch(cfg, file, record, log)
+        ended = _watch(cfg, record, record["sim"], log)
         _path(FAILED_FILE).unlink(missing_ok=True)
-    except LiveryError as e:  # recorded, so the next run doesn't try again at once
-        log(f"the launch failed: {e}")
-        state.write_json(_path(FAILED_FILE), {"at": time.time(), "file": file, "reason": str(e)})
-        if sim is not None and state.alive(sim):  # not ready yet, so no run uses it
-            log(simlaunch.close(sim, log))
-    except Exception as e:  # a bug: the sim stays, and the record with it, for the next host to adopt
-        log(f"the host failed: {type(e).__name__}: {e}")
-        raise
+    except BaseException as e:
+        reason = str(e) if isinstance(e, LiveryError) else f"{type(e).__name__}: {e}"
+        log(f"the launch failed: {reason}")
+        if record.get("phase") != "ready":  # recorded, so the next run doesn't try again at once
+            state.write_json(_path(FAILED_FILE), {"at": time.time(), "file": file, "reason": reason})
+            sim = record.get("sim")
+            if sim is not None and state.alive(sim):  # not ready, so no run uses it
+                log(simlaunch.close(sim, log)[1])
+        if not isinstance(e, LiveryError):
+            raise
     finally:
         if stop is not None:
             stop.set()
-        info = state.read_json(_path(STATE_FILE))
-        if info is not None and info.get("pid") == os.getpid() and not (sim and state.alive(sim)):
+        sim = record.get("sim")
+        info = _record()
+        if info.get("pid") == os.getpid() and not (sim and state.alive(sim)):
             _path(STATE_FILE).unlink(missing_ok=True)
         metrics.log(
             "",

@@ -39,9 +39,13 @@ _kernel32.OpenProcess.restype = wt.HANDLE
 _kernel32.OpenProcess.argtypes = (wt.DWORD, wt.BOOL, wt.DWORD)
 _kernel32.TerminateProcess.argtypes = (wt.HANDLE, wt.UINT)
 _kernel32.CloseHandle.argtypes = (wt.HANDLE,)
+_kernel32.TerminateProcess.restype = wt.BOOL
+_kernel32.WaitForSingleObject.restype = wt.DWORD
+_kernel32.WaitForSingleObject.argtypes = (wt.HANDLE, wt.DWORD)
 _user32.PostMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
 _user32.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
-TERMINATE = 0x0001
+TERMINATE, SYNCHRONIZE, QUERY = 0x0001, 0x00100000, 0x1000
+WAIT_OBJECT_0 = 0
 
 
 class LaunchError(LiveryError):
@@ -193,17 +197,20 @@ class Launch:
             [str(exe), f"-ui_port={self.port}", f"-display_mode={display_mode}"], cwd=str(install)
         )
 
-    def accept(self, timeout: float) -> socket.socket:
+    def accept(self, timeout: float) -> socket.socket | None:
+        """The sim's connection, once it asks for its task; None if it hasn't within `timeout` seconds."""
         self.srv.settimeout(timeout)
         try:
             conn, _ = self.srv.accept()
         except TimeoutError:
-            if self.proc.poll() is None:
-                self.proc.terminate()
-            raise LaunchError(f"the sim didn't connect within {timeout:.0f} s") from None
-        finally:
-            self.srv.close()
+            return None
+        self.srv.close()
         return conn
+
+    def give_up(self) -> None:
+        self.srv.close()
+        if self.proc.poll() is None:
+            self.proc.terminate()
 
 
 def launch_replay(
@@ -219,7 +226,11 @@ def launch_replay(
         raise LaunchError("the sim is already running; close it first")
     launch = Launch(creds, file, install, display_mode)
     log(f"launched {LAUNCHER} (pid {launch.proc.pid}) on ui_port {launch.port}, display_mode {display_mode}")
-    with launch.accept(connect_timeout) as conn:
+    conn = launch.accept(connect_timeout)
+    if conn is None:
+        launch.give_up()
+        raise LaunchError(f"the sim didn't ask for its replay within {connect_timeout:.0f} s")
+    with conn:
         log(serve(conn, launch.task, log))
     return {"pid": launch.proc.pid, "port": launch.port}
 
@@ -239,40 +250,48 @@ def newest(pids: list[int], since: float) -> dict | None:
 
 
 def _windows(pid: int) -> list[int]:
-    found: list[int] = []
+    """The process's visible top-level windows, else all of them."""
+    found: list[tuple[int, bool]] = []
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
     def visit(hwnd, _):
         owner = wt.DWORD()
         _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
         if owner.value == pid:
-            found.append(hwnd)
+            found.append((hwnd, bool(_user32.IsWindowVisible(hwnd))))
         return True
 
     _user32.EnumWindows(visit, 0)
-    return found
+    visible = [h for h, shown in found if shown]
+    return visible or [h for h, _ in found]
 
 
-def close(sim: dict, log: Callable[[str], object], timeout: float = 90.0) -> str:
-    """Close the sim `sim` ({pid, started}): WM_CLOSE to its top-level windows, which neither focuses nor
-    raises them, then a kill if it hasn't exited after `timeout` seconds. Returns how it went."""
-    if not state.alive(sim):
-        return "the sim had already exited"
-    for hwnd in _windows(sim["pid"]):
-        _user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < timeout:
+def _exited(handle: int, timeout: float) -> bool:
+    return _kernel32.WaitForSingleObject(handle, int(timeout * 1000)) == WAIT_OBJECT_0
+
+
+def close(sim: dict, log: Callable[[str], object], timeout: float = 90.0) -> tuple[bool, str]:
+    """Close the sim `sim` ({pid, started}): WM_CLOSE to its windows, which neither focuses nor raises them,
+    then, if it hasn't exited after `timeout` seconds, end its process. Returns (whether it ended, how). The
+    process is held from the start, so a pid reused meanwhile is never touched."""
+    h = _kernel32.OpenProcess(SYNCHRONIZE | TERMINATE | QUERY, False, sim["pid"])
+    if not h:
         if not state.alive(sim):
-            return f"the sim exited {time.monotonic() - t0:.0f} s after WM_CLOSE"
-        time.sleep(0.5)
-    log(f"the sim didn't exit {timeout:.0f} s after WM_CLOSE; ending its process")
-    h = _kernel32.OpenProcess(TERMINATE, False, sim["pid"])
-    if h:
-        try:
-            _kernel32.TerminateProcess(h, 1)
-        finally:
-            _kernel32.CloseHandle(h)
-    t0 = time.monotonic()
-    while state.alive(sim) and time.monotonic() - t0 < 20:
-        time.sleep(0.5)
-    return "the sim was ended" if not state.alive(sim) else "the sim wouldn't end"
+            return True, "the sim had already exited"
+        return False, f"can't open the sim's process (error {ctypes.get_last_error()})"
+    try:
+        if not state.alive(sim):  # the pid names another process now
+            return True, "the sim had already exited"
+        t0 = time.monotonic()
+        for hwnd in _windows(sim["pid"]):
+            _user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        if _exited(h, timeout):
+            return True, f"the sim exited {time.monotonic() - t0:.0f} s after WM_CLOSE"
+        log(f"the sim didn't exit {timeout:.0f} s after WM_CLOSE; ending its process")
+        if not _kernel32.TerminateProcess(h, 1):
+            return False, f"the sim wouldn't end (TerminateProcess error {ctypes.get_last_error()})"
+        if _exited(h, 20):
+            return True, "the sim's process was ended"
+        return False, "the sim wouldn't end"
+    finally:
+        _kernel32.CloseHandle(h)
