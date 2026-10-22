@@ -884,10 +884,15 @@ def mirror(tpl: Template, transforms: dict, fitted: dict, report: dict) -> None:
             report[a]["disagrees_with"] = report[b]["disagrees_with"] = {"pair": pair, **d}
             continue
         keep, drop = sorted((a, b), key=lambda r: miss[r])
+
         # A side that saw its island far less (a bank, or nearly edge-on) was filled from the other side's
-        # samples, which its map then fits: the side that saw more keeps its own.
-        more, less = sorted((a, b), key=lambda r: -len(fitted[r]))
-        if len(fitted[more]) >= SEEN_MORE * len(fitted[less]):
+        # samples, or carried from its three-quarter view, which its map then fits: the side that saw more
+        # from the side keeps its own.
+        def seen(r: str) -> int:
+            return int(report[r].get("side_samples", len(fitted[r])))
+
+        more, less = sorted((a, b), key=lambda r: -seen(r))
+        if seen(more) >= SEEN_MORE * seen(less):
             keep, drop = more, less
         transforms[drop] = _mirrored(transforms[keep], keep, tpl.axis)
         replaced |= {a, b}
