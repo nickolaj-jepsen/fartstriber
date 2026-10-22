@@ -21,11 +21,11 @@ import irsdk
 import numpy as np
 from PIL import Image
 
-from livery import cameras, capture, paintfolder, simlock, state
+from livery import cameras, capture, paintfolder, presence, simhost, simlock, simrule, state
 from livery import kit as kits
 from livery.capture import CaptureError, SimInFront
-from livery.config import Config, Replay, Shot, Workspace, sha256, track_path
-from livery.iracing import Car, Sim, SimNotReady, trading_paints_running, wait_for
+from livery.config import Config, ConfigError, Replay, Shot, Workspace, sha256, track_path
+from livery.iracing import Car, Sim, SimNotReady, sim_running, trading_paints_running, wait_for
 
 READY_WAIT_S = 1800.0  # how long a run waits for the sim to be ready and behind other windows
 POLL_S = 1.0
@@ -42,11 +42,16 @@ UI_ROWS = ((0.02, 0.12), (0.87, 0.97))
 UI_COLS = (0.12, 0.88)
 UI_SHARE = 25.0  # percent of the bands' pixels that changed clearly
 UI_RETRY_S = 3.0
+CLOSING_POLL_S = 0.5  # how often the guard looks for a full-screen game in front
 PREVIEW_GROUPS_FIX = "run livery preview cameras and reopen the replay"
 
 
 class UIOverCar(CaptureError):
     pass
+
+
+class SimPaused(SimNotReady):
+    """A full-screen app or game came to the front: the run stops, under the owner's [sim] settings."""
 
 
 def near_grey(tga: bytes | None) -> bool:
@@ -130,12 +135,26 @@ class SimSession:
         self._pending = False  # paint written since the last reload differs from what the sim shows
         self._paint: bytes | None = None  # the last paint TGA written
         self._camset: str | None = None
+        self._want: Any = None
+        self._agent = False  # the sim is one an agent started (`livery.simhost`)
+        self._front_input: int | None = None  # the owner's last input, once an agent's sim in front is ok
+        self._rules_read: tuple[simrule.Launch | None] | None = None
+        self._closed_agent = False
+        self._paused: tuple[float, str | None] = (-1e9, None)
 
     # Entering.
 
     def __enter__(self) -> "SimSession":
-        self._lock = simlock.sim_lock(self.what, self.lock_timeout, self.log)
-        held = self._lock.__enter__()
+        if self.mode in ("replay", "any-replay"):
+            self._want = simhost.want(self.what)
+            self._want.__enter__()
+        try:
+            self._lock = simlock.sim_lock(self.what, self.lock_timeout, self.log)
+            held = self._lock.__enter__()
+        except BaseException:
+            if self._want is not None:
+                self._want.__exit__(None, None, None)
+            raise
         try:
             self.timings["lock_wait"] = held.waited
             if held.abandoned:
@@ -160,6 +179,8 @@ class SimSession:
 
     def _problem(self, sim: Sim) -> str | None:
         """What keeps the sim from this run, or None."""
+        if self.mode in ("replay", "any-replay"):
+            simhost.adopt()  # a dead host's sim still closes once unwanted
         replay = self.replay.label if self.mode != "any-replay" else f"a replay with {self.paint_folder}"
         if not sim.connected():
             return f"iRacing isn't running: start it and open {replay}"
@@ -183,7 +204,12 @@ class SimSession:
             return f"no {self.cfg.process} window"
         if self.window.minimised():
             return "the sim window is minimised; restore it (behind other windows is fine)"
-        if self.window.in_front():
+        self._agent = simhost.is_agent(getattr(self.window, "pid", None))
+        if self._agent and (closing := simhost.closing()) is not None:
+            return f"the agent-started sim is closing: {closing}"
+        if (paused := self._paused_now()) is not None:
+            return paused
+        if self.window.in_front() and not self._front_ok():
             return "in front"
         if self.size is not None and (now := self.window.client_size()) != self.size:
             return self._resize(now, self.size)
@@ -207,11 +233,59 @@ class SimSession:
         self.manifest["resized_from"] = list(now)
         return None
 
+    def _rules(self) -> simrule.Launch | None:
+        """The owner's [sim] settings, read once a run."""
+        if self._rules_read is None:
+            self._rules_read = (simrule.settings(),)
+        return self._rules_read[0]
+
+    def _launch(self, sim: Sim, problem: str) -> str:
+        """While the sim isn't ready for this run: close an agent-started sim the host is waiting to close
+        (it waits for the lock this run holds); and for a run on a replay with a file, while agents may start
+        the sim (`livery.simhost`), start it when it isn't running, and switch an agent-started sim on another
+        replay. Returns what the run waits for."""
+        closing = simhost.closing()
+        if closing is not None and not self._closed_agent:
+            self._closed_agent = True
+            sim.close()
+            simhost.close_agent(self.cfg, closing, self.log)
+            return f"the agent-started sim closed: {closing}"
+        if self.mode != "replay" or not self.replay.file or self._rules() is None:
+            return problem
+        h = simhost.host()
+        if h is not None and h.get("phase") not in ("ready", "closing"):
+            return f"the sim is starting for agents ({h.get('phase')})"
+        if not sim_running(self.cfg):
+            return simhost.ensure(self.cfg, self.replay.file)
+        wrong = sim.connected() and sim.is_replay() and sim.wrong_replay(self.replay)
+        if wrong and simhost.agent_sim() is not None:
+            if simhost.launched_file() == self.replay.file:
+                raise ConfigError(f"{self.replay.file} isn't the replay your settings name: {wrong}")
+            sim.close()
+            simhost.close_agent(self.cfg, f"this run needs {self.replay.label}", self.log)
+            return f"switching the agent-started sim to {self.replay.label}"
+        return problem
+
+    def _front_ok(self) -> bool:
+        """An agent-started sim may be in front while the owner is away: once they've had idle_minutes
+        without input, until their next input."""
+        launch = self._rules() if self._agent else None
+        if launch is None or self.window is None:
+            return False
+        last = presence.last_input()
+        if self._front_input is None:
+            if presence.idle_s() < launch.idle_minutes * 60:
+                return False
+            self._front_input = last
+        return last == self._front_input
+
     def _connect(self) -> None:
         sim = Sim(self.cfg, guard=self._guard)
         wait = self.ready_timeout if self.mode in ("replay", "any-replay") else 0.0
         t0, told = time.perf_counter(), set()
         while (problem := self._problem(sim)) is not None:
+            if problem != "in front":
+                problem = self._launch(sim, problem)
             if time.perf_counter() - t0 >= wait:
                 sim.close()
                 self.window = None
@@ -242,12 +316,23 @@ class SimSession:
     def _guard(self) -> None:
         if self.window is None:
             return
-        if self.window.in_front():
+        if (paused := self._paused_now()) is not None:
+            raise SimPaused(f"stopping: {paused}")
+        if self.window.in_front() and not self._front_ok():
             raise SimInFront("the sim came to the front; stopping so as not to drive it under you")
         if self.window.minimised():
             raise CaptureError(
                 "the sim window was minimised; it has to stay open (behind other windows is fine)"
             )
+
+    def _paused_now(self) -> str | None:
+        """`simrule.paused`, read at most every CLOSING_POLL_S: the guard runs before every broadcast and
+        frame."""
+        at, seen = self._paused
+        if time.monotonic() - at >= CLOSING_POLL_S:
+            seen = simrule.paused(self._rules(), presence.read(), self.cfg.process)
+            self._paused = (time.monotonic(), seen)
+        return seen
 
     def _need(self) -> tuple[Sim, Car]:
         if self.sim is None or self.car is None:
@@ -458,7 +543,7 @@ class SimSession:
     def _leave_sim(self, problems: list[str]) -> None:
         if not (self._differs or self._touched):
             return
-        if self.window is not None and self.window.in_front():
+        if self.window is not None and self.window.in_front() and not self._front_ok():
             shows = "it shows the run's paint until its next reload, and " if self._differs else ""
             problems.append(
                 f"the sim is in front, so it was left as the run had it: {shows}its camera and replay are where the run left them"
@@ -536,7 +621,11 @@ class SimSession:
             if self.sim is not None:
                 self.sim.close()
         finally:
-            self._lock.__exit__(None, None, None)
+            try:
+                self._lock.__exit__(None, None, None)
+            finally:
+                if self._want is not None:
+                    self._want.__exit__(None, None, None)
 
 
 def _profile(ws: Workspace, paint_folder: str) -> tuple[kits.Kit, kits.Profile] | None:
@@ -559,7 +648,7 @@ def _replay_file(cfg: Config) -> str:
     return f"replay file: {f.name} {'is' if same else 'is not'} the one your settings' sha256 names"
 
 
-def status(cfg: Config, ws: Workspace) -> list[str]:
+def status(cfg: Config, ws: Workspace, preflight: bool = False) -> list[str]:
     """What the next sim run would find, read without sending the sim anything."""
     lines = [_replay_file(cfg)]
     sim = Sim(cfg)
@@ -621,4 +710,45 @@ def status(cfg: Config, ws: Workspace) -> list[str]:
                 f"{cw}x{ch}, not the {pw}x{ph} runs shoot at ({why or 'a run resizes it and puts it back'})"
             )
         lines.append(f"window: {where}, {size}{cursor}")
+    return lines + launch_status(cfg, preflight)
+
+
+def launch_status(cfg: Config, preflight: bool = True) -> list[str]:
+    """Whether agents start and close the sim, and what a launch would find; with `preflight`, everything a
+    launch needs (it asks iRacing whether the session still signs in)."""
+    from livery import simrule
+
+    lc = simrule.settings()
+    if lc is None:
+        return ["launch: off (config.toml has no [sim] table; livery.example.toml describes it)"]
+    lines = [
+        f"launch: {lc.rule}, after {lc.idle_minutes:g} min idle; closes after {lc.close_after_minutes:g} min "
+        f"unwanted; display {lc.display_mode}"
+    ]
+    o = simrule.override()
+    if o is not None:
+        lines.append(f"override: {o.describe()}")
+    p = presence.read()
+    why = simrule.blocked(lc, p, cfg.process, o)
+    lines.append(f"owner idle {p.idle_s / 60:.1f} min; an agent launch now: {why or 'would start'}")
+    h, agent = simhost.host(), simhost.agent_sim()
+    if agent is not None:
+        lines.append(f"sim: started by an agent (pid {agent['pid']})" + ("" if h else ", its host gone"))
+    elif sim_running(cfg):
+        lines.append("sim: opened by the owner; agents never close it")
+    if h is not None:
+        lines.append(f"host: pid {h['pid']}, {h.get('phase')}, on {h.get('file')}")
+        if h.get("closing"):
+            lines.append(f"host closing: {h['closing']}")
+    wanted = simhost.demand()
+    if wanted:
+        lines.append("wanted by: " + ", ".join(str(d.get("what")) for d in wanted))
+    failed = simhost.last_failure(cfg.replay.file)
+    if failed is not None:
+        lines.append(
+            f"last launch failed {(time.time() - float(failed['at'])) / 60:.0f} min ago: {failed['reason']}"
+        )
+    if preflight:
+        for what, problem in simhost.preflight(cfg, cfg.replay.file):
+            lines.append(f"{what}: {problem or 'ok'}")
     return lines

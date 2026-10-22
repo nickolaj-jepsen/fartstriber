@@ -68,6 +68,14 @@ UV_VALUE_FLAGS = {"--with", "--python", "-p", "--project", "--directory", "--env
 SESSION_STEPS = {"review", "install", "export", "kit"}
 SESSION_PAIRS = {("preview", "cameras"), ("references", "fetch"), ("bake", "check")}
 CRITIC_STEPS = {"record", "compare", "adversary", "rank"}
+OWNER_SIM = {
+    "up",
+    "down",
+    "hold",
+    "allow",
+    "login",
+    "host",
+}  # `livery sim <x>`: the owner's, never an agent's
 RAW_WRITES = re.compile(
     r"\b(set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content"
     r"|tee-object|export-csv|expand-archive|invoke-webrequest|start-process|invoke-expression)\b"
@@ -277,6 +285,8 @@ def _python(args: list[str]) -> str | None:
 def _livery(args: list[str]) -> str | None:
     words = [a for a in args if not a.startswith("-")]
     first, second = [*words, "", ""][:2]
+    if first == "sim" and second in OWNER_SIM:
+        return f"`livery sim {second}` is the owner's, never an agent's"
     if (first, second) in SESSION_PAIRS:
         return f"`livery {first} {second}` is the session's step, not a builder's"
     if first in SESSION_STEPS or (first == "build" and "--all" in args):

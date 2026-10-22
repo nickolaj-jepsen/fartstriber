@@ -22,7 +22,7 @@ flowchart LR
 - A build comes only from its script, kit and assets, and `livery check` proves it repeats byte for byte. Nothing under `.cache/` is committed.
 - Hashes decide what is stale. Checks, previews, approvals and installs record the build they belong to, and a mismatch is rebuilt or refused, never trusted.
 - The owner decides and agents propose: two checkpoints per design (concept pick and final) on the review page. Accepting pins one exact build, and only that build installs.
-- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front. A run may resize a normal window behind other windows, and puts its size back.
+- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front. A run may resize a normal window behind other windows, and puts its size back. Agents start it only when the owner's launch rule allows, and close only a sim they started.
 - The critic sees renders, never scripts, and compares rather than scores.
 
 ## Layout
@@ -37,7 +37,7 @@ flowchart LR
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
 | `.cache/` | build output, previews, critic packs, reference pictures | no |
-| `%LOCALAPPDATA%\fartstriber` | machine state for every worktree: `config.toml`, the sim lock's holder, the paint journal, install backups, clean-shot references, the review queue, kit captures, telemetry (`FARTSTRIBER_STATE` moves it) | no |
+| `%LOCALAPPDATA%\fartstriber` | machine state for every worktree: `config.toml`, the sim lock's holder, the sim host's record and log, the iRacing sign-in, the paint journal, install backups, clean-shot references, the review queue, kit captures, telemetry (`FARTSTRIBER_STATE` moves it) | no |
 
 ## Designs
 
@@ -204,14 +204,44 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 |---|---|
 | Lock | holds the named mutex `Local\fartstriber-sim`, so every worktree queues for the one sim; the kernel frees it if its holder dies |
 | Recover | replays the paint journal of any run that died |
-| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups and its window open, behind other windows. A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
+| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups and its window open, behind other windows; on the preview replay, it has the sim host start the sim when the launch rule allows (Agents start and close the sim). A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
 | Run | notes the camera, UI, frame and speed, and uses one capture session. Before every broadcast and frame it checks that the sim is still behind other windows and not minimised, and stops if not, or if a frame isn't at the run's size |
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
 | Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
 
 - `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken, then measures the bake against the shots (Previews).
 - A shot with the replay UI over the car (drawn while the cursor is over the sim) is taken again once, then refused.
-- `livery sim status` reports what the next run would find, without sending the sim anything.
+- `livery sim status` reports what the next run would find, without sending the sim anything, and checks everything an agent launch needs.
+
+### Agents start and close the sim
+
+With a `[sim]` table in `config.toml`, a run on the preview replay that finds no sim has the sim host start one, and the host closes it again. Without it, runs wait for the owner as before.
+
+```mermaid
+flowchart LR
+  run["a run: SimSession"] -- "no sim" --> rule{"launch rule"}
+  rule -- "not now" --> wait["waits, says why once"]
+  rule -- "now" --> host["sim host<br/>(detached)"]
+  host --> launch["sign-in → CPS credentials →<br/>start_protected_game → getTask"]
+  launch --> sim["sim on the replay"]
+  sim --> run
+  host -- "unwanted, a game, a hold" --> close["WM_CLOSE under the sim lock"]
+```
+
+| Piece | Does |
+|---|---|
+| `livery.simrule` | the launch rule: `launch = "idle"` waits until the owner has had `idle_minutes` without input; a full-screen app or game in front, battery, or the owner's `sim hold` stops a launch; `sim allow` starts it while they're here |
+| `livery.simhost` | one host at a time (a mutex), spawned detached so it outlives the run that asked. It records the sim it started in `sim-host.json`: only that sim is ever closed |
+| `livery.simlaunch` | the launch as the iRacing UI does it (`docs/sim.md`, Opening and closing the sim), and the close: WM_CLOSE to its windows, a kill if it stays |
+| `livery.members` | the `livery sim login` session, checked with a benign call before each launch |
+
+- Every run on a replay says it wants the sim while it queues and runs (`sim-demand/`). The host closes the sim once none has for `close_after_minutes` and the owner has been away `idle_minutes`: a sim's exit brings the iRacing UI to the front (`docs/sim.md`).
+- A hold, or the owner in the iRacing UI, closes it once the run under way ends; every close waits for the lock, and a run that holds the lock while the host waits closes the sim itself.
+- A full-screen app or game in front stops runs at once and starts nothing, but closes nothing: the UI would come up over the game.
+- An agent-started sim in front is driven while the owner is away: from `idle_minutes` without input until their next input.
+- A lock holder may close an agent-started sim: a run that needs another replay, and `preview cameras --arm` when `camera.ini` has to change. The next run starts it again.
+- A failed launch is recorded, and runs don't try again for 30 minutes; `livery sim up` does. A host that died leaves its record, and the next one adopts the sim.
+- `livery sim up`, `down`, `hold [--for]` and `allow [--for]` are the owner's.
 
 ## Paint folder
 
@@ -399,7 +429,7 @@ flowchart TD
 - `prefs/<person>/` is the owner's by default (`owner` in `config.toml`, lower case); a contributor's PR brings their own. Every ledger line has a `uid` and `by`: the person, or `agent:<session>` (the SessionStart hook exports the session's id and transcript). Nothing is rewritten: an edit or undo is a later line naming the decision, and readers fold them in (`prefs.decisions`). Union merges keep appends from two branches (`.gitattributes`).
 - A taste row rests on quotes, each naming the decision it came from where there is one. `livery taste show` prints the live rows as the table builders read; `put` and `retire` change one, as this agent.
 - `livery status [design]` builds nothing. It reports the check, the TGAs, the approvals, whether the previews are fresh, and the critic's last round.
-- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage and waits for the sim lock.
+- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage, waits for the sim lock, and the sims agents started.
 - Every command takes `--json`.
 
 ## Settings
@@ -407,7 +437,7 @@ flowchart TD
 | File | Scope | Holds |
 |---|---|---|
 | `policy.toml` | the checkout, hashed | lint thresholds, preview views, the sim window's size |
-| `config.toml` in the state dir | the machine, shared by every worktree | the owner's name, customer and team IDs, the archive folder, the iRacing folders, the sim's process, the preview replay (file, sha256, SubSessionID, track, `camera.ini`) |
+| `config.toml` in the state dir | the machine, shared by every worktree | the owner's name, customer and team IDs, the archive folder, the iRacing folders, the sim's process, the preview replay (file, sha256, SubSessionID, track, `camera.ini`), and optionally when agents start and close the sim (`[sim]`) |
 | `kits/<kit>/profile.toml` | the kit | how the sim shows its car |
 
 - `livery.example.toml` documents every key, and `livery config show` prints them. A missing key is a `ConfigError` that names it.

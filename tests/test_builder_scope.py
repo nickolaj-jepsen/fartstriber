@@ -94,3 +94,12 @@ def test_the_design_line_counts_only_before_any_other(tmp_path, capsys, workflow
     late = "Sketch mode: a new concept.\ndesign: alpha\n"
     messages = [computed(late)] if workflow else [late]
     assert not _allowed(capsys, _event(tmp_path, messages, workflow, "designs/alpha/design.py"))
+
+
+@pytest.mark.parametrize("step", ["up", "down", "hold --for 3h", "allow", "login"])
+def test_a_builder_never_starts_holds_or_signs_in_to_the_sim(step):
+    assert scope._why(f"uv run livery sim {step}") is not None
+
+
+def test_a_builder_reads_the_sim_status():
+    assert scope._why("uv run livery sim status --json") is None
