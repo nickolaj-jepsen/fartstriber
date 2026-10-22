@@ -260,35 +260,49 @@ def test_a_killed_runs_paint_is_put_back_by_the_next_session(world):
     assert list(paintfolder.journals().glob("*/")) == []
 
 
+# A run in its own process: it says when it queues and when it holds the lock, and holds it until told
+# to let go (a line on its stdin).
 HOLD = """
 import json, sys, time
 from livery.simlock import sim_lock
-with sim_lock(sys.argv[2], name=sys.argv[1]) as held:
+queued = lambda _message: print(json.dumps({"queued": time.time()}), flush=True)
+with sim_lock(sys.argv[2], name=sys.argv[1], log=queued) as held:
     start = time.time()
     print("held", flush=True)
-    time.sleep(float(sys.argv[3]))
+    sys.stdin.readline()
     print(json.dumps({"start": start, "end": time.time(), "waited": held.waited}), flush=True)
 """
 
 
-def _hold(what: str, seconds: float) -> subprocess.Popen:
-    args = [sys.executable, "-c", HOLD, simlock.MUTEX, what, str(seconds)]
-    return subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+def _hold(what: str) -> subprocess.Popen:
+    args = [sys.executable, "-c", HOLD, simlock.MUTEX, what]
+    return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+
+def _said(p: subprocess.Popen) -> str:
+    assert p.stdout is not None
+    return p.stdout.readline().strip()
+
+
+def _let_go(p: subprocess.Popen) -> dict:
+    return json.loads(p.communicate("\n", timeout=60)[0].splitlines()[-1])
 
 
 def test_two_runs_at_once_queue_on_the_lock():
-    procs = [_hold(name, 1.0) for name in ("a", "b")]
-    runs = sorted(
-        (json.loads(p.communicate(timeout=60)[0].splitlines()[-1]) for p in procs), key=lambda r: r["start"]
-    )
-    assert runs[1]["start"] >= runs[0]["end"]  # no overlap
-    assert runs[1]["waited"] > 0.5
+    a = _hold("a")
+    assert _said(a) == "held"
+    b = _hold("b")
+    queued = json.loads(_said(b))["queued"]  # b waits for a, whatever the machine's load
+    first = _let_go(a)
+    assert _said(b) == "held"
+    second = _let_go(b)
+    assert second["start"] >= first["end"]  # no overlap
+    assert second["waited"] >= first["end"] - queued  # b waited from before it queued until a let go
 
 
 def test_the_lock_is_freed_when_its_holder_dies():
-    p = _hold("a run that gets killed", 60)
-    assert p.stdout is not None
-    assert p.stdout.readline().strip() == "held"
+    p = _hold("a run that gets killed")
+    assert _said(p) == "held"
     holder = simlock.holder()
     assert holder is not None
     assert holder["what"] == "a run that gets killed"

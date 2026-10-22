@@ -5,14 +5,12 @@ import shutil
 import pytest
 
 from livery import carspace, sponsors
-from livery.config import REPO, Workspace
-from livery.kit import load
+from livery.config import Workspace
 from livery.lint.run import thresholds
 from livery.primitives import mirror_sides, sponsor, sponsor_group
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 
-KIT = "mclaren-720s-gt3-evo"
 DOOR = ((0.40, 0.5), (0.70, 0.5))  # across the doors: mapped on both sides, whatever the fit
 
 
@@ -32,11 +30,9 @@ def brand(root, name: str, approved: bool = True, **variants: str) -> None:
         sponsors.approve(root / name)
 
 
-@pytest.fixture(scope="module")
-def kit(tmp_path_factory):
-    root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, root / "kits" / KIT)
-    return load(Workspace(root=root, assets=REPO / "assets"), KIT)
+@pytest.fixture
+def kit(real_kit):
+    return real_kit
 
 
 @pytest.fixture

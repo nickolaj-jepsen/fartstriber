@@ -6,7 +6,6 @@ from livery import approvals, config, critic, hashing, install, preview_flat, sp
 from livery import kit as kits
 from livery.check import run_build
 from livery.config import Workspace
-from livery.designs import render_outputs
 from livery.review import apply as review_apply
 from livery.review.items import design_items
 from tests.conftest import OWNER, checked, two_islands, write_design
@@ -15,13 +14,6 @@ BLUE = 'def build(kit, p):\n    return Livery(base="#3060c0")\n'
 RED = 'def build(kit, p):\n    return Livery(base="#c03030")\n'
 
 pytestmark = pytest.mark.usefixtures("cheap_flat")
-
-
-def _built(ws, name: str, body: str) -> dict:
-    """The design's passed check and the outputs it renders, without the lint and fresh-process build of a
-    real check."""
-    write_design(ws, name, body)
-    return checked(ws, name, body, outputs=render_outputs(ws, name))
 
 
 def _final(ws, name: str) -> dict:
@@ -35,7 +27,7 @@ def _metrics(path) -> list[dict]:
 
 
 def test_accepting_a_final_pins_the_build_shown_and_install_needs_it(ws, private_metrics):
-    built = _built(ws, "d", BLUE)
+    built = checked(ws, "d", BLUE, render=True)
     with pytest.raises(approvals.NotApproved):
         approvals.require(ws, "d", built)
 
@@ -50,12 +42,12 @@ def test_accepting_a_final_pins_the_build_shown_and_install_needs_it(ws, private
 
 
 def test_approvals_and_the_review_of_a_moved_build_name_the_owner_from_the_settings(ws):
-    _built(ws, "d", BLUE)
+    checked(ws, "d", BLUE, render=True)
     kit = {"id": "kit:tiny", "kind": "kit", "title": "tiny"}
     review_apply.apply(
         ws, [_final(ws, "d"), kit], {"final:d": {"decision": "accept"}, "kit:tiny": {"decision": "accept"}}
     )
-    now = _built(ws, "d", RED)
+    now = checked(ws, "d", RED, render=True)
 
     assert (approvals.load_approval(ws, "d") or {}).get("by") == OWNER
     assert kits.require_approved(ws, "tiny")["by"] == OWNER
@@ -63,14 +55,15 @@ def test_approvals_and_the_review_of_a_moved_build_name_the_owner_from_the_setti
         approvals.require(ws, "d", now)
     assert OWNER in str(refused.value)
     preview_flat.flat(ws, "d")
+    (ws.root / review_apply.LEDGER).unlink()  # its decision would name them too; now only the move does
     (item,) = design_items(ws, ["d"])
     assert OWNER in item["body"]
 
 
 def test_a_build_that_moved_while_under_review_is_not_pinned(ws):
-    _built(ws, "d", BLUE)
+    checked(ws, "d", BLUE, render=True)
     item = _final(ws, "d")
-    _built(ws, "d", RED)
+    checked(ws, "d", RED, render=True)
 
     written = review_apply.apply(ws, [item], {"final:d": {"decision": "accept"}})
 
@@ -79,7 +72,7 @@ def test_a_build_that_moved_while_under_review_is_not_pinned(ws):
 
 
 def test_a_final_is_pinned_only_with_a_flat_preview_of_the_build_shown(ws):
-    _built(ws, "d", BLUE)
+    checked(ws, "d", BLUE, render=True)
     item = _final(ws, "d")
     preview_flat.flat(ws, "d", {"seed": "7"})  # a --set variant goes elsewhere
     write_design(ws, "d", RED)
@@ -96,9 +89,9 @@ def test_a_final_is_pinned_only_with_a_flat_preview_of_the_build_shown(ws):
 
 
 def test_a_changed_design_reports_what_moved_and_how_much(ws):
-    _built(ws, "d", BLUE)
+    checked(ws, "d", BLUE, render=True)
     review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": "accept"}})
-    now = _built(ws, "d", RED)
+    now = checked(ws, "d", RED, render=True)
 
     result = approvals.compare(ws, "d", now["digests"])
 
@@ -112,12 +105,12 @@ def test_a_changed_design_reports_what_moved_and_how_much(ws):
 
 def test_build_all_stands_each_design_by_its_role_and_approval(ws):
     for name in ("kept", "moved"):
-        _built(ws, name, BLUE)
+        checked(ws, name, BLUE, render=True)
         review_apply.apply(ws, [_final(ws, name)], {f"final:{name}": {"decision": "accept"}})
-    _built(ws, "moved", RED)
-    _built(ws, "new", BLUE)
+    checked(ws, "moved", RED, render=True)
+    checked(ws, "new", BLUE, render=True)
     write_design(ws, "broken", "def build(kit, p)\n    return None\n")
-    _built(ws, "fixture", 'ROLE = "fixture"\n' + RED)
+    checked(ws, "fixture", 'ROLE = "fixture"\n' + RED, render=True)
 
     report = approvals.standings(ws)
 
@@ -140,10 +133,14 @@ def test_a_fixture_that_moved_from_its_approval_fails_build_all_like_a_livery():
     assert approvals.failing(report) == ["c"]
 
 
-def test_concept_decisions_are_logged_with_the_critics_rank(ws, private_metrics):
+def test_concept_decisions_are_logged_with_the_critics_rank(ws, private_metrics, tmp_path):
     for name in ("a", "b"):
         write_design(ws, name, BLUE)
-    critic.record_ranking(ws, ["a", "b"], {"ranking": ["b", "a"], "reasons": {"a": "x", "b": "y"}})
+    answers = tmp_path / "pairs"  # b beats a in both orders
+    answers.mkdir()
+    for pair, winner in ((f"a{critic.PAIR}b", "B"), (f"b{critic.PAIR}a", "A")):
+        (answers / f"{pair}.json").write_text(json.dumps({"winner": winner, "why": "x"}))
+    critic.record_pairs(ws, ["a", "b"], answers)
     items = [{"id": f"concept:{n}", "kind": "concept", "title": n} for n in ("a", "b")]
 
     review_apply.apply(ws, items, {"concept:a": {"decision": "accept"}, "concept:b": {"decision": "reject"}})
@@ -163,7 +160,7 @@ def test_line_endings_do_not_change_the_design_hash(ws):
 
 
 def test_a_final_review_and_install_refuse_a_design_on_a_kit_not_approved_as_it_is(ws):
-    built = _built(ws, "d", BLUE)
+    built = checked(ws, "d", BLUE, render=True)
     review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": "accept"}})
     kit = ws.kits / "tiny"
     assert approvals.require(ws, "d", built)

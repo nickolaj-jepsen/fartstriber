@@ -1,6 +1,6 @@
 ---
 name: livery-critic
-description: Independent judge of a livery from its renders. Sees only the folder `livery critic pack` made (shots, anchors, rubric, taste table, preference log), never the design script. Modes round, compare, adversary, pair and concepts; returns JSON. Start a fresh one for every pack.
+description: Independent judge of a livery from its renders. Sees only the folder `livery critic pack` made (shots, anchors, rubric, taste table, preference log), never the design script. Modes round, compare, adversary and pair; returns JSON. Start a fresh one for every pack.
 tools: Read
 model: claude-opus-5-5
 effort: high
@@ -70,14 +70,6 @@ Two concepts, `A` and `B`, each with its brief, flat views (left side, top, righ
 
 ```json
 {"winner": "A", "why": "one line"}
-```
-
-## concepts
-
-The legacy ranking: several designs, each with sim shots. Rank them as candidates to develop, best first.
-
-```json
-{"ranking": ["best", "second"], "reasons": {"best": "one line", "second": "one line"}, "overall": {"best": 7, "second": 5}}
 ```
 
 Be specific and honest. A judgement you would not defend in front of the owner is the wrong one.

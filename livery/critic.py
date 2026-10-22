@@ -1,15 +1,15 @@
 """The critic's inputs and its verdicts. The critic itself is a subagent (.claude/agents/livery-critic.md).
 
-`pack` gathers what the critic may see, never the design script: a round, an adversary check or the
-legacy concept ranking. `pack_compare` puts this round's shots beside the last round's in both orders,
-and `pack_pairs` puts concepts side by side two at a time in both orders, because a judge compares far
-more reliably than it scores and favours whichever comes first. A pack shows only shots of the checked
-build: sim shots, or with `baked` renders from the kit's calibration capture once it passed bake check
-(livery.bake), for the autonomous middle rounds; a round judged on baked renders never ships. The `record*`
-functions validate the critic's JSON and append it to the design's verdicts.jsonl (a concept ranking to
-each concept's), the one verdict store; `status` computes ship from those records, so ship is never the
-critic's own word. `answer` stores the builder's reply to each fix, which the next round's pack shows the
-next critic.
+`pack` gathers what the critic may see, never the design script: a round or an adversary check.
+`pack_compare` puts this round's shots beside the last round's in both orders, and `pack_pairs` puts
+concepts side by side two at a time in both orders, because a judge compares far more reliably than it
+scores and favours whichever comes first. A pack shows only shots of the checked build: sim shots, or with
+`baked` renders from the kit's calibration capture once it passed bake check (livery.bake), for the
+autonomous middle rounds; a round judged on baked renders never ships. The `record*` functions validate the
+critic's JSON and append it to the design's verdicts.jsonl (a concept ranking to each concept's), the one
+verdict store; `status` computes ship from those records, so ship is never the critic's own word. `answer`
+stores the builder's reply to each fix, which the next round's pack shows the next critic. The rubric's
+keys and the taste rows are read from their tables in the livery-design skill, the one place they live.
 """
 
 import hashlib
@@ -30,17 +30,6 @@ from livery.config import Workspace
 from livery.designs import kit_name, script
 from livery.errors import LiveryError, UsageError
 
-RUBRIC = (
-    "reads_at_distance",
-    "one_design",
-    "seams_and_edges",
-    "sponsor_hierarchy",
-    "type",
-    "body_lines",
-    "balance",
-    "depth",
-    "colour",
-)
 CALLS = ("iterate", "rework")  # the critic's call on a round that doesn't ship
 RESOLVED = ("resolved", "partly", "not")
 SIDES = ("A", "B")
@@ -137,6 +126,12 @@ def taste_ids(ws: Workspace | None = None) -> list[str]:
         if m and m[1] != "id":
             ids.append(m[1])
     return ids
+
+
+def rubric_keys(ws: Workspace | None = None) -> list[str]:
+    """The key in the first cell of each row of the rubric's table, which every round scores."""
+    text = _judged_by(ws)[0].read_text(encoding="utf-8")
+    return re.findall(r"^\|\s*`([a-z][a-z0-9_]*)`\s*\|", text, re.M)
 
 
 def rubric_version(ws: Workspace | None = None) -> str:
@@ -402,25 +397,23 @@ def _images(entry: dict) -> list[str]:
 
 def pack(
     ws: Workspace,
-    names: list[str],
+    name: str,
     mode: str = "round",
     warn: Callable[[str], None] = _quiet,
     baked: bool = False,
 ) -> Path:
-    """A folder with everything the critic may look at, and a manifest naming each file's role. A round
-    also carries the design's earlier verdicts with the builder's answers and the owner's latest note; an
-    adversary check and the legacy concept ranking judge the shots alone. `baked` packs baked renders of
-    the checked build in place of sim shots, and the manifest says so."""
+    """A folder with everything the critic may look at for a round or an adversary check of one design,
+    and a manifest naming each file's role. A round also carries the design's earlier verdicts with the
+    builder's answers and the owner's latest note; an adversary check judges the shots alone. `baked` packs
+    baked renders of the checked build in place of sim shots, and the manifest says so."""
     from livery import preview_flat
 
-    if baked and mode not in ("round", "adversary"):
-        raise UsageError("only a round and an adversary check can be judged on baked renders")
-    shots = {name: _shots(ws, name, baked) for name in names}
-    runs = {name: run for name, (run, _) in shots.items()}
-    rounds = {name: history(ws, name) if mode == "round" else [] for name in names}
-    for name, done in rounds.items():
-        if done and done[-1].get("fixes") and done[-1].get("answers") is None:
-            raise Unanswered(f"{name}: answer the last verdict's fixes first (livery critic answer {name})")
+    if mode not in ("round", "adversary"):
+        raise UsageError(f"a pack is a round or an adversary check, not {mode!r}")
+    run, digests = _shots(ws, name, baked)
+    rounds = history(ws, name) if mode == "round" else []
+    if rounds and rounds[-1].get("fixes") and rounds[-1].get("answers") is None:
+        raise Unanswered(f"{name}: answer the last verdict's fixes first (livery critic answer {name})")
     folder = _new_folder(ws, mode)
     manifest = _common(ws, folder, mode) | {"designs": {}, "baked": baked}
     if boring := references.boring(ws):
@@ -429,35 +422,28 @@ def pack(
         }
     else:
         warn("no boring anchors are cached; run livery references fetch")
-    for name in names:
-        d = folder / name
-        entry = _shot_set(runs[name], folder, d, _crops(ws, name), _views(ws) if baked else None)
-        entry["baked"] = baked
-        if brief := _brief(ws, name, folder, d):
-            entry["brief"] = brief
-        if notes := _kit_notes(ws, name, folder, d):
-            entry["kit"] = notes
-        if rounds[name]:
-            (d / "history.json").write_text(
-                json.dumps(rounds[name], indent=1), encoding="utf-8", newline="\n"
-            )
-            entry["history"] = f"{name}/history.json"
-            entry["previous_fixes"] = [f["text"] for f in fixes(rounds[name][-1])]
-        note = owner_note(ws, name) if mode == "round" else None
-        if note:
-            (d / "owner-note.json").write_text(json.dumps(note, indent=1), encoding="utf-8", newline="\n")
-            entry["owner_note"] = f"{name}/owner-note.json"
-        squint = preview_flat.fresh(ws, name, shots[name][1]) / "squint.png"
-        shutil.copy2(squint, d / "squint.png")
-        entry["squint"] = f"{name}/squint.png"
-        if anchors := _favourites(ws, name, folder, d, warn):
-            entry["anchors"] = anchors
-        manifest["designs"][name] = entry
-        if mode in ("round", "adversary"):
-            key = {"pack": _rel(ws, folder), **_provenance(ws, name, runs[name], baked)}
-            _remember(
-                ws, name, mode, key | {"images": _images(entry), "taste": taste_ids(ws), "owner_note": note}
-            )
+    d = folder / name
+    entry = _shot_set(run, folder, d, _crops(ws, name), _views(ws) if baked else None)
+    entry["baked"] = baked
+    if brief := _brief(ws, name, folder, d):
+        entry["brief"] = brief
+    if notes := _kit_notes(ws, name, folder, d):
+        entry["kit"] = notes
+    if rounds:
+        (d / "history.json").write_text(json.dumps(rounds, indent=1), encoding="utf-8", newline="\n")
+        entry["history"] = f"{name}/history.json"
+        entry["previous_fixes"] = [f["text"] for f in fixes(rounds[-1])]
+    note = owner_note(ws, name) if mode == "round" else None
+    if note:
+        (d / "owner-note.json").write_text(json.dumps(note, indent=1), encoding="utf-8", newline="\n")
+        entry["owner_note"] = f"{name}/owner-note.json"
+    shutil.copy2(preview_flat.fresh(ws, name, digests) / "squint.png", d / "squint.png")
+    entry["squint"] = f"{name}/squint.png"
+    if anchors := _favourites(ws, name, folder, d, warn):
+        entry["anchors"] = anchors
+    manifest["designs"][name] = entry
+    key = {"pack": _rel(ws, folder), **_provenance(ws, name, run, baked), "images": _images(entry)}
+    _remember(ws, name, mode, key | {"taste": taste_ids(ws), "scores": rubric_keys(ws), "owner_note": note})
     (folder / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8", newline="\n")
     return folder
 
@@ -559,11 +545,13 @@ def validate(
     taste: list[str] | None = None,
     images: set[str] | None = None,
     note: dict | None = None,
+    rubric: list[str] | None = None,
 ) -> dict:
     """A round verdict. `previous` marks each fix of the `last` round resolved, partly or not, naming the
     pack image that shows it, and `owner_note` the owner's `note` the same way; `taste` passes or fails
-    every taste row; scores 1-5 and overall 1-10 are logged only; at most three fixes, each optional or
-    not; the call is iterate or rework."""
+    every taste row; scores 1-5 for every `rubric` key and overall 1-10 are logged only; at most three
+    fixes, each optional or not; the call is iterate or rework. `taste` and `rubric` default to the files
+    as they stand."""
     before = fixes(last) if last else []
     previous = verdict.get("previous", [])
     if not isinstance(previous, list) or len(previous) != len(before):
@@ -590,7 +578,7 @@ def validate(
         if not r["pass"] and not _text(r.get("where")):
             raise BadVerdict(f"taste row {r['id']} fails: say where")
     scores = verdict.get("scores", {})
-    if missing := [k for k in RUBRIC if k not in scores]:
+    if missing := [k for k in (rubric_keys() if rubric is None else rubric) if k not in scores]:
         raise BadVerdict(f"missing rubric scores: {missing}")
     for k, v in scores.items():
         if not isinstance(v, int) or not 1 <= v <= 5:
@@ -624,7 +612,8 @@ def record(ws: Workspace, name: str, verdict: dict) -> dict:
     key = _recall(ws, name, "round")
     images = set(key["images"]) if key else None
     note = key.get("owner_note") if key else owner_note(ws, name)
-    validate(verdict, rounds[-1] if rounds else None, key["taste"] if key else None, images, note)
+    taste, rubric = (key["taste"], key.get("scores")) if key else (None, None)
+    validate(verdict, rounds[-1] if rounds else None, taste, images, note, rubric)
     runs = _runs(ws, name)
     prov = {k: key.get(k) for k in PROVENANCE} if key else _provenance(ws, name, runs[-1] if runs else None)
     entry = {
@@ -715,11 +704,20 @@ def record_adversary(ws: Workspace, name: str, verdict: dict) -> dict:
 
 
 def status(ws: Workspace, name: str) -> dict:
-    """Ship, computed from the records: the last round was judged on sim shots, not baked renders; it
-    leaves no open fix that isn't optional (its own, or one of the round before it didn't resolve), nothing
-    blocked and no failing taste row; it judged the owner's latest note resolved; it is not worse than the
-    round before; and the adversary's top finding on the same shots is optional. Otherwise the critic's call
-    stands."""
+    """Ship, computed from the records. A design ships when its last round verdict:
+
+    - is a v2 record, judged on sim shots, not baked renders
+    - judged the design as its files stand: nothing changed since the round's design hash
+    - leaves none of its own fixes open that isn't optional
+    - marks every fix of the round before that isn't optional resolved
+    - judged the owner's latest note in the decision ledger, if there is one, and found it resolved
+    - lists nothing blocked
+    - passes every row of the taste table as it stands
+    - if there was a round before, has a compare on the same shots, and the latest isn't worse
+    - has an adversary check on the same shots whose top finding is optional
+
+    Otherwise `why` lists what fails and the critic's call (iterate or rework) stands. `plateau`: the last
+    two compares both came out the same."""
     recs = records(ws, name)
     rounds = [r for r in recs if _kind(r) == "round"]
     results = [r["result"] for r in recs if _kind(r) == "compare"]
@@ -778,42 +776,9 @@ def status(ws: Workspace, name: str) -> dict:
 # Concept rankings
 
 
-def validate_ranking(verdict: dict, names: list[str]) -> dict:
-    """A legacy concept-mode verdict: every concept ranked once, best first, with a reason each."""
-    ranking = verdict.get("ranking")
-    if sorted(ranking or []) != sorted(names):
-        raise BadVerdict(f"ranking {ranking} must order exactly {names}")
-    reasons = verdict.get("reasons", {})
-    if set(reasons) != set(names):
-        raise BadVerdict("reasons must give one line per concept")
-    return verdict
-
-
-def record_ranking(ws: Workspace, names: list[str], verdict: dict, **extra) -> dict:
-    """Validate a concept ranking and append it to each concept's verdicts.jsonl with that concept's place
-    and design hash, for `livery review` to set beside the owner's pick. Pairs are judged on flat views, so
-    their hash is the flat preview's; a ranking on sim shots takes the build's."""
-    validate_ranking(verdict, names)
-    entry = {
-        "kind": "ranking",
-        "at": _stamp(),
-        "concepts": sorted(names),
-        "ranking": verdict["ranking"],
-        "reasons": verdict["reasons"],
-        "overall": verdict.get("overall", {}),
-        "rubric": rubric_version(),
-        "model": critic_model(),
-        **extra,
-    }
-    for place, name in enumerate(verdict["ranking"], 1):
-        flat = (stamps.of_flat(ws, name) or {}).get("design_hash")
-        h = flat if extra.get("method") == "pairs" else _design_hash(ws, name)
-        _write(ws, name, [*records(ws, name), entry | {"place": place, "design_hash": h}])
-    return verdict
-
-
 def latest_ranking(ws: Workspace, names: list[str]) -> dict | None:
-    """The last recorded critic ranking of exactly these concepts, or None."""
+    """The last recorded critic ranking of exactly these concepts, or None. Rankings recorded before pairs
+    were a single critic's, and have no `method`."""
     found = [
         r
         for name in names
@@ -869,19 +834,30 @@ def read_pairs(folder: Path, names: list[str]) -> list[tuple[str, str, dict]]:
 
 
 def record_pairs(ws: Workspace, names: list[str], folder: Path) -> dict:
-    """Rank concepts by Bradley-Terry over their pair verdicts, and record it like any ranking."""
+    """Rank concepts by Bradley-Terry over their pair verdicts, and append the ranking to each concept's
+    verdicts.jsonl with its place and its flat preview's design hash (pairs are judged on flat views), for
+    `livery review` to set beside the owner's pick."""
     games = read_pairs(folder, names)
     scored = [(a, b, {"A": 1.0, "B": 0.0, "tie": 0.5}[v["winner"]]) for a, b, v in games]
     strength = bradley_terry(names, scored)
     ranking = sorted(names, key=lambda n: (-strength[n], n))
     won = {n: sum(s if a == n else 1 - s for a, b, s in scored if n in (a, b)) for n in names}
     played = {n: sum(n in (a, b) for a, b, _ in scored) for n in names}
-    reasons = {n: f"won {won[n]:g} of {played[n]} pairs (Bradley-Terry {strength[n]:+.2f})" for n in names}
-    return record_ranking(
-        ws,
-        names,
-        {"ranking": ranking, "reasons": reasons},
-        method="pairs",
-        strength={n: round(s, 3) for n, s in strength.items()},
-        pairs=[[a, b, v["winner"]] for a, b, v in games],
-    )
+    entry = {
+        "kind": "ranking",
+        "at": _stamp(),
+        "concepts": sorted(names),
+        "ranking": ranking,
+        "reasons": {
+            n: f"won {won[n]:g} of {played[n]} pairs (Bradley-Terry {strength[n]:+.2f})" for n in names
+        },
+        "rubric": rubric_version(ws),
+        "model": critic_model(ws),
+        "method": "pairs",
+        "strength": {n: round(s, 3) for n, s in strength.items()},
+        "pairs": [[a, b, v["winner"]] for a, b, v in games],
+    }
+    for place, name in enumerate(ranking, 1):
+        flat = (stamps.of_flat(ws, name) or {}).get("design_hash")
+        _write(ws, name, [*records(ws, name), entry | {"place": place, "design_hash": flat}])
+    return {"ranking": ranking, "reasons": entry["reasons"]}

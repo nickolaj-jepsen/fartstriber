@@ -16,7 +16,7 @@ Every deterministic step is a `uv run livery` command; `--help` explains each on
 | Final | `livery install <design>` installs only the build the owner approved (`--restore` undoes it); `livery export <design>` writes it under Trading Paints' upload names |
 | Where things stand | `livery status [design]`, instead of reading `.cache`; `livery stats` for the loop's numbers |
 | Tests | `uv run pytest`, spread over the CPU's cores; `-n0` runs one test in this process (a debugger, `-s`) |
-| Lint, format, types | `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check`, as the pre-commit hook runs them |
+| Lint, format, types | `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check`, as the pre-commit hook runs them; fixing a baselined type error means `pyrefly check --prune-baseline` in the same commit |
 
 ## Files
 

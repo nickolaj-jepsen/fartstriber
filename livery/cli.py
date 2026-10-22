@@ -84,7 +84,7 @@ def main() -> None:
 
 
 def _json(path: Path) -> Any:
-    """A verdict, ranking or answers file."""
+    """A verdict or answers file."""
     from livery.critic import BadVerdict
 
     try:
@@ -154,8 +154,9 @@ def kit_add(
 
     Each step runs once: run it again after it stops and it carries on where it stopped. It stops with the
     next step wherever it needs the owner (closing or reopening the replay, saving the track's camera set,
-    the review) or a step can't run yet. Waits for the sim to close before camera.ini changes, and for the
-    reopened replay before it picks the frame; the capture takes about 15 minutes. Run it in the background.
+    the review) or a step can't run yet. Waits for the sim to close before camera.ini changes and for the
+    reopened replay before it picks the frame; how long the capture takes: `kit capture --help`. Run it in the
+    background.
     """
     from livery import config
     from livery.kit_add import add
@@ -203,12 +204,19 @@ def kit_spec(
             "ladder again into the calibration capture. Needs the sim, like kit capture."
         ),
     ] = None,
+    bleed: Annotated[
+        int | None,
+        typer.Option(
+            help="Set the kit's bleed_px, how far paint grows past each island's edge; alone, write nothing else. "
+            "A change clears the kit's approval."
+        ),
+    ] = None,
     as_json: AsJson = False,
 ) -> None:
     """Write the kit's finish compensation from its calibration capture: per preset with metal in it, the
     paint each grey needs to show what gloss shows, per colour channel over the preview views."""
     from livery import config, kit
-    from livery.kit_spec import lines, spec
+    from livery.kit_spec import lines, spec, write_bleed
     from livery.model import Material
 
     presets: dict[Material, tuple[int, int, int]] = {}
@@ -220,6 +228,11 @@ def kit_spec(
         except ValueError:
             raise typer.BadParameter(f"--preset {item}: give material=R,G,B") from None
     ws = Workspace()
+    if bleed is not None:
+        bled = write_bleed(kit.load(ws, car), bleed)
+        if not presets:
+            _emit(as_json, bled, f"bleed_px {bleed}; approval {bled['approval']}")
+            return
     result = spec(config.load(), ws, kit.load(ws, car), presets, log=_progress(as_json))
     _emit(as_json, result, lines(result))
 
@@ -543,7 +556,7 @@ def review(
             help="Take reviews off the page (those named, else this checkout's); one still waiting exits.",
         ),
     ] = False,
-    port: int = 8765,
+    port: Annotated[int | None, typer.Option(help="A port of its own, instead of the shared page's.")] = None,
     as_json: AsJson = False,
 ) -> None:
     """Queue a review on the page every session shares, block until the owner presses Apply on it, print the
@@ -557,6 +570,7 @@ def review(
     from livery import marks as race_marks
     from livery.review import items as ri
     from livery.review import queue as rq
+    from livery.review.apply import KINDS
     from livery.review.server import serve
 
     ws = Workspace()
@@ -590,9 +604,9 @@ def review(
     if proposals:
         queue += ri.proposal_items(proposals)
     if not queue:
+        flags = [k.flag for k in KINDS.values() if k.flag]
         raise typer.BadParameter(
-            "nothing to review: name designs or pass --kit, --roster, --sponsors, --marks, --references or"
-            " --proposals"
+            f"nothing to review: name designs or pass {', '.join(flags[:-1])} or {flags[-1]}"
         )
     result = serve(ws, queue, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
     _emit(as_json, result)
@@ -755,9 +769,7 @@ def export(
 
 @critic_app.command("pack")
 def critic_pack(
-    designs: Annotated[
-        list[str], typer.Argument(help="One design for a round, several for concept ranking.")
-    ],
+    designs: Annotated[list[str], typer.Argument(help="One design; with --pairs, two or more concepts.")],
     compare: Annotated[
         bool, typer.Option("--compare", help="This round's shots beside the last round's, in both orders.")
     ] = False,
@@ -781,10 +793,10 @@ def critic_pack(
     A round: the checked build's sim shots with their distance images (shots of another build are
     refused), the close crops, the squint, the brief and the pictures of the reference rows it names, the
     boring anchors, the rubric, taste table, references and prefs, the earlier verdicts with the builder's
-    answers and the owner's latest note. --adversary packs the same without the history or the note. --compare prints two packs: pass
-    the critics' answers to `critic compare` in the order printed. --pairs prints a folder of packs named
-    A__B (flat views, car view, squint): save each answer as A__B.json in one folder for `critic rank
-    --pairs`. Several designs and no flag is the legacy concept ranking on sim shots.
+    answers and the owner's latest note. --adversary packs the same without the history or the note.
+    --compare prints two packs: pass the critics' answers to `critic compare` in the order printed. --pairs
+    prints a folder of packs named A__B (flat views, car view, squint): save each answer as A__B.json in
+    one folder for `critic rank --pairs`.
 
     --baked, with a round, --compare or --adversary, packs baked renders of the checked build from the kit's
     calibration capture (once it passed livery bake check) in place of sim shots, marked as baked in the
@@ -796,19 +808,19 @@ def critic_pack(
     ws = Workspace()
     if compare + adversary + pairs > 1:
         raise typer.BadParameter("pass at most one of --compare, --adversary and --pairs")
-    if (compare or adversary) and len(designs) != 1:
-        raise typer.BadParameter("--compare and --adversary take exactly one design")
-    if baked and (pairs or len(designs) != 1):
-        raise typer.BadParameter("--baked takes one design: a round, --compare or --adversary")
+    if not pairs and len(designs) != 1:
+        raise typer.BadParameter("a round, --compare and --adversary take one design; concepts take --pairs")
+    if baked and pairs:
+        raise typer.BadParameter("--baked takes a round, --compare or --adversary")
     if compare:
         packs = list(critic.pack_compare(ws, designs[0], baked=baked))
         mode = "compare"
     elif pairs:
         packs, mode = [critic.pack_pairs(ws, designs)], "pairs"
     else:
-        mode = "adversary" if adversary else "concepts" if len(designs) > 1 else "round"
+        mode = "adversary" if adversary else "round"
         warn = functools.partial(typer.echo, err=True)
-        packs = [critic.pack(ws, designs, mode=mode, warn=lambda m: warn(f"warning: {m}"), baked=baked)]
+        packs = [critic.pack(ws, designs[0], mode=mode, warn=lambda m: warn(f"warning: {m}"), baked=baked)]
     _emit(
         as_json,
         {"designs": designs, "mode": mode, "baked": baked, "packs": [str(p) for p in packs]},
@@ -861,10 +873,11 @@ def critic_adversary(design: Design, verdict: Json, as_json: AsJson = False) -> 
 def critic_status(design: Design, as_json: AsJson = False) -> None:
     """Print whether the design ships, and why not, as JSON.
 
-    Ship: the last round has no open fix that isn't optional, nothing blocked, every taste row passing
-    and the owner's latest note resolved, it isn't worse than the round before, and the adversary's top
-    finding is optional.
-    Otherwise the critic's call (iterate or rework) stands.
+    Ship: the last round, judged on sim shots of the design as it stands, leaves no fix that isn't
+    optional open or unresolved, nothing blocked, no taste row failing and the owner's latest note
+    resolved, and its shots have an adversary check whose top finding is optional and, after a first
+    round, a compare that isn't worse. Otherwise `why` lists what fails and the critic's call (iterate or
+    rework) stands; `livery.critic.status` states the rule in full.
     """
     from livery.critic import status
 
@@ -873,30 +886,18 @@ def critic_status(design: Design, as_json: AsJson = False) -> None:
 
 @critic_app.command("rank")
 def critic_rank(
-    designs: Annotated[list[str], typer.Argument(help="The concepts the critic ranked.")],
-    verdict: Annotated[
-        Path | None,
-        typer.Option(exists=True, dir_okay=False, help="The critic's legacy concept-mode JSON."),
-    ] = None,
+    designs: Annotated[list[str], typer.Argument(help="The concepts the critics judged in pairs.")],
     pairs: Annotated[
-        Path | None,
+        Path,
         typer.Option(exists=True, file_okay=False, help="A folder of pair answers, one A__B.json per pack."),
-    ] = None,
+    ],
     as_json: AsJson = False,
 ) -> None:
-    """Record a concept ranking in each concept's verdicts.jsonl, for comparison with the owner's pick.
+    """Rank concepts by a Bradley-Terry fit to the pair answers, and record the ranking in each concept's
+    verdicts.jsonl, for comparison with the owner's pick."""
+    from livery.critic import record_pairs
 
-    With --pairs, the ranking is a Bradley-Terry fit to the pair answers.
-    """
-    from livery.critic import record_pairs, record_ranking
-
-    ws = Workspace()
-    if pairs and not verdict:
-        result = record_pairs(ws, designs, pairs)
-    elif verdict and not pairs:
-        result = record_ranking(ws, designs, _json(verdict))
-    else:
-        raise typer.BadParameter("pass --verdict or --pairs")
+    result = record_pairs(Workspace(), designs, pairs)
     _emit(as_json, result, " > ".join(result["ranking"]))
 
 

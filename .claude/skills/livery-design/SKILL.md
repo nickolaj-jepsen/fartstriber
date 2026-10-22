@@ -127,4 +127,4 @@ def build(kit, p: Params):
 - A missing primitive: draw it with `svg(raw)` (template pixels) or propose a library change to the owner. Never edit `livery/` in a design session.
 - `waive(element, check, reason)` is for kit and test designs; in a livery the reason must be one the owner would accept: it is recorded with their approval.
 - **The kit is not yours to work around.** If a shape that is straight in car space steps, slants or doubles at a seam in the sim, or two islands disagree about where a line goes, report it (islands, where, by how much) instead of hiding it with a design change. Those were kit errors every time so far.
-- **Keep the brief's character.** If no layout satisfies the critic and the lint without changing what the brief asks for (its base colour, a brand colour, light car to dark car), stop and report the conflict rather than ship the change.
+- **Keep the brief's character.** If no layout satisfies the critic and the lint without changing what the brief asks for (its base colour, a brand colour, light car to dark car, its theme), stop and report the conflict rather than ship the change.

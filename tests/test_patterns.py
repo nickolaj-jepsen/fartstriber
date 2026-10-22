@@ -1,7 +1,6 @@
 """The 10 m layer's patterns: what they draw on a synthetic kit, and that they pass the lint on the McLaren."""
 
 import itertools
-import shutil
 
 import numpy as np
 import pytest
@@ -9,14 +8,12 @@ import shapely
 from shapely.geometry import LineString, Polygon
 
 from livery import geom, patterns
-from livery.config import REPO, Workspace
 from livery.kit import load
 from livery.lint.output import lint_output, opening_px
 from livery.lint.run import thresholds
 from livery.model import Livery
 from tests.conftest import TWO, drawn, two_islands
 
-KIT = "mclaren-720s-gt3-evo"
 A, B = "#ff0000", "#0000ff"
 
 
@@ -152,16 +149,8 @@ def test_chevrons_point_where_asked_and_must_be_thick_enough(kit):
 # --- the real kit --------------------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def mclaren(tmp_path_factory):
-    root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, root / "kits" / KIT)
-    ws = Workspace(root=root, assets=REPO / "assets")
-    return ws, load(ws, KIT)
-
-
-def test_pieces_pass_the_lint_on_the_real_kit(mclaren):
-    ws, kit = mclaren
+def test_pieces_pass_the_lint_on_the_real_kit(real_ws, real_kit):
+    ws, kit = real_ws, real_kit
     els = []
     for view in ("side_l", "side_r"):
         k = geom.rake(kit, 58.0, view)

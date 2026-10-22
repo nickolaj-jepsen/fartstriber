@@ -1,6 +1,8 @@
 import hashlib
 import json
 import re
+import shutil
+import sys
 import textwrap
 import uuid
 from pathlib import Path
@@ -14,7 +16,7 @@ from shapely.geometry.base import BaseGeometry
 
 from livery import kit as kits
 from livery.config import REPO, Workspace
-from livery.kit import Profile, View
+from livery.kit import Kit, Profile, View
 from livery.model import Element
 
 FIXTURES = Path(__file__).parent / "fixtures"  # laid out like a workspace: designs/<name>/design.py
@@ -70,6 +72,7 @@ def private_state(tmp_path, monkeypatch):
     settings = SETTINGS.format(root=tmp_path.as_posix(), sha="0" * 64, replay=REPLAY, owner=OWNER)
     (state / "config.toml").write_text(settings, encoding="utf-8")
     monkeypatch.setenv("FARTSTRIBER_STATE", str(state))
+    monkeypatch.setenv("FARTSTRIBER_NO_FSYNC", "1")
     monkeypatch.setattr(paintfolder, "REPO", tmp_path / "checkout")
     monkeypatch.setattr(simlock, "MUTEX", f"Local\\fartstriber-test-{uuid.uuid4().hex}")
     return tmp_path / "state"
@@ -85,10 +88,49 @@ def ws(tmp_path) -> Workspace:
     Image.fromarray(mask).save(kit / "overlays" / "mask.png")
     write_kit(kit, {"canvas": CANVAS, "paint_folder": "tiny", "bleed_px": 4})
     ws = Workspace(root=tmp_path, assets=REPO / "assets")
-    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
-    kits.write_profile(kit, Profile(REPLAY, 100, preview, {}))
+    frame_kit(ws, kit)
     kits.approve(kit, "Tester", "")
     return ws
+
+
+def preview_views(ws: Workspace) -> dict[str, View]:
+    """A camera group per preview view: the top view's, and the side's for the rest."""
+    return {v: View(group="Top" if v == "top" else "Side", pose=()) for v in ws.policy.preview}
+
+
+def frame_kit(ws: Workspace, kit_dir: Path, frame: int | None = 100) -> None:
+    """The kit's profile: the preview views (`preview_views`) at `frame` of the fixture replay."""
+    profile = Profile(replay=REPLAY, frame=frame, preview=preview_views(ws), crops={})
+    kits.write_profile(kit_dir, profile)
+
+
+REAL_KIT = "mclaren-720s-gt3-evo"
+
+
+@pytest.fixture(scope="session")
+def real_ws(tmp_path_factory) -> Workspace:
+    """A workspace with a copy of the real kit, one per test process so the kit's derived data is worked
+    out once: read the kit, never change it (a test that does copies its own). Designs a test writes here
+    are its own names."""
+    root = tmp_path_factory.mktemp("real")
+    shutil.copytree(REPO / "kits" / REAL_KIT, root / "kits" / REAL_KIT)
+    return Workspace(root=root, assets=REPO / "assets")
+
+
+@pytest.fixture(scope="session")
+def real_kit(real_ws) -> Kit:
+    return kits.load(real_ws, REAL_KIT)
+
+
+def run_cli(monkeypatch, ws: Workspace, *args: str) -> int:
+    """`livery <args>` on `ws` through the entry point, as a shell runs it: its exit code."""
+    from livery import cli
+
+    monkeypatch.setattr(cli, "Workspace", lambda: ws)
+    monkeypatch.setattr(sys, "argv", ["livery", *args])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    return int(e.value.code or 0)
 
 
 MAPS = ("regions", "side_frames", "side_transforms", "top_transform")
@@ -135,13 +177,19 @@ def checked(
     name: str,
     body: str = 'def build(kit, p):\n    return Livery(base="#3060c0")\n',
     outputs: dict[str, bytes] | None = None,
+    *,
+    render: bool = False,
 ) -> dict:
-    """A design whose check passed with today's hashes and whose TGAs (placeholder bytes, or `outputs`)
-    and flat preview are that build's, without running the build: for tests about what a pack or review
-    accepts, not about building."""
+    """A design whose check passed with today's hashes and whose TGAs (placeholder bytes, or `outputs`, or
+    with `render` the ones the design renders) and flat preview are that build's, without the lint and
+    fresh-process build of a real check: for tests about what a pack or review accepts, not about
+    building."""
     from livery import hashing, stamps
+    from livery.designs import render_outputs
 
     write_design(ws, name, body)
+    if render:
+        outputs = render_outputs(ws, name)
     out = ws.out(name)
     out.mkdir(parents=True, exist_ok=True)
     outputs = outputs or {"car.tga": f"{name} paint".encode(), "car_spec.tga": f"{name} spec".encode()}

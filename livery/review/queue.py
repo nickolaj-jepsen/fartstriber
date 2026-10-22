@@ -16,6 +16,7 @@ from livery import state
 from livery.errors import LiveryError
 
 GROUP, DECISIONS, RESULT = "group.json", "decisions.json", "result.json"
+PORT = 8765  # the page every session shares; here, so the SessionStart hook reads it without the server
 APPLIED_FOR = 300  # seconds an applied review stays on the page, saying what it wrote
 
 
@@ -61,8 +62,7 @@ def _write(path: Path, data: object) -> None:
     try:
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, indent=1)
-            f.flush()
-            os.fsync(f.fileno())
+            state.sync(f)
     except FileNotFoundError:
         raise Gone(f"review {path.parent.name} is no longer queued") from None
     for _ in range(100):

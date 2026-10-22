@@ -186,7 +186,7 @@ def _done(run: Path, job: Job, views: dict[str, Shot]) -> bool:
 def capture(
     cfg: Config, ws: Workspace, kit: Kit, *, resume: bool = False, keep_frames: bool = False, log: Log = print
 ) -> Path:
-    """Shoot every paint not yet shot, decode, and point `current` at the run. About 15 minutes."""
+    """Shoot every paint not yet shot, decode, and point `current` at the run."""
     prof = kits.profile(kit)
     kits.require_replay(prof, cfg, kit)
     kits.check_model(kit, cfg.ui_cars)

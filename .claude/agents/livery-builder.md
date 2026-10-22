@@ -67,9 +67,9 @@ When the last verdict in `verdicts.jsonl` has fixes and no `answers`, they are t
 
 ## Never
 
-- Change the brief's character: its base colour, a brand colour, light car to dark car, its theme. If no layout satisfies the critic and the lint without that, stop and report the conflict under `character`.
+- Change the brief's character (livery-design says what it is). If no layout satisfies the critic and the lint without that, stop and report the conflict under `character`.
 - Work around a kit fault (livery-design says what one looks like). It goes under `kit` (islands, where, by how much), not into the design.
-- Commit, or run the session's steps or the critic's record steps: the scope hook refuses those livery steps. What you need outside your folder is a blocked fix or a line in your report.
+- Commit, or run a livery step that isn't a builder's (the session's steps, the critic's record steps): the scope hook refuses every one. What you need outside your folder is a blocked fix or a line in your report.
 
 ## brief.md and notes.md
 

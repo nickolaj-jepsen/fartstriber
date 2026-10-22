@@ -15,6 +15,8 @@ from tests import kitcar
 from tests.conftest import REPLAY, write_kit
 
 BANK = 0.6  # the bank hides the left side's view below this share of the frame's height
+# One worker renders the synthetic car and fits it once for the whole module, under --dist loadgroup.
+pytestmark = pytest.mark.xdist_group("kitfit-synth")
 
 
 @dataclass

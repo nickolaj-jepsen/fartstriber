@@ -120,6 +120,8 @@ def test_a_new_car_goes_from_its_template_to_its_capture_once_and_stops_where_th
     assert len(kits.read_maps(kit.dir)["regions"]) == len(ISLANDS)
     prof = kits.profile(kit)
     assert prof.frame is not None
+    (run,) = (ws.cache / "pick-frame" / CAR).iterdir()
+    assert str(run) in result["steps"]["frame"]  # where to look at the candidates
     assert prof.replay == world.cfg.replay.subsession
     assert cameras.previews_missing(world.cfg.documents, world.cfg.replay.track, prof.preview) == []
     assert all(

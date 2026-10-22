@@ -1,8 +1,10 @@
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import replace
 
 from livery import check, hashing, sponsors
@@ -109,3 +111,26 @@ def test_only_what_a_build_can_load_from_the_assets_is_hashed(ws, tmp_path):
 
     (assets / "fonts" / "f" / "F.ttf").write_bytes(b"other glyphs")
     assert hashing.design_hash(ws, "d") != before
+
+
+def test_an_edit_changes_the_hash_in_the_same_process_however_soon_it_follows(ws, tmp_path):
+    font = tmp_path / "assets" / "fonts" / "F.ttf"
+    font.parent.mkdir(parents=True)
+    ws = replace(ws, assets=tmp_path / "assets")
+    write_design(ws, "d", PLAIN)
+    now = time.time_ns()
+    seen = []
+    # One size, so only the content tells them apart: an old file, a fresh one, then two writes in one
+    # mtime tick.
+    for glyphs, mtime in (
+        (b"glyphs-a", now - 3600 * 10**9),
+        (b"glyphs-b", None),
+        (b"glyphs-c", now),
+        (b"glyphs-d", now),
+    ):
+        font.write_bytes(glyphs)
+        if mtime is not None:
+            os.utime(font, ns=(mtime, mtime))
+        seen.append(hashing.design_hash(ws, "d"))
+        assert hashing.design_hash(ws, "d") == seen[-1]
+    assert len(set(seen)) == len(seen)

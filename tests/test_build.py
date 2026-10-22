@@ -5,7 +5,6 @@ from PIL import Image
 
 from livery import check
 from livery.check import run_build, run_check
-from livery.designs import render_outputs
 from tests.conftest import SPEC, checked, write_design
 
 STEADY = """
@@ -83,8 +82,7 @@ def test_a_script_that_cannot_be_hashed_fails_check_and_build(ws, source):
 
 
 def test_build_reuses_a_matching_passed_check(ws, monkeypatch):
-    write_design(ws, "steady", STEADY)
-    checked(ws, "steady", STEADY, outputs=render_outputs(ws, "steady"))
+    checked(ws, "steady", STEADY, render=True)
 
     def no_recheck(*_):
         raise AssertionError("re-checked although hashes matched")

@@ -12,6 +12,7 @@ from livery import cameras, config, pick_frame
 from livery import kit as kits
 from livery.kit import load
 from tests import fakesim
+from tests.conftest import frame_kit
 from tests.test_simsession import ALLOWED, STOCK, FakeIR, H, W, World
 
 TOTAL = 3000  # frames in the replay: one lap
@@ -121,9 +122,7 @@ def lap(tmp_path, monkeypatch) -> Lap:
 def tiny(ws):
     """The tiny kit with a group per preview view, framed on no frame yet."""
     kit = load(ws, "tiny")
-    prof = kits.profile(kit)
-    views = {v: kits.View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
-    kits.write_profile(kit.dir, replace(prof, frame=None, preview=views))
+    frame_kit(ws, kit.dir, frame=None)
     return kit
 
 

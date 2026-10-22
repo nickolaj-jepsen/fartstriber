@@ -10,10 +10,9 @@ from livery import kit as kits
 from livery.calibration import BELT, U_BANDS, calibration
 from livery.check import digests
 from livery.iracing import SimNotReady
-from livery.kit import Profile, View
 from livery.kit_review import calibration_build, shoot_calibration
 from tests import fakesim
-from tests.conftest import REPLAY, TWO, drawn, two_islands
+from tests.conftest import TWO, drawn, frame_kit, two_islands
 from tests.test_simsession import World
 
 
@@ -22,8 +21,7 @@ def two(tmp_path):
     """The two-island kit, framed on the fixture replay."""
     ws = two_islands(tmp_path)
     kit = kits.load(ws, "two")
-    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
-    kits.write_profile(kit.dir, Profile(REPLAY, 100, preview, {}))
+    frame_kit(ws, kit.dir)
     return ws, kit
 
 

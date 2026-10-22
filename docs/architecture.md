@@ -224,19 +224,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 `livery critic pack` makes a folder of what the critic may see, never the script; `livery critic pack --help` says what each kind of pack holds. A round pack refuses a stale check, sim runs of another build and unanswered fixes.
 
-The critics' answers and the builder's are recorded in the design's `verdicts.jsonl`, one `livery critic` command per kind (`livery critic --help`). A compare is better or worse only where both orders agree, else the same. Rubric scores and the 1–10 are logged only: ship is computed from the records, never the critic's own word.
-
-`critic status` says a design ships only when all of these hold:
-
-- the last round was judged on sim shots
-- no fix that isn't optional is open, and nothing is blocked
-- every taste row passes
-- the owner's latest note is resolved
-- the compare with the round before isn't worse
-- the adversary's top finding is optional
-- the design hasn't changed since
-
-Two compares in a row that come out the same are a plateau.
+The critics' answers and the builder's are recorded in the design's `verdicts.jsonl`, one `livery critic` command per kind (`livery critic --help`). A compare is better or worse only where both orders agree, else the same. Rubric scores and the 1–10 are logged only: ship is computed from the records, never the critic's own word, so a lenient judge can't wave a car through and the rule stays the same from round to round. The rule, and the plateau the refine loop stops at, are in `livery.critic.status`'s docstring (`livery critic status --help` sums it up). The rubric's keys and the taste rows are read from their tables in the `livery-design` skill, which every pack copies in.
 
 ## Design sessions
 

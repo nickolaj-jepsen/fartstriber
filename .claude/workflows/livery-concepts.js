@@ -52,12 +52,20 @@ const SKETCH = {
   required: ['design', 'rendered', 'summary', 'problems'],
   properties: { design: STR, rendered: { type: 'boolean' }, summary: STR, problems: STRS },
 }
+// blocked, kit, character and sim stop the loop for the owner, so they hold only what does: a kit gap the
+// round worked around, or a sim run it didn't need, goes in notes.
+const STOPS = (what) => ({ type: 'array', items: STR, description: `${what}; [] when there is none` })
 const BUILT = {
   type: 'object',
   required: ['design', 'checked', 'sim_run', 'blocked', 'kit', 'character', 'sim', 'constraints', 'summary'],
   properties: {
-    design: STR, checked: { type: 'boolean' }, sim_run: STR, blocked: STRS, kit: STRS, character: STR,
-    sim: STR, constraints: STRS, summary: STR,
+    design: STR, checked: { type: 'boolean' }, sim_run: STR,
+    blocked: STOPS('fixes this round could not make inside the design folder'),
+    kit: STOPS('kit faults found this round that stop a fix (not gaps it designed around)'),
+    character: { type: 'string', description: "a change of the brief's character the fixes would need; '' when none" },
+    sim: { type: 'string', description: "what the owner must do before the next sim round can run; '' when nothing" },
+    notes: { type: 'array', items: STR, description: 'anything else for the owner: kit gaps worked around, known limits' },
+    constraints: STRS, summary: STR,
   },
 }
 const PAIR_ANSWER = {
@@ -183,6 +191,7 @@ top.forEach((name, i) => {
   if (b.character) forOwner.push(`${name}: character conflict: ${b.character}`)
   for (const k of b.kit) forOwner.push(`${name}: kit fault: ${k}`)
   for (const x of b.blocked) forOwner.push(`${name}: blocked: ${x}`)
+  for (const x of b.notes || []) forOwner.push(`${name}: ${x}`)
 })
 
 return {

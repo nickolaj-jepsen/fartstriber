@@ -7,6 +7,8 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -21,12 +23,20 @@ LEDGER = Path("prefs") / "decisions.jsonl"  # under the workspace root
 DESIGNS = ("concept", "final")
 
 
-def _approve_kit(ws: Workspace, car: str, note: str, shown: str | None) -> str:
-    """Approves the kit as it was shown; one that changed while under review goes back to review."""
-    if shown is not None and hashing.kit_hash(ws.kits / car) != shown:
-        return f"kits/{car}: not approved, the kit changed while it was under review; review it again"
-    path = kits.approve(ws.kits / car, config.owner(), note)
-    return f"{path.relative_to(ws.root).as_posix()}: approved"
+@dataclass
+class _Writes:
+    """What Apply has written, the files and folders it commits, and the table marks it writes last."""
+
+    ws: Workspace
+    written: list[str] = field(default_factory=list)
+    files: list[Path] = field(default_factory=list)
+    folders: list[Path] = field(default_factory=list)
+    tables: dict[Path, dict[str, str]] = field(default_factory=dict)
+
+    def mark(self, table: Path, key: str, choice: str | None) -> None:
+        """An accept or reject on a table row: its yes/no column."""
+        if choice in ("accept", "reject"):
+            self.tables.setdefault(table, {})[key] = "yes" if choice == "accept" else "no"
 
 
 def _mark_table(path: Path, marks: dict[str, str]) -> None:
@@ -39,17 +49,106 @@ def _mark_table(path: Path, marks: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
-def _mark_references(ws: Workspace, marks: dict[int, str]) -> str:
-    _mark_table(ws.references, {str(n): v for n, v in marks.items()})
-    return f"references.md: {len(marks)} marked"
+# Each handler writes what review owns for one decision; `item` is None for a decision on an item not queued.
 
 
-def _sponsor(key: str, choice: str, root: Path) -> str:
+def _design(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    if d.get("decision") != "skip":
+        w.folders.append(w.ws.design_dir(key))
+
+
+def _final(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    """Accepting pins the build shown."""
+    _design(w, key, d, item)
+    if d.get("decision") == "accept" and item and item.get("pin"):
+        w.written.append(approvals.pin(w.ws, key, item["pin"], d.get("note", "")))
+
+
+def _kit(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    """Approves the kit as it was shown; one that changed while under review goes back to review."""
+    if d.get("decision") != "accept":
+        return
+    shown = (item or {}).get("kit_hash")
+    if shown is not None and hashing.kit_hash(w.ws.kits / key) != shown:
+        w.written.append(
+            f"kits/{key}: not approved, the kit changed while it was under review; review it again"
+        )
+    else:
+        path = kits.approve(w.ws.kits / key, config.owner(), d.get("note", ""))
+        w.written.append(f"{path.relative_to(w.ws.root).as_posix()}: approved")
+    w.files.append(w.ws.kits / key / kits.APPROVAL)
+
+
+def _sponsor(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    """Accepting approves every variant; rejecting drops the brand and marks its roster row no."""
+    choice, root = d.get("decision"), w.ws.sponsors
+    if choice not in ("accept", "reject") or item is None:
+        return
     if choice == "accept":
-        return f"{key}: approved {', '.join(sponsors.approve(root / key)) or 'nothing new'}"
-    shutil.rmtree(root / key)
-    _mark_table(root / "roster.md", {key: "no"})
-    return f"{key}: dropped"
+        w.written.append(f"{key}: approved {', '.join(sponsors.approve(root / key)) or 'nothing new'}")
+    else:
+        shutil.rmtree(root / key)
+        _mark_table(root / "roster.md", {key: "no"})
+        w.written.append(f"{key}: dropped")
+    w.folders.append(root / key)
+    if choice == "reject":
+        w.files.append(root / "roster.md")
+
+
+def _mark(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    done = race_marks.apply_decision(key, d.get("decision"), w.ws.marks)
+    if done:
+        w.written.append(done)
+        if w.ws.marks not in w.folders:
+            w.folders.append(w.ws.marks)
+
+
+def _roster(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    w.mark(w.ws.sponsors / "roster.md", key, d.get("decision"))
+
+
+def _reference(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    w.mark(w.ws.references, str(int(key)), d.get("decision"))
+
+
+def _proposal(w: _Writes, key: str, d: dict, item: dict | None) -> None:
+    """Nothing: the accepted ones go back to the agent (`proposals`)."""
+
+
+def _no_fields(ws: Workspace, key: str, item: dict) -> dict:
+    return {}
+
+
+def _design_fields(ws: Workspace, key: str, item: dict) -> dict:
+    return {"runs": item.get("runs", []), **_design_record(ws, key, item)}
+
+
+def _proposal_fields(ws: Workspace, key: str, item: dict) -> dict:
+    return {"title": item.get("title")}
+
+
+@dataclass(frozen=True)
+class Kind:
+    """What Apply does with a decision on one kind of review item (the id's prefix)."""
+
+    apply: Callable[[_Writes, str, dict, dict | None], None]
+    flag: str | None = None  # the `livery review` option that queues it; designs are named instead
+    first: bool = False  # applied before every other kind
+    ledger: Callable[[Workspace, str, dict], dict] = _no_fields  # the fields its ledger lines add
+    metrics: bool = True  # a metrics line per decision
+
+
+KINDS = {
+    "concept": Kind(_design, ledger=_design_fields),
+    "final": Kind(_final, ledger=_design_fields),
+    "kit": Kind(_kit, "--kit"),
+    "roster": Kind(_roster, "--roster"),
+    # Brands and race markings first, so a final placing one accepted in this review can be pinned.
+    "sponsor": Kind(_sponsor, "--sponsors", first=True),
+    "mark": Kind(_mark, "--marks", first=True),
+    "reference": Kind(_reference, "--references"),
+    "proposal": Kind(_proposal, "--proposals", ledger=_proposal_fields, metrics=False),
+}
 
 
 def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: list[str]) -> None:
@@ -59,7 +158,7 @@ def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: 
     ranking = critic.latest_ranking(ws, concepts) if concepts else None
     for item_id, d in decisions.items():
         kind, _, key = item_id.partition(":")
-        if kind == "proposal":
+        if not KINDS[kind].metrics:
             continue
         extra: dict = {"item": kind, "decision": d.get("decision"), "note": bool(d.get("note"))}
         if d.get("mix_of"):
@@ -139,11 +238,7 @@ def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], r
             "mix_of": d.get("mix_of", []),
             "rating": d.get("rating"),
         }
-        if kind == "proposal":
-            line["title"] = by_id.get(item_id, {}).get("title")
-        if kind in DESIGNS:
-            line["runs"] = by_id.get(item_id, {}).get("runs", [])
-            line |= _design_record(ws, key, by_id.get(item_id, {}))
+        line |= KINDS[kind].ledger(ws, key, by_id.get(item_id, {}))
         lines.append(json.dumps(line) + "\n")
     path = ws.root / LEDGER
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -251,57 +346,31 @@ def apply(
     review: str | None = None,
     commit: bool = False,
 ) -> list[str]:
-    """Writes what review owns: a final's approval pinned to the build shown, kit approval, references.md
-    and roster.md marks, brand and race marking approval. Then appends every decision to the ledger and logs
-    it; with `commit` (the CLI's review, never a test's) it commits what it wrote and each decided design's
-    folder."""
+    """Writes what review owns, each decision by its kind's handler (`KINDS`), then appends every decision
+    to the ledger and logs it; with `commit` (the CLI's review, never a test's) it commits what it wrote and
+    each decided design's folder. A decision on a kind with no entry fails before anything is written."""
+    unknown = sorted(i for i in decisions if i.partition(":")[0] not in KINDS)
+    if unknown:
+        raise LiveryError(f"Apply has no handler for {', '.join(unknown)}: kinds are {', '.join(KINDS)}")
     before = _dirty(ws.root) if commit else None
     review = review or time.strftime("%Y%m%d-%H%M%S")
-    written: list[str] = []
-    files: list[Path] = [ws.root / LEDGER]
-    folders: list[Path] = []
+    w = _Writes(ws, files=[ws.root / LEDGER])
     by_id = {i["id"]: i for i in items}
-    marks: dict[int, str] = {}
-    roster: dict[str, str] = {}
-    root = ws.sponsors
-    # Brands and race markings first, so a final placing one accepted in this review can be pinned.
-    for item_id, d in decisions.items():
-        kind, _, key = item_id.partition(":")
-        if kind == "sponsor" and d.get("decision") in ("accept", "reject") and item_id in by_id:
-            written.append(_sponsor(key, d["decision"], root))
-            folders.append(root / key)
-            if d["decision"] == "reject":
-                files.append(root / "roster.md")
-    marked = race_marks.apply_review([{"id": k, **d} for k, d in decisions.items()], ws.marks)
-    if marked:
-        written += marked
-        folders.append(ws.marks)
-    for item_id, d in decisions.items():
-        kind, _, key = item_id.partition(":")
-        choice = d.get("decision")
-        if kind in DESIGNS and choice != "skip":
-            folders.append(ws.design_dir(key))
-        if kind == "final" and choice == "accept" and by_id.get(item_id, {}).get("pin"):
-            written.append(approvals.pin(ws, key, by_id[item_id]["pin"], d.get("note", "")))
-        elif kind == "kit" and choice == "accept":
-            written.append(_approve_kit(ws, key, d.get("note", ""), by_id.get(item_id, {}).get("kit_hash")))
-            files.append(ws.kits / key / kits.APPROVAL)
-        elif kind == "reference" and choice in ("accept", "reject"):
-            marks[int(key)] = "yes" if choice == "accept" else "no"
-        elif kind == "roster" and choice in ("accept", "reject"):
-            roster[key] = "yes" if choice == "accept" else "no"
-    if marks:
-        written.append(_mark_references(ws, marks))
-        files.append(ws.references)
-    if roster:
-        _mark_table(root / "roster.md", roster)
-        written.append(f"roster.md: {len(roster)} marked")
-        files.append(root / "roster.md")
+    for first in (True, False):
+        for item_id, d in decisions.items():
+            kind, _, key = item_id.partition(":")
+            if KINDS[kind].first == first:
+                KINDS[kind].apply(w, key, d, by_id.get(item_id))
+    for table, marks in w.tables.items():
+        _mark_table(table, marks)
+        w.written.append(f"{table.name}: {len(marks)} marked")
+        w.files.append(table)
+    written = w.written
     if decisions:
         written.append(_record(ws, by_id, decisions, review))
     _log(ws, items, decisions, written)
     if before is not None and decisions:
-        done = _commit(ws.root, before, files, folders, _message(decisions, review))
+        done = _commit(ws.root, before, w.files, w.folders, _message(decisions, review))
         if done:
             written.append(done)
     return written

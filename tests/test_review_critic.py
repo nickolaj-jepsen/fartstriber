@@ -15,7 +15,7 @@ def verdict(**change) -> dict:
     return {
         "previous": [],
         "taste": [{"id": i, "pass": True, "where": ""} for i in critic.taste_ids()],
-        "scores": dict.fromkeys(critic.RUBRIC, 4),
+        "scores": dict.fromkeys(critic.rubric_keys(), 4),
         "overall": 7,
         "verdict": "iterate",
         "fixes": [{"text": FIX, "optional": False}],
@@ -37,7 +37,7 @@ def _taste(fail: str, where: str = "") -> list[dict]:
     [
         {"verdict": "ship"},  # ship is computed, never the critic's call
         {"overall": 11},
-        {"scores": dict.fromkeys(critic.RUBRIC[:-1], 3)},
+        {"scores": dict.fromkeys(critic.rubric_keys()[:-1], 3)},
         {"fixes": [{"text": "a", "optional": False}] * 4},
         {"fixes": ["a plain string"]},
         {"taste": _taste(TASTE_ROW)[1:]},  # a row left out
@@ -72,12 +72,6 @@ def test_the_last_rounds_fixes_are_each_marked_with_evidence(previous):
     assert marked["previous"][0]["fix"] == FIX
 
 
-def test_concept_ranking_must_cover_every_concept():
-    critic.validate_ranking({"ranking": ["a", "b"], "reasons": {"a": "x", "b": "y"}}, ["a", "b"])
-    with pytest.raises(critic.BadVerdict):
-        critic.validate_ranking({"ranking": ["a"], "reasons": {"a": "x"}}, ["a", "b"])
-
-
 def _shot(ws: Workspace, name: str) -> dict:
     """A sim run of a checked build, and that build's check."""
     check = checked(ws, name)
@@ -91,7 +85,7 @@ def test_the_next_round_sees_earlier_verdicts_and_the_builders_answers(ws):
     blocked = critic.answer(ws, "d", [{"status": "blocked", "note": "the number zone spans two maps"}])
 
     assert [b["fix"] for b in blocked] == [FIX]
-    folder = critic.pack(ws, ["d"])
+    folder = critic.pack(ws, "d")
     entry = json.loads((folder / "manifest.json").read_text())["designs"]["d"]
     rounds = json.loads((folder / entry["history"]).read_text())
     assert rounds[-1]["overall"] == 7
@@ -101,7 +95,7 @@ def test_the_next_round_sees_earlier_verdicts_and_the_builders_answers(ws):
 
 def test_a_verdict_records_what_it_judged(ws):
     check = _shot(ws, "d")
-    critic.pack(ws, ["d"])
+    critic.pack(ws, "d")
     recorded = critic.record(ws, "d", verdict())
 
     assert recorded["shots"] == ".cache/designs/d/sim/20260101-000000"
@@ -134,7 +128,7 @@ def test_a_round_is_not_packed_until_the_last_fixes_are_answered(ws):
     _shot(ws, "d")
     critic.record(ws, "d", verdict())
     with pytest.raises(critic.Unanswered):
-        critic.pack(ws, ["d"])
+        critic.pack(ws, "d")
 
 
 @pytest.mark.parametrize(

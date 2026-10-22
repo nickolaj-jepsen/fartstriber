@@ -6,12 +6,10 @@ import shutil
 import pytest
 
 from livery import approvals, marks, sponsors
-from livery.config import REPO, Workspace
-from livery.kit import load
+from livery.config import Workspace
 from livery.lint.run import thresholds
 from livery.primitives import marks as place
 
-KIT = "mclaren-720s-gt3-evo"
 DOOR = 0.6, 0.6  # on the door skin, both sides
 
 
@@ -38,11 +36,9 @@ def root(drawn, tmp_path, monkeypatch):
     return r
 
 
-@pytest.fixture(scope="module")
-def kit(tmp_path_factory):
-    ws_root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, ws_root / "kits" / KIT)
-    return load(Workspace(root=ws_root, assets=REPO / "assets"), KIT)
+@pytest.fixture
+def kit(real_kit):
+    return real_kit
 
 
 def test_every_drawn_marking_is_one_colour_and_measured():
@@ -101,11 +97,9 @@ def test_review_lists_unapproved_markings_and_applies_his_decisions(root, tmp_pa
     items = marks.review_items(root, out=tmp_path / "sheets")
     assert {i["id"] for i in items} == {"mark:tow", "mark:e"}
     assert all((tmp_path / "sheets" / i["id"].split(":")[1] / "sheet.png").exists() for i in items)
-    written = marks.apply_review(
-        [{"id": "mark:tow", "decision": "accept"}, {"id": "mark:e", "decision": "reject"}, {"id": "x:y"}],
-        root,
-    )
-    assert len(written) == 2
+    assert marks.apply_decision("tow", "accept", root)
+    assert marks.apply_decision("e", "reject", root)
+    assert marks.apply_decision("e", "skip", root) is None
     assert all(v.approved for v in marks.load("tow").variants.values())
     assert not any(v.approved for v in marks.load("e").variants.values())
     assert [i["id"] for i in marks.review_items(root, out=tmp_path / "sheets")] == ["mark:e"]

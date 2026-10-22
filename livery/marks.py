@@ -9,7 +9,6 @@ pointing along the line it reads on and against it; its letters read the same in
 """
 
 import ast
-from collections.abc import Sequence
 from pathlib import Path
 
 from livery import sponsors, typeset
@@ -83,22 +82,15 @@ def _rel(p: Path) -> str:
     return p.relative_to(REPO).as_posix() if p.is_relative_to(REPO) else p.as_posix()
 
 
-def apply_review(decisions: Sequence[dict], root: Path | None = None) -> list[str]:
-    """Writes the markings' part of a review: an accepted marking's variants are approved; a rejected one
-    stays unapproved for its draw.py to be reworked."""
+def apply_decision(name: str, decision: str | None, root: Path | None = None) -> str | None:
+    """Writes the owner's review decision on a marking: accepting approves its variants; a rejected one
+    stays unapproved for its draw.py to be reworked. Says what it did, None for any other decision."""
     root = root or MARKS
-    written = []
-    for d in decisions:
-        kind, _, name = d.get("id", "").partition(":")
-        if kind != "mark":
-            continue
-        if d.get("decision") == "accept":
-            written.append(
-                f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
-            )
-        elif d.get("decision") == "reject":
-            written.append(f"marks/{name}: rejected, left unapproved; rework assets/marks/{name}/draw.py")
-    return written
+    if decision == "accept":
+        return f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
+    if decision == "reject":
+        return f"marks/{name}: rejected, left unapproved; rework assets/marks/{name}/draw.py"
+    return None
 
 
 # --- the driver's name ---------------------------------------------------------------------------------

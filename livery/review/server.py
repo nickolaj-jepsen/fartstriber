@@ -21,12 +21,9 @@ from urllib.parse import parse_qs, urlparse
 
 from livery.config import Workspace
 from livery.review import queue
-from livery.review.apply import apply, proposals
-from livery.review.items import RATINGS
-from livery.review.queue import ReviewOpen
+from livery.review.queue import PORT, ReviewOpen
 
 PAGE = Path(__file__).with_name("page.html")
-PORT = 8765
 POLL = 0.25  # seconds between a waiting review's looks at its group, and its tries for the port
 # park: stop iterating on a design without approving it, so accept always means good enough to race.
 CHOICES = ("accept", "edit", "reject", "skip", "mix", "park")
@@ -47,6 +44,14 @@ class _Server(ThreadingHTTPServer):
         super().server_bind()
 
 
+def _ratings() -> dict[int, str]:
+    # Imported where used, like apply: they bring in sponsors, typesetting and PIL (seconds), which a process
+    # that only serves the page never needs.
+    from livery.review.items import RATINGS
+
+    return RATINGS
+
+
 def _merged(old: dict, body: dict) -> dict:
     """A decide call's fields over the stored decision's, so a call that sends only the note keeps the rest."""
     fields = {"decision": None, "note": "", "mix_of": [], "rating": None}
@@ -65,7 +70,7 @@ def _refusal(item: dict | None, decision: dict) -> str | None:
         return "bad note"
     if choice in ("edit", "mix") and not note.strip():
         return f"{choice} needs a note"
-    if rating is not None and not (item.get("rate") and type(rating) is int and rating in RATINGS):
+    if rating is not None and not (item.get("rate") and type(rating) is int and rating in _ratings()):
         return "bad rating"
     return None
 
@@ -96,7 +101,7 @@ class _Handler(BaseHTTPRequestHandler):
             with self.lock:
                 groups = queue.groups(prune=True)
             cast(_Server, self.server).seen = at
-            self._json({"groups": groups, "ratings": RATINGS})
+            self._json({"groups": groups, "ratings": _ratings()})
         elif url.path == "/img":
             group = queue.read(query.get("g", [""])[0])
             if group is None:
@@ -205,6 +210,8 @@ def _stop(server: _Server, applied: float) -> None:
 
 
 def _apply(ws: Workspace, group: dict, commit: bool) -> dict:
+    from livery.review.apply import apply, proposals
+
     review = time.strftime("%Y%m%d-%H%M%S")
     items, decisions = group["items"], group["decisions"]
     try:
@@ -226,9 +233,13 @@ def _apply(ws: Workspace, group: dict, commit: bool) -> dict:
     return result
 
 
-def serve(ws: Workspace, items: list[dict], port: int = PORT, on_ready=print, commit: bool = False) -> dict:
+def serve(
+    ws: Workspace, items: list[dict], port: int | None = None, on_ready=print, commit: bool = False
+) -> dict:
     """Queues the review and blocks until the owner applies it. `commit` lets Apply commit what it wrote: the
-    CLI's review, never a test's. Port 0 serves a page of its own on a free port."""
+    CLI's review, never a test's. The port is the shared page's unless given; 0 serves a page of its own on a
+    free port."""
+    port = PORT if port is None else port
     server = _claim(port)
     try:
         gid = queue.enqueue(ws.root, items)

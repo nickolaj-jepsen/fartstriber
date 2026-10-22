@@ -289,7 +289,7 @@ def _baked_design(ws: Workspace) -> dict:
 def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
     _baked_design(ws)
 
-    folder = critic.pack(ws, ["d"], baked=True)
+    folder = critic.pack(ws, "d", baked=True)
 
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     entry = manifest["designs"]["d"]
@@ -305,7 +305,7 @@ def test_baked_renders_are_refused_before_the_capture_passed_bake_check(ws):
     capture(ws, {"passed": False, "worst": {"p95": 30.0, "design": "calibration", "view": "rear34"}})
     _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
     with pytest.raises(bake.Unchecked, match="failed bake check"):
-        critic.pack(ws, ["d"], baked=True)
+        critic.pack(ws, "d", baked=True)
 
 
 def _round_two(ws: Workspace, digests: dict, baked: bool) -> None:
@@ -316,12 +316,12 @@ def _round_two(ws: Workspace, digests: dict, baked: bool) -> None:
     critic.record(ws, "d", verdict())
     critic.answer(ws, "d", [{"status": "done", "note": "done"}])
     sim_run(ws, "d", "20260102-000000", digests)
-    critic.pack(ws, ["d"], baked=baked)
+    critic.pack(ws, "d", baked=baked)
     resolved = [{"status": "resolved", "evidence": "front34.png"}]
     critic.record(ws, "d", verdict(previous=resolved, fixes=[]))
     critic.pack_compare(ws, "d", baked=baked)
     critic.record_compare(ws, "d", {"better": "A"}, {"better": "B"})
-    critic.pack(ws, ["d"], mode="adversary", baked=baked)
+    critic.pack(ws, "d", mode="adversary", baked=baked)
     finding = {"text": "the mirrors are plain", "view": "front34", "optional": True}
     critic.record_adversary(ws, "d", {"closest": None, "findings": [finding]})
 

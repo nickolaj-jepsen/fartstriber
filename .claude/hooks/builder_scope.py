@@ -5,7 +5,7 @@ transcript. The prompt is the transcript's first message or, in a workflow, the 
 user request a workflow's harness relays before it is the user's text and never names the design.
 `edit` (PreToolUse on Edit|Write) denies a path outside designs/<name>/ and the scratchpad.
 `shell` (PreToolUse on Bash|PowerShell) denies commands that write files other than through the livery
-CLI, uv run and git, and the livery steps that belong to the session or the critic. A script run with
+CLI, uv run and git, and every livery step but a builder's (BUILDER_STEPS). A script run with
 `uv run python` can still write anywhere, so `stop` (the agent's Stop) sends the builder back once when
 files outside designs/ changed after its first edit or command.
 """
@@ -65,9 +65,21 @@ INTERPRETERS = {
     *(".", "source"),
 }
 UV_VALUE_FLAGS = {"--with", "--python", "-p", "--project", "--directory", "--env-file", "--group", "--extra"}
-SESSION_STEPS = {"review", "install", "export", "kit"}
-SESSION_PAIRS = {("preview", "cameras"), ("references", "fetch"), ("bake", "check")}
-CRITIC_STEPS = {"record", "compare", "adversary", "rank"}
+# The livery steps a builder runs (from its definition, the livery-design skill and the workflows' builder
+# prompts), by command and, for a group, subcommand; every other step is refused, a new one included.
+BUILDER_STEPS: dict[str, set[str] | None] = {
+    **dict.fromkeys(("lint", "check", "build", "sheet", "status")),
+    "preview": {"flat", "sim"},
+    "bake": {"status"},
+    "critic": {"answer", "status"},
+    "sim": {"status"},
+}
+# Whose the refused steps are, for the refusal to say.
+SESSION_STEPS = {
+    *("review", "install", "export", "kit", "stats", "config", "references", "build --all"),
+    *("preview cameras", "bake check", "critic pack", "sim pick-frame"),
+}
+CRITIC_STEPS = {"critic record", "critic compare", "critic adversary", "critic rank"}
 RAW_WRITES = re.compile(
     r"\b(set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content"
     r"|tee-object|export-csv|expand-archive|invoke-webrequest|start-process|invoke-expression)\b"
@@ -276,16 +288,22 @@ def _python(args: list[str]) -> str | None:
 
 def _livery(args: list[str]) -> str | None:
     words = [a for a in args if not a.startswith("-")]
-    first, second = [*words, "", ""][:2]
-    if (first, second) in SESSION_PAIRS:
-        return f"`livery {first} {second}` is the session's step, not a builder's"
-    if first in SESSION_STEPS or (first == "build" and "--all" in args):
-        return (
-            f"`livery {first}{' --all' if first == 'build' else ''}` is the session's step, not a builder's"
-        )
-    if first == "critic" and second in CRITIC_STEPS:
-        return f"`livery critic {second}` records the critic's answer, which the session does"
-    return None
+    if not words or "--help" in args:
+        return None
+    first, second = [*words, ""][:2]
+    subs = BUILDER_STEPS.get(first, set())
+    if first == "build" and "--all" in args:
+        step = "build --all"
+    elif first in BUILDER_STEPS and (subs is None or second in subs):
+        return None
+    else:
+        pair = f"{first} {second}".strip()
+        step = pair if pair in SESSION_STEPS | CRITIC_STEPS or first in BUILDER_STEPS else first
+    if step in CRITIC_STEPS:
+        return f"`livery {step}` records the critic's answer, which the session does"
+    if step in SESSION_STEPS or first in SESSION_STEPS:
+        return f"`livery {step}` is the session's step, not a builder's"
+    return f"`livery {step}` is not a builder step; a builder runs only the livery steps its procedure names"
 
 
 def _uv(args: list[str]) -> str | None:

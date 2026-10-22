@@ -1,13 +1,12 @@
-import sys
 import time
 from dataclasses import replace
 
 import pytest
 
-from livery import approvals, cli, config
+from livery import approvals, config
 from livery.export import export
 from livery.review import apply as review_apply
-from tests.conftest import checked
+from tests.conftest import checked, run_cli
 
 
 @pytest.fixture
@@ -54,8 +53,4 @@ def test_export_takes_the_mip_archived_since_the_approval_under_the_upload_name(
 
 def test_the_export_command_refuses_without_approval(monkeypatch, ws, tmp_path):
     checked(ws, "d")
-    monkeypatch.setattr(cli, "Workspace", lambda: ws)
-    monkeypatch.setattr(sys, "argv", ["livery", "export", "d", "--out", str(tmp_path / "out")])
-    with pytest.raises(SystemExit) as e:
-        cli.main()
-    assert e.value.code == 1
+    assert run_cli(monkeypatch, ws, "export", "d", "--out", str(tmp_path / "out")) == 1

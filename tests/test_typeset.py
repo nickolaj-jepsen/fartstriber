@@ -2,7 +2,6 @@
 
 import io
 import math
-import shutil
 
 import numpy as np
 import pytest
@@ -13,12 +12,11 @@ from PIL import Image
 from shapely.geometry import Polygon
 
 from livery import carspace, typeset
-from livery.config import REPO, Workspace
+from livery.config import REPO
 from livery.kit import load
 from livery.lint.run import thresholds
 from tests.conftest import TWO, drawn, two_islands
 
-KIT = "mclaren-720s-gt3-evo"
 FONTS = REPO / "assets" / "fonts"
 
 
@@ -147,17 +145,10 @@ def test_glyphs_the_paint_would_cut_are_refused_and_small_type_too(kit):
 # --- on the real kit -----------------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def mclaren(tmp_path_factory):
-    root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, root / "kits" / KIT)
-    return load(Workspace(root=root, assets=REPO / "assets"), KIT)
-
-
-def test_a_block_reads_nose_to_tail_on_the_left_and_tail_to_nose_on_the_right(mclaren):
+def test_a_block_reads_nose_to_tail_on_the_left_and_tail_to_nose_on_the_right(real_kit):
     lines = [typeset.Line("TEST TYPE", 0.03)]
     for view, sign in (("side_l", 1), ("side_r", -1)):
-        (text,) = typeset.type_block(mclaren, "t", view, lines, (0.6, 0.7), "#000000")
+        (text,) = typeset.type_block(real_kit, "t", view, lines, (0.6, 0.7), "#000000")
         u = [p[0] for p in text.car["polygon"]]
         assert sign * (np.mean(u) - 0.6) > 0
         assert Polygon(text.car["polygon"]).area > 0

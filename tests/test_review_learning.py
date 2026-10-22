@@ -11,6 +11,7 @@ from PIL import Image
 
 from livery import approvals, hashing
 from livery.config import Workspace
+from livery.errors import LiveryError
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 from tests.conftest import checked, sim_run, write_design
@@ -238,6 +239,16 @@ def test_apply_does_not_commit_a_file_that_had_other_changes(ws, repo):
 
     assert any(w.startswith("not committed") and "kits/tiny/approved.json" in w for w in written)
     assert _git(repo, "rev-parse", "HEAD") == start
+
+
+def test_a_decision_on_a_kind_apply_does_not_know_fails_before_anything_is_written(ws):
+    approval = ws.kits / "tiny" / "approved.json"
+    approval.write_text("{}\n")
+    decisions = {"kit:tiny": {"decision": "accept"}, "poster:x": {"decision": "accept"}}
+    with pytest.raises(LiveryError, match="poster:x"):
+        review_apply.apply(ws, [_item("kit:tiny"), _item("poster:x")], decisions)
+    assert not _ledger(ws)
+    assert approval.read_text() == "{}\n"
 
 
 def test_proposals_are_reviewed_and_the_accepted_ones_come_back(ws, tmp_path):
