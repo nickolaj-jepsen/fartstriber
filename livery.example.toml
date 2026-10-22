@@ -19,3 +19,15 @@ sha256 = "<sha256 of the file>"                 # `livery sim status` checks the
 subsession = 12345678                           # SubSessionID, as the SDK names the replay: sim runs refuse another
 track_name = "daytona 2011 road"                # TrackName, as the SDK names it
 track = 'daytona\2011\road'                     # the track's path in camera.ini: its camera set
+
+# Optional: agents start the sim on the preview replay when a run needs it, and close it again. Without
+# this table, runs wait for you to open the replay. `livery sim login` once first; `livery sim status`
+# checks everything a launch needs.
+[sim]
+launch = "idle"              # "idle": only once you've been away idle_minutes; "anytime"; or "never"
+idle_minutes = 5             # minutes without keyboard or mouse input
+close_after_minutes = 30     # closed once no run has wanted it this long (a launch takes 4-5 minutes)
+display_mode = "monitor"     # monitor, oculus, openvr or openxr
+full_screen_stops = true     # a full-screen app or game in front: no launch, and an agent-started sim closes at once
+battery_stops = true         # on battery: no launch
+ui_closes = true             # you in the iRacing UI: an agent-started sim closes after the current run

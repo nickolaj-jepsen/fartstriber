@@ -3,29 +3,49 @@
 .rpy file and the launch credentials). The service endpoint `/play_replay` is not used by the current UI;
 only this spawn + RPC path launches a replay.
 
-The sim holds the RPC connection until it exits, so a launch blocks, serving the sim, for the whole session.
+The sim holds the RPC connection until it exits. Closing it is a WM_CLOSE posted to its windows, which
+needs no focus, and a kill if it doesn't exit; only an agent-started sim is ever closed (`livery.simhost`).
 """
 
+import ctypes
+import ctypes.wintypes as wt
 import json
 import re
 import socket
 import subprocess
+import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from livery import state
 from livery.errors import LiveryError
 
 SERVICE = "http://127.0.0.1:32034"
 SIM_STATUS = "/get_sim_status"
 REPLAY_LIST = "/get_replay_list"
-SIM_EXE = "iRacingSim64DX11.exe"  # the sim process that connects back to the ui_port
 # The UI launches the sim through the Epic anti-cheat wrapper whenever the anti-cheat engine is EOS (the
 # current one), even for a replay — the sim's own tamper check fails when started directly. A replay needs
 # no access token, so the wrapper just passes the args through.
 LAUNCHER = "start_protected_game.exe"
 TASK_NAME = "legacyPlayReplay"
+WM_CLOSE = 0x0010
+
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_kernel32.OpenProcess.restype = wt.HANDLE
+_kernel32.OpenProcess.argtypes = (wt.DWORD, wt.BOOL, wt.DWORD)
+_kernel32.TerminateProcess.argtypes = (wt.HANDLE, wt.UINT)
+_kernel32.CloseHandle.argtypes = (wt.HANDLE,)
+_user32.PostMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
+_user32.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
+TERMINATE = 0x0001
+
+
+class LaunchError(LiveryError):
+    """The sim couldn't be started on the replay; the message says what was missing or failed."""
 
 
 def _get(path: str, timeout: float = 5.0) -> tuple[int, str]:
@@ -126,22 +146,22 @@ def handle(obj: dict, task: dict) -> tuple[dict | None, bool]:
     return None, False
 
 
-def _serve(conn: socket.socket, task: dict, log: Callable[[str], None]) -> None:
-    """Answer the sim's JSON-RPC until it ends or closes the connection."""
+def serve(
+    conn: socket.socket, task: dict, log: Callable[[str], None], stop: threading.Event | None = None
+) -> str:
+    """Answer the sim's JSON-RPC until it ends the session or closes the connection; returns how it ended."""
     conn.settimeout(1.0)
     buf = ""
     answered = False
-    while True:
+    while stop is None or not stop.is_set():
         try:
             data = conn.recv(65536)
         except TimeoutError:
             continue
         except OSError:  # the sim reset the connection (e.g. on its own exit)
-            log("the sim closed the connection")
-            return
+            return "the sim closed the connection"
         if not data:
-            log("the sim closed the connection")
-            return
+            return "the sim closed the connection"
         objs, buf = decode_all(buf + data.decode(errors="replace"))
         for obj in objs:
             reply, done = handle(obj, task)
@@ -151,12 +171,39 @@ def _serve(conn: socket.socket, task: dict, log: Callable[[str], None]) -> None:
                 answered = True
                 log("answered getTask: the sim is loading the replay")
             if done:
-                log("the sim ended the session")
-                return
+                return "the sim ended the session"
+    return "stopped"
 
 
-# The display modes the UI accepts; the sim is told which so it doesn't fall back to the VR headset path.
-DISPLAY_MODES = ("monitor", "oculus", "openvr", "openxr")
+class Launch:
+    """One sim start: a ui_port socket and the wrapper spawned on it. `accept` waits for the sim to connect;
+    `serve` answers it."""
+
+    def __init__(self, creds: dict, file: str, install: Path, display_mode: str):
+        exe = install / LAUNCHER
+        if not exe.is_file():
+            raise LaunchError(f"the launcher isn't at {exe}")
+        self.task = launch_task(creds, file)
+        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(1)
+        self.port = self.srv.getsockname()[1]
+        self.at = time.time()
+        self.proc = subprocess.Popen(
+            [str(exe), f"-ui_port={self.port}", f"-display_mode={display_mode}"], cwd=str(install)
+        )
+
+    def accept(self, timeout: float) -> socket.socket:
+        self.srv.settimeout(timeout)
+        try:
+            conn, _ = self.srv.accept()
+        except TimeoutError:
+            if self.proc.poll() is None:
+                self.proc.terminate()
+            raise LaunchError(f"the sim didn't connect within {timeout:.0f} s") from None
+        finally:
+            self.srv.close()
+        return conn
 
 
 def launch_replay(
@@ -165,31 +212,67 @@ def launch_replay(
     install: Path,
     log: Callable[[str], None],
     display_mode: str = "monitor",
-    connect_timeout: float = 90.0,
+    connect_timeout: float = 300.0,
 ) -> dict:
-    """Open `file` in the sim with `creds`: spawn the sim on a fresh ui_port, telling it the display mode,
-    and serve its getTask over a local socket. Blocks, serving the sim, until it exits. Refuses if the sim
-    is already running."""
+    """Open `file` in the sim with `creds`, and serve it until it exits. Refuses if the sim already runs."""
     if sim_running():
-        raise LiveryError("the sim is already running; close it first")
-    exe = install / LAUNCHER
-    if not exe.is_file():
-        raise LiveryError(f"the launcher isn't at {exe}")
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.bind(("127.0.0.1", 0))
-    srv.listen(1)
-    srv.settimeout(connect_timeout)
-    port = srv.getsockname()[1]
-    task = launch_task(creds, file)
-    proc = subprocess.Popen([str(exe), f"-ui_port={port}", f"-display_mode={display_mode}"])
-    log(f"launched {LAUNCHER} (pid {proc.pid}) on ui_port {port}, display_mode {display_mode}")
-    try:
-        conn, _ = srv.accept()
-    except TimeoutError:
-        proc.terminate()
-        raise LiveryError(f"the sim didn't connect within {connect_timeout:.0f}s") from None
-    finally:
-        srv.close()
-    with conn:
-        _serve(conn, task, log)
-    return {"pid": proc.pid, "port": port}
+        raise LaunchError("the sim is already running; close it first")
+    launch = Launch(creds, file, install, display_mode)
+    log(f"launched {LAUNCHER} (pid {launch.proc.pid}) on ui_port {launch.port}, display_mode {display_mode}")
+    with launch.accept(connect_timeout) as conn:
+        log(serve(conn, launch.task, log))
+    return {"pid": launch.proc.pid, "port": launch.port}
+
+
+def newest(pids: list[int], since: float) -> dict | None:
+    """The process of `pids` that started last, at or after `since` (epoch seconds), as `state.alive` knows
+    it."""
+    best = None
+    for pid in pids:
+        started = state.started(pid)
+        if started is None:
+            continue
+        epoch = started / 1e7 - 11644473600  # FILETIME: 100 ns ticks since 1601
+        if epoch >= since - 5 and (best is None or started > best["started"]):
+            best = {"pid": pid, "started": started}
+    return best
+
+
+def _windows(pid: int) -> list[int]:
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
+    def visit(hwnd, _):
+        owner = wt.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid:
+            found.append(hwnd)
+        return True
+
+    _user32.EnumWindows(visit, 0)
+    return found
+
+
+def close(sim: dict, log: Callable[[str], object], timeout: float = 90.0) -> str:
+    """Close the sim `sim` ({pid, started}): WM_CLOSE to its top-level windows, which neither focuses nor
+    raises them, then a kill if it hasn't exited after `timeout` seconds. Returns how it went."""
+    if not state.alive(sim):
+        return "the sim had already exited"
+    for hwnd in _windows(sim["pid"]):
+        _user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        if not state.alive(sim):
+            return f"the sim exited {time.monotonic() - t0:.0f} s after WM_CLOSE"
+        time.sleep(0.5)
+    log(f"the sim didn't exit {timeout:.0f} s after WM_CLOSE; ending its process")
+    h = _kernel32.OpenProcess(TERMINATE, False, sim["pid"])
+    if h:
+        try:
+            _kernel32.TerminateProcess(h, 1)
+        finally:
+            _kernel32.CloseHandle(h)
+    t0 = time.monotonic()
+    while state.alive(sim) and time.monotonic() - t0 < 20:
+        time.sleep(0.5)
+    return "the sim was ended" if not state.alive(sim) else "the sim wouldn't end"

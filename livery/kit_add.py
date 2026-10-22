@@ -24,7 +24,7 @@ camera set once, the review itself) or a step that can't run yet.
 from dataclasses import replace
 from pathlib import Path
 
-from livery import bake, calibrate, cameras, config, kit_fit, kit_review, kit_spec, pick_frame, state
+from livery import bake, calibrate, cameras, config, kit_fit, kit_review, kit_spec, pick_frame, simhost, state
 from livery import kit as kits
 from livery.config import Config, Workspace
 from livery.errors import LiveryError
@@ -99,7 +99,8 @@ def install_cameras(cfg: Config, ws: Workspace, kit: Kit, log=print) -> bool:
     if not cameras.previews_missing(cfg.documents, track, mine):
         return False
     views = cameras.track_views(ws, cfg, track, ws.policy.preview)
-    running = cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log)
+    close = lambda: simhost.close_agent_locked(cfg, "camera.ini has to change", log)  # noqa: E731
+    running = cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log, close=close)
     for note in cameras.install_previews(cfg.documents, track, views, running):
         log(note)
     return True

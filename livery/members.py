@@ -113,6 +113,19 @@ def session_or_raise() -> list[dict]:
     return cookies
 
 
+def fresh_session() -> list[dict]:
+    """The saved session, once a benign call proves it still authenticates. An expired one needs the owner:
+    iRacing's remember-me cookie only reaches its sign-in page, never a new session."""
+    cookies = session_or_raise()
+    try:
+        status = verify(cookies)
+    except OSError as e:
+        raise LiveryError(f"couldn't reach iRacing to check the session: {e}") from None
+    if status != 200:
+        raise NotSignedIn(f"the saved iRacing session has expired (HTTP {status}): run `livery sim login`")
+    return cookies
+
+
 def credential_fields(result: dict) -> dict[str, bool]:
     """Which expected credential fields came back and are non-empty — for reporting, without the values."""
     return {k: bool(result.get(k)) for k in CRED_FIELDS}

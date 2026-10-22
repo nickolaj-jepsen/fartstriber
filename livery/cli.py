@@ -1,4 +1,3 @@
-import contextlib
 import dataclasses
 import functools
 import json
@@ -450,10 +449,11 @@ def preview_cameras(
     The set gets the preview cameras of every kit shot on that track, so adding one kit keeps the others'.
     The poses come from each kit's profile; one it lacks is filled in with the default sized for its car.
 
-    The sim reads the set when a session opens: open the replay again afterwards. With --arm it waits, when
-    camera.ini has to change, until the sim is closed, so one close and reopen loads the cameras.
+    The sim reads the set when a session opens: open the replay again afterwards. With --arm, when
+    camera.ini has to change, it closes a sim an agent started (the next run starts it again) or waits until
+    you close yours, so one close and reopen loads the cameras.
     """
-    from livery import cameras, config, kit
+    from livery import cameras, config, kit, simhost
     from livery.iracing import sim_running
 
     cfg = config.load()
@@ -466,8 +466,11 @@ def preview_cameras(
         raise typer.BadParameter("name the kit, or pass --restore")
     else:
         views = cameras.track_views(ws, cfg, track, ws.policy.preview)
+        close = lambda: simhost.close_agent_locked(cfg, "camera.ini has to change", log)  # noqa: E731
         running = (
-            cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log) if arm else sim_running(cfg)
+            cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log, close=close)
+            if arm
+            else sim_running(cfg)
         )
         notes = cameras.install_previews(cfg.documents, track, views, running)
     _emit(as_json, {"notes": notes}, notes)
@@ -641,12 +644,14 @@ def sim_status(as_json: AsJson = False) -> None:
     The replay file against its sha256, the SDK connection, the replay against your settings, the car and
     its paint names, its kit's frame and its preview and measurement camera groups, the sim lock's holder,
     paint left by a run that died, Trading Paints Downloader, and the sim window (in front, minimised, the
-    cursor over it).
+    cursor over it). Then whether agents start the sim: the [sim] settings, a hold or allow, how long the
+    owner has been idle, who started the open sim, its host, and everything a launch needs, the iRacing
+    sign-in among them.
     """
     from livery import config
     from livery.simsession import status
 
-    found = status(config.load(), Workspace())
+    found = status(config.load(), Workspace(), preflight=True)
     _emit(as_json, {"status": found}, found)
 
 
@@ -701,111 +706,119 @@ def sim_login(as_json: AsJson = False) -> None:
     _emit(as_json, result, f"signed in; session saved to {result['store']}")
 
 
-@sim_app.command("open")
-def sim_open(
-    session_id: Annotated[
-        int | None,
-        typer.Option("--session-id", help="An online replay's subsession id."),
-    ] = None,
-    track_id: Annotated[
-        int | None,
-        typer.Option("--track-id", help="A saved local replay's track id (with --car-id)."),
-    ] = None,
-    car_id: Annotated[
-        int | None,
-        typer.Option("--car-id", help="A saved local replay's car id (with --track-id)."),
-    ] = None,
+def _minutes(text: str) -> float:
+    """'90', '90m', '3h' or '1h30m' as minutes."""
+    m = re.fullmatch(r"\s*(?:(\d+(?:\.\d+)?)h)?\s*(?:(\d+(?:\.\d+)?)m?)?\s*", text)
+    if not m or not any(m.groups()):
+        raise typer.BadParameter(f"{text!r} isn't a duration like 90m, 3h or 1h30m")
+    return float(m[1] or 0) * 60 + float(m[2] or 0)
+
+
+Duration = Annotated[
+    str | None, typer.Option("--for", help="How long: 90m, 3h, 1h30m [default: until lifted].")
+]
+
+
+@sim_app.command("up")
+def sim_up(
     replay_file: Annotated[
-        str | None,
-        typer.Option("--file", help="The replay .rpy file name to launch [default: from settings]."),
+        str | None, typer.Option("--file", help="The saved replay to open [default: the preview replay].")
     ] = None,
-    display_mode: Annotated[
-        str,
-        typer.Option("--display-mode", help="monitor, oculus, openvr or openxr (with --launch)."),
-    ] = "monitor",
-    launch: Annotated[
-        bool,
-        typer.Option(
-            "--launch",
-            help="Actually hand the replay to the sim, which opens and takes focus. Without it, only fetch "
-            "and report.",
-        ),
-    ] = False,
     as_json: AsJson = False,
 ) -> None:
-    """Fetch the credentials that open a replay, over iRacing's client-proxy service, and report.
+    """Start the sim on the preview replay now, as agents do, whatever the launch rule says.
 
-    Needs `livery sim login` first. It requests the replay credentials over CPS (a cookie-authenticated
-    websocket) and reports whether they came back (never the values). The replay is the one named by
-    --file, --track-id/--car-id or --session-id, else the preview replay from your settings. With --launch it
-    starts the sim on that replay and serves it until it exits.
+    Needs the [sim] settings and `livery sim login`. Returns once the replay is open; the sim then closes
+    by itself once no run has wanted it for close_after_minutes, as an agent-started sim does. It tries
+    again after a failed launch, which agents wait out. Never starts a second sim.
     """
-    from livery import cps, members, simlaunch
+    from livery import config, simhost
+    from livery.iracing import sim_running
 
+    cfg = config.load()
+    if cfg.launch is None:
+        raise config.ConfigError(f"{config.user_file()} has no [sim] table; {config.EXAMPLE} describes it")
+    file = replay_file or cfg.replay.file
     log = _progress(as_json)
-    cookies = members.session_or_raise()
-    if not members.has_session(cookies):
-        raise members.NotSignedIn("the saved iRacing session has expired: run `livery sim login`")
-    # How the replay is identified to CPS: a saved local .rpy by its track + car (offline, plus every
-    # participant so the sim can load all cars), else a subsession id (online). A local replay opens from the
-    # file; an online one streams from the server. Given just a file name, its ids come from the replay list.
-    args: dict[str, Any] | None = None
-    label, file = None, replay_file
-    if session_id is not None:
-        args, label = cps.request_args(session_id=session_id), f"session {session_id}"
-    elif track_id is not None and car_id is not None:
-        args, label = cps.request_args(track_id=track_id, car_id=car_id), f"track {track_id}, car {car_id}"
-    elif replay_file is not None:
-        entry = simlaunch.replay_entry(replay_file)
-        if entry is None or entry.get("track_id") is None:
-            _emit(
-                as_json,
-                {"note": f"{replay_file} not found in the local replay list"},
-                [f"no replay: {replay_file} is not in the local replay list"],
-            )
-            return
-        args = cps.request_args(
-            track_id=entry["track_id"], car_id=entry["car_id"], sess_carids=entry["sess_carids"]
-        )
-        label = f"{replay_file} (track {entry['track_id']}, car {entry['car_id']})"
-    else:  # fall back to the preview replay, if the settings are present
-        from livery import config
-
-        with contextlib.suppress(config.ConfigError):
-            cfg = config.load()
-            args, label = cps.request_args(session_id=cfg.replay.subsession), cfg.replay.label
-            file = cfg.replay.file
-    if args is None:
-        _emit(
-            as_json,
-            {"note": "name the replay: --file (saved), --track-id/--car-id, or --session-id (online)"},
-            ["no replay: pass --file (a saved replay), --track-id and --car-id, or --session-id (online)"],
-        )
+    if sim_running(cfg):
+        by = "an agent" if simhost.agent_sim() else "you"
+        _emit(as_json, {"open": True, "by": by}, f"the sim is already open (started by {by})")
         return
-    log(f"requesting replay credentials for {label} over CPS")
-    creds = cps.replay_credentials(cookies, args)
-    fields = members.credential_fields(creds)
-    ok = bool(creds.get("success")) and all(fields.values())
-    result: dict = {"replay": label, "success": creds.get("success"), "credentials": fields}
-    text = [
-        f"replay: {label}",
-        f"credentials: {'ok' if ok else 'incomplete'} ("
-        + ", ".join(f"{k}={'ok' if present else 'missing'}" for k, present in fields.items())
-        + ")",
-    ]
-    if launch and ok:
-        from livery import config
+    simhost.clear_failure()
+    if simhost.host() is None:
+        simhost.spawn(file)
+    log(f"starting the sim on {file}; a launch takes a few minutes")
+    result = simhost.wait_ready(log)
+    _emit(as_json, result, f"the replay is open, {result['ready_s']:.0f} s after the launch")
 
-        install = Path(r"C:\Program Files (x86)\iRacing")
-        with contextlib.suppress(config.ConfigError):
-            install = config.load().install
-        log("opening the replay in the sim — it takes focus; this stays running while the sim is open")
-        info = simlaunch.launch_replay(creds, file or "", install, log, display_mode=display_mode)
-        result["launched"] = info
-        text.append(f"sim session ended (pid {info['pid']}, ui_port {info['port']})")
-    elif launch:
-        text.append("not launched: credentials incomplete")
-    _emit(as_json, result, text)
+
+@sim_app.command("down")
+def sim_down(as_json: AsJson = False) -> None:
+    """Close the sim an agent started, once the run under way ends; a sim you opened is never closed."""
+    from livery import config, simhost, simlock
+
+    cfg = config.load()
+    log = _progress(as_json)
+    if simhost.agent_sim() is None:
+        _emit(as_json, {"closed": False}, "no agent-started sim is open")
+        return
+    with simlock.sim_lock("livery sim down", log=log):
+        closed = simhost.close_agent(cfg, "livery sim down", log)
+    _emit(
+        as_json,
+        {"closed": closed},
+        "closed the agent-started sim" if closed else "no agent-started sim is open",
+    )
+
+
+def _override(mode: str, duration: str | None, off: bool, as_json: bool) -> None:
+    from livery import simrule
+
+    if off:
+        current = simrule.override()
+        if current is not None and current.mode == mode:
+            simrule.set_override(None)
+        _emit(as_json, {"override": None}, f"{mode}: lifted")
+        return
+    o = simrule.set_override(mode, _minutes(duration) * 60 if duration else None)
+    assert o is not None
+    _emit(as_json, {"override": {"mode": o.mode, "until": o.until}}, o.describe())
+
+
+@sim_app.command("hold")
+def sim_hold(
+    duration: Duration = None,
+    off: Annotated[bool, typer.Option("--off", help="Lift the hold.")] = False,
+    as_json: AsJson = False,
+) -> None:
+    """Keep agents off the sim: no launches, and an agent-started sim closes once the run under way ends.
+
+    Lasts --for that long, or until `livery sim hold --off` (or `livery sim allow`, which replaces it).
+    A sim you opened yourself is never closed.
+    """
+    _override("hold", duration, off, as_json)
+
+
+@sim_app.command("allow")
+def sim_allow(
+    duration: Duration = None,
+    off: Annotated[bool, typer.Option("--off", help="Lift the allow.")] = False,
+    as_json: AsJson = False,
+) -> None:
+    """Let agents start the sim while you're at the PC, instead of waiting until you've been away.
+
+    Lasts --for that long, or until `livery sim allow --off`. A full-screen game in front still stops
+    them, as the [sim] settings say.
+    """
+    _override("allow", duration, off, as_json)
+
+
+@sim_app.command("host", hidden=True)
+def sim_host(replay_file: Annotated[str, typer.Option("--file")]) -> None:
+    """The sim host, which `livery.simhost.spawn` starts detached: launch, serve and close the sim."""
+    from livery import config, simhost
+
+    simhost.run(config.load(), replay_file)
 
 
 @config_app.command("show")

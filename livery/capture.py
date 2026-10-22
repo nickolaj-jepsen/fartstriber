@@ -26,7 +26,7 @@ class SimInFront(CaptureError):
     pass
 
 
-def _process_name(pid: int) -> str:
+def process_name(pid: int) -> str:
     h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not h:
         return ""
@@ -39,7 +39,7 @@ def _process_name(pid: int) -> str:
         kernel32.CloseHandle(h)
 
 
-def _pid(hwnd: int) -> int:
+def window_pid(hwnd: int) -> int:
     pid = wt.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     return pid.value
@@ -52,7 +52,7 @@ def find_window(process_exe: str) -> int | None:
     @ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
     def visit(hwnd, _):
         nonlocal best
-        if user32.IsWindowVisible(hwnd) and _process_name(_pid(hwnd)).lower() == process_exe.lower():
+        if user32.IsWindowVisible(hwnd) and process_name(window_pid(hwnd)).lower() == process_exe.lower():
             r = wt.RECT()
             user32.GetWindowRect(hwnd, ctypes.byref(r))
             area = (r.right - r.left) * (r.bottom - r.top)
@@ -79,24 +79,34 @@ class _Entry(ctypes.Structure):
     )
 
 
-def processes() -> list[str]:
-    """The exe names of every running process."""
+def _snapshot() -> list[tuple[int, str]]:
+    """(pid, exe name) of every running process."""
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.CreateToolhelp32Snapshot.restype = wt.HANDLE
     snap = k.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
     if snap in (None, wt.HANDLE(-1).value):
         return []
-    names = []
+    found = []
     try:
         e = _Entry()
         e.dwSize = ctypes.sizeof(_Entry)
         ok = k.Process32FirstW(wt.HANDLE(snap), ctypes.byref(e))
         while ok:
-            names.append(e.szExeFile)
+            found.append((int(e.th32ProcessID), e.szExeFile))
             ok = k.Process32NextW(wt.HANDLE(snap), ctypes.byref(e))
     finally:
         k.CloseHandle(wt.HANDLE(snap))
-    return names
+    return found
+
+
+def processes() -> list[str]:
+    """The exe names of every running process."""
+    return [name for _, name in _snapshot()]
+
+
+def pids(process_exe: str) -> list[int]:
+    """The pids of every running `process_exe`."""
+    return [pid for pid, name in _snapshot() if name.lower() == process_exe.lower()]
 
 
 class Window:
@@ -104,7 +114,7 @@ class Window:
 
     def __init__(self, hwnd: int):
         self.hwnd = hwnd
-        self.pid = _pid(hwnd)
+        self.pid = window_pid(hwnd)
 
     @classmethod
     def find(cls, process_exe: str) -> "Window | None":
@@ -114,7 +124,7 @@ class Window:
     def in_front(self) -> bool:
         """The sim has the foreground: the owner is using it, so a run must not drive it."""
         fg = user32.GetForegroundWindow()
-        return bool(fg) and _pid(fg) == self.pid
+        return bool(fg) and window_pid(fg) == self.pid
 
     def minimised(self) -> bool:
         return bool(user32.IsIconic(self.hwnd))
@@ -125,7 +135,7 @@ class Window:
         if not user32.GetCursorPos(ctypes.byref(p)):
             return False
         h = user32.WindowFromPoint(p)
-        return bool(h) and _pid(h) == self.pid
+        return bool(h) and window_pid(h) == self.pid
 
     def client_size(self) -> tuple[int, int]:
         c = wt.RECT()
