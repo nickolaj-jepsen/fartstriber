@@ -1,11 +1,11 @@
-version: 2
+version: 3
 fingerprint:
   template: {file: McLaren 720s EVO GT3.psd, size: 48358446, sha256: c28562da9f184a59b9708f8cbcc1c4e0c9860c653cd901181981c205e1832914}
   model: {file: mclaren720sgt3.dat, size: 2158691, sha256: da78869e9330b82a8344a285706e15091ab7db639161bb9e84f869f2e7a2e8bb}
 canvas: 2048
 paint_folder: mclaren720sgt3
 mirror_axis_y: 1205.5
-views: [side_l, side_r, top]
+views: [side_l, side_r, top, front, rear]
 keep_clear:
 - kind: number
   box: [1755, 77, 1811, 126]

@@ -62,12 +62,15 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
 - Car sets:
   - A car set accepts only the car's own camera names. A set with extra names is rejected: the sim uses its stock cameras and clears `LastCarSet` on exit. Moving the stock-named cameras works.
   - Car-set cameras ride with the car but lag it in turns. On a straight the car sits square and centred.
-- A type 3 (chase) camera sits in the car's frame (x, y, z in metres from the car's origin) and aims at the car, so its yaw and pitch are ignored.
-  - Field 9 raises the aim point, by about 500 px per unit at 25 m and 0.2 rad.
+- A type 3 (chase) camera sits in the car's frame (x, y, z in metres from the car's origin) and aims at the car's origin, so its yaw and pitch are ignored.
+  - Field 9 tilts the view up, about 0.055–0.06 rad per unit whatever the distance: 500 px per unit at 25 m and 0.2 rad, 535 at 12 m and 0.216 rad.
   - At 0 the car sits about 130 px above centre in a side view; 0.27 centres it.
+  - Any negative value tilts the view about 11° down: -1.4 and -2.49 frame alike. A close-up of the bonnet comes from where the camera stands, not the value.
+- The camera follows the car's heading but not its roll or pitch: the banking turns the car up to 4° against the front and rear views from one frame to another, and shows more of its roof or sill from the sides. On Daytona's oval the car rolls 0.05 rad, on the infield straights 0.003–0.017.
 - A camera looking straight down leaves the roll free, so the top view turns with the car's heading. Tilting it 5° to the side or 10° back holds the car to within 15 px across frames.
 - The shots repeat: car pixels match exactly in any order of views and across sim sessions. Only animated foliage and a 1 px window border differ.
-- A fence or wall sits between camera and car on some frames, so a frame needs a clear line from every camera.
+- A fence or wall sits between camera and car on some frames, so a frame needs a clear line from every camera. On the oval the wall hides the right side whole and a fifth of the rear three-quarter view.
+- Closer than 25 m (rear_chase and front at 12 m, the close-ups at 4–5 m) the car reaches into the replay UI's bands, so their shots change there with every paint.
 - Framing at the preview poses:
   - At 25 m and 0.2 rad the McLaren's paint spans about 1630 px across a 1920 × 1080 window in a side view (1507 × 360 px of a 1780 × 992 one): the view scales with the window.
   - The three-quarter views, at 0.24 rad, show the car about 1100 px wide.
@@ -77,7 +80,8 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
 ## Rendering
 
 - Shots are deterministic given the same path to them. Frames without a reload, reloads of the same paint, and views reached the same way differ on car pixels by at most 2/255 (dither). The same paint an hour later differs by 0.9 levels on average.
-- The owner's `rendererDX11Monitor.ini` turns off antialiasing, motion blur, depth of field, SSAO, SSR and dynamic cubemaps.
+- `rendererDX11Monitor.ini` holds `[Graphics Options]` and a `[Replay Graphics]` section a replay uses instead for the keys it has (LOD, shadows, cubemaps, detail). The owner's turns off antialiasing, motion blur, depth of field and SSAO; replays render dynamic cubemaps.
+- Car and World LOD Behavior "Off" in the options writes `LODPctMax` and `LODPctDynoMax` 100. Anything else lets the sim swap in coarser models below its frame-rate target.
 - Auto exposure (on, with HDR) doesn't react to the paint: the background doesn't move between a white car and a black one.
 
 ### Coded patterns
