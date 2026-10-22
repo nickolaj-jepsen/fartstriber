@@ -292,6 +292,20 @@ def test_stats_sets_the_critic_beside_his_decisions_and_counts_the_loops(ws, tmp
     assert stats.lines(report)
 
 
+def test_stats_counts_the_sims_agents_started_and_why_each_ended(ws):
+    for minutes in (30, 31):
+        ended = f"no run has wanted it for {minutes} min"
+        metrics.log("", "sim-host", {"connect": 40.0, "ready": 250.0, "total": 3000.0}, ended=ended)
+    metrics.log("", "sim-host", {"connect": None, "ready": None, "total": 5.0}, ended="failed")
+
+    sims = stats.stats(ws)["launches"]
+
+    assert sims["hosts"] == 3
+    assert sims["ready_s"]["n"] == 2
+    assert sorted(sims["ended"].values()) == [1, 2]  # the two unwanted closes count together
+    assert stats.lines(stats.stats(ws))
+
+
 def test_a_final_review_lists_every_waiver_with_its_reason(ws):
     check = checked(ws, "d")
     check["waivers"] = [

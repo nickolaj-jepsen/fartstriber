@@ -81,6 +81,7 @@ SESSION_STEPS = {
     *("preview cameras", "bake check", "critic pack", "sim pick-frame", "taste put", "taste retire"),
 }
 CRITIC_STEPS = {"critic record", "critic compare", "critic adversary", "critic rank"}
+OWNER_STEPS = {"sim up", "sim down", "sim hold", "sim allow", "sim login", "sim host"}  # never an agent's
 RAW_WRITES = re.compile(
     r"\b(set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content"
     r"|tee-object|export-csv|expand-archive|invoke-webrequest|start-process|invoke-expression)\b"
@@ -299,7 +300,10 @@ def _livery(args: list[str]) -> str | None:
         return None
     else:
         pair = f"{first} {second}".strip()
-        step = pair if pair in SESSION_STEPS | CRITIC_STEPS or first in BUILDER_STEPS else first
+        named = SESSION_STEPS | CRITIC_STEPS | OWNER_STEPS
+        step = pair if pair in named or first in BUILDER_STEPS else first
+    if step in OWNER_STEPS:
+        return f"`livery {step}` is the owner's, never an agent's"
     if step in CRITIC_STEPS:
         return f"`livery {step}` records the critic's answer, which the session does"
     if step in SESSION_STEPS or first in SESSION_STEPS:

@@ -113,6 +113,7 @@ REFUSED = {
         "uv run livery taste put row.json",
     ],
     "critic": ["uv run livery critic record alpha verdict.json", "uv run livery critic rank a b --pairs d"],
+    "owner's": ["uv run livery sim up", "uv run livery sim login"],
     "not a builder step": ["uv run livery launch alpha", "uv run livery sim launch"],  # steps added later
 }
 
@@ -147,7 +148,7 @@ def test_every_step_the_scope_names_is_a_real_command():
     real = _cli_steps()
     named = {f"{c} {s}" for c, subs in scope.BUILDER_STEPS.items() for s in subs or ()}
     named |= {c for c, subs in scope.BUILDER_STEPS.items() if subs is None}
-    named |= {s.removesuffix(" --all") for s in scope.SESSION_STEPS | scope.CRITIC_STEPS}
+    named |= {s.removesuffix(" --all") for s in scope.SESSION_STEPS | scope.CRITIC_STEPS | scope.OWNER_STEPS}
     tops = {s.split()[0] for s in real}
     assert {s for s in named if s not in real and s not in tops} == set()
 
@@ -157,3 +158,12 @@ def test_every_real_command_is_a_builders_or_refused_as_someone_elses():
     for step in _cli_steps():
         why = scope._livery([*step.split(), "alpha"])
         assert why is None or "not a builder step" not in why, why
+
+
+@pytest.mark.parametrize("step", ["up", "down", "hold --for 3h", "allow", "login"])
+def test_a_builder_never_starts_holds_or_signs_in_to_the_sim(step):
+    assert scope._why(f"uv run livery sim {step}") is not None
+
+
+def test_a_builder_reads_the_sim_status():
+    assert scope._why("uv run livery sim status --json") is None

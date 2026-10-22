@@ -45,10 +45,39 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (Daytona road course
   - The sim takes client sizes larger than a monitor (2700 × 1300 across two) and taller than the 1440 px desktop (1780 × 1500, past Windows' default 1460 px cap). Its rows below the desktop render as the rest of the frame.
 - Shooting a minimised window would mean restoring it, which takes focus. A frame can come back blank. A click into the sim brings it to the front; the owner switching between other windows doesn't disturb a capture.
 
+## Opening and closing the sim
+
+Measured on `fartstriper.rpy`, with the iRacing UI running.
+
+- The UI opens a replay by starting `start_protected_game.exe` (the anti-cheat wrapper, even for a replay) with `-ui_port=<port>` and `-display_mode=<mode>`. A display mode keeps the sim off the VR headset prompt.
+- The sim connects to that port and asks `getTask` over JSON-RPC: objects concatenated with no framing.
+  - The answer is `{task: "legacyPlayReplay", parameters}`, where parameters is a plain `file=…&keysrv=…&credentials=…&customerid=…&sess_cred_srv=…&sess_cred=…` string, not url-encoded.
+  - It then sends `simEnding` and `simEnded` as it closes.
+- The credentials come from `registration/process_replay_request` over iRacing's client-proxy socket (Socket.IO, authenticated by the members site's `iracing` cookie). The replay is named by the service's replay list (`127.0.0.1:32034/get_replay_list`):
+
+  | Replay | Asked for by | |
+  |---|---|---|
+  | of an online session (`sessionID` set) | `session_id`: the session, not the subsession | `fartstriper.rpy`: 303769796 |
+  | offline | `track_id` and `car_id`, plus `sess_carids`, the car models from `allCarIDs`, when there are several | |
+
+- Timing:
+
+  | From the launch | |
+  |---|---|
+  | 7–9 s | the sim's process is up |
+  | 21–26 s | it asks for its task |
+  | 224 s | the replay is open on the SDK |
+
+- With the owner in another app, a 400 × 220 loading window takes the foreground for about 3 s, half a minute in. The main window then opens where the owner last had it (client 1920 × 1080 here), behind other windows.
+- The sim keeps running when the process serving its port dies.
+- WM_CLOSE to its windows closes it in 6–13 s, as a normal exit: it rewrites `camera.ini`.
+- When a sim exits, the iRacing UI comes to the front 6–10 s later, whether or not it started that sim.
+- The `iracing` cookie is set for 13 months. A benign call to the members site's proxy (`sessions`) answers 200 while it signs in and 401 without it.
+
 ## Camera sets
 
 - The sim reads a car set (`cameras\cars\<car>\car.cam`) or a track set (`cameras\tracks\<track>\track.cam`) only when a session opens, and only while `camera.ini` points at it (`LastCarSet` or `LastTrackSet`). The sim rewrites `camera.ini` on exit, so it can only be changed while the sim is closed.
-- A replay can't be opened from outside: `iRacingUI.exe <file.rpy>` does nothing, `iracing://` links only switch UI pages, and the sim's command line can't be read. Every camera set change needs the owner to reopen the replay.
+- A camera set change needs the replay reopened: by the owner, or, for an agent-started sim, by closing it and letting the next run start it (Opening and closing the sim).
 - Track sets:
   - A track has no set file until the owner saves one from the camera tool (Ctrl+F12); the stock cameras live in the track's encrypted `.dat`. After a save, the sim sets `LastTrackSet` itself on exit.
   - An iRacing update to the track's cameras doesn't reach a saved set until it is saved again.
@@ -206,8 +235,17 @@ From fits of the McLaren's capture; the last fit's figures are in the kit's `fit
 | The sun's glare on metal in the offline bake: Gaussian blurs (σ 2–256 px) of each metal's highlight energy, the ladder's own glare taken out (McLaren capture 20261020-100748, `materials` fixture shots) | The glare is per channel and centres on a few sun glints, but the ladder can't give their energy. The hottest clip at every step, black metal included. A uniform paint's glare scales with its grey like its shading does, so the kernel can't be fitted on the ladder. Fitted on the fixture's own shots, side_l's far-field metallic p95 rose from 74 to 77–94, and side_r's metallic (p95 2) broke to 26–60. Measuring it would take a capture that paints one glint's island metal over matte black, per glint and view |
 | Levelling car-locked side shots on the sill | the sill is already level to within its own noise (about 0.5°); a fitted line adds that noise as a tilt, so the two sides disagree by 6–14 px instead of 0.6–1.5 |
 | The customer ID in the replay file's header | it has no fixed offset |
+| `iRacingUI.exe <file.rpy>`, `iracing://` links | the first does nothing; the links only switch UI pages |
+| The service's `/play_replay` with the members site's credentials | HTTP 204: the local verifier refuses them |
+| `registration/*` through the members site's HTTP proxy | 400, not allowed: only the client-proxy socket serves it |
+| Customer ids (`allCustIDs`) as `sess_carids` | the registration service fails: it takes car models |
+| Renewing an expired session headless with iRacing's remember-me cookie | it only reaches the sign-in page; the owner signs in again |
 
 ## Not yet measured
 
 - Whether Trading Paints Downloader overwrites `car_team_<TeamID>.tga` when a session loads.
+- Whether a launch works with the iRacing UI closed, and whether the service runs without it.
+- Where a sim launched while the owner is away comes up: in front or behind.
+- How long the members site's session lasts before it needs a new sign-in.
+- Whether the iRacing UI coming to the front would pull the owner out of a full-screen game.
 - Whether a lower frame-rate cap helps design sessions. `rendererDX11Monitor.ini` caps the sim at 239 fps, on external power only; it is the owner's setting, so no tool changes it.

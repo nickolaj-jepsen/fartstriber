@@ -14,8 +14,8 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 ## Requirements
 
 - Windows: the screen capture and the iRacing SDK only exist there.
-- iRacing, with the car and a replay of it. A sim preview needs the sim open on that replay, windowed and not minimised; it never takes focus or sends input.
-- [uv](https://docs.astral.sh/uv/) (it installs the Python in `.python-version`), [Claude Code](https://code.claude.com/) and [prek](https://prek.j178.dev/).
+- iRacing, with the car and a replay of it. A sim preview needs the sim open on that replay, windowed and not minimised; it never takes focus or sends input. With the optional `[sim]` settings, agents start the sim themselves while you're away and close it when they're done.
+- [uv](https://docs.astral.sh/uv/) (it installs the Python in `.python-version`), [Claude Code](https://code.claude.com/) and [prek](https://prek.j178.dev/). For agent launches, Chrome or Edge, to sign in to iRacing once.
 
 ## Setup
 
@@ -24,7 +24,8 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 3. In iRacing, open the replay, open the camera tool (Ctrl+F12), and save the track's camera set once.
 4. Run `uv run livery preview cameras <kit> --arm`, then reopen the replay so the sim loads the cameras. On a replay other than the one the kit was framed on, also run `uv run livery sim pick-frame <kit>`.
 5. Run `uv tool install prek`, then `prek install`.
-6. Start Claude Code in the repo and accept the folder trust prompt, which turns on the project's permission rules.
+6. Optional, so agents start and close the sim: add the `[sim]` table from `livery.example.toml`, run `uv run livery sim login` and sign in to iRacing in the window it opens, then check `uv run livery sim status`.
+7. Start Claude Code in the repo and accept the folder trust prompt, which turns on the project's permission rules.
 
 ## Use
 

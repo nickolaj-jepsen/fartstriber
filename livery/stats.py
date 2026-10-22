@@ -252,6 +252,25 @@ def lock_waits(events: list[dict]) -> dict:
     }
 
 
+def launches(events: list[dict]) -> dict:
+    """The sims agents started, from each sim host's line: how long to connect and to open the replay, how
+    long each stayed open, and why it ended (numbers in the reasons dropped, so like reasons count together)."""
+    hosts = [r for r in events if r.get("loop") == "sim-host"]
+
+    def spread(key: str, scale: float = 1.0) -> dict:
+        values = [(r.get("durations_s") or {}).get(key) for r in hosts]
+        return _spread([v / scale for v in values if v is not None])
+
+    ended = Counter(re.sub(r"\d+", "N", str(r.get("ended"))) for r in hosts)
+    return {
+        "hosts": len(hosts),
+        "connect_s": spread("connect"),
+        "ready_s": spread("ready"),
+        "open_min": spread("total", 60.0),
+        "ended": dict(ended.most_common()),
+    }
+
+
 def stats(ws: Workspace, telemetry: Path | None = None) -> dict:
     events = metrics.read(telemetry)
     verdicts = _verdicts(ws)
@@ -263,6 +282,7 @@ def stats(ws: Workspace, telemetry: Path | None = None) -> dict:
         "lint_missed": lint_missed(verdicts),
         "stages": stages(events, verdicts),
         "lock": lock_waits(events),
+        "launches": launches(events),
     }
 
 
@@ -312,4 +332,13 @@ def lines(report: dict) -> list[str]:
             else ""
         ),
     ]
+    sims = report["launches"]
+    if sims["hosts"]:
+        out += ["", f"sims agents started: {sims['hosts']}"]
+        out += [
+            f"  {'seconds to connect':24} {_fmt(sims['connect_s'])}",
+            f"  {'seconds to the replay':24} {_fmt(sims['ready_s'])}",
+            f"  {'minutes open':24} {_fmt(sims['open_min'])}",
+        ]
+        out += [f"  ended: {why} ({n})" for why, n in sims["ended"].items()]
     return out
