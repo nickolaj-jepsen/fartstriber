@@ -16,7 +16,7 @@ from livery import kit as kits
 from livery.config import REPO, Workspace, track_path
 from livery.hashing import kit_hash
 from tests import fakesim
-from tests.conftest import OWNER
+from tests.conftest import OWNER, SIM_WINDOW, write_policy
 from tests.test_cameras import STOCK_TRACK, track_camera_set
 from tests.test_pick_frame import Lap, LapIR
 
@@ -87,7 +87,7 @@ def captures(monkeypatch) -> list[str]:
 
     def capture(cfg, ws, kit, *, resume=False, keep_frames=False, log=print):
         run = calibrate.root(ws, kit.name) / f"run{len(shot)}"
-        ident = calibrate.identity(cfg, kit, kits.profile(kit))
+        ident = calibrate.identity(cfg, ws, kit, kits.profile(kit))
         state.write_json(run / "manifest.json", {"identity": ident, "complete": True})
         (run.parent / "current").write_text(run.name, encoding="utf-8")
         shot.append(kit.name)
@@ -105,7 +105,13 @@ def setup(tmp_path, monkeypatch, captures) -> tuple[Workspace, Lap, Path]:
     world = Lap(cfg)
     fakesim.install(monkeypatch, world, ReopenedIR)
     fakesim.drive(world, FOLDER)
-    ws = Workspace(root=tmp_path / "w", assets=REPO / "assets", ui_cars_dir=tmp_path / "ui")
+    write_policy(tmp_path / "policy.toml", SIM_WINDOW)
+    ws = Workspace(
+        root=tmp_path / "w",
+        assets=REPO / "assets",
+        policy_file=tmp_path / "policy.toml",
+        ui_cars_dir=tmp_path / "ui",
+    )
     return ws, world, template(tmp_path / "car.psd")
 
 

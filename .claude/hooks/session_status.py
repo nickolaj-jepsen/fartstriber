@@ -3,9 +3,14 @@
 The branch and uncommitted paths, who holds the sim lock and this checkout's reviews on the shared review page
 (both machine-wide, in the state dir, read through livery), and approved designs the last `livery build --all`
 found changed.
+
+It also puts the session's id and transcript in the environment of the session's commands, so what an agent
+records through livery says which session wrote it (livery.prefs).
 """
 
+import contextlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -81,6 +86,20 @@ def _changed(root: Path) -> list[str]:
     return [f"approved but changed in the build --all of {_ago(path.stat().st_mtime)}: {', '.join(changed)}"]
 
 
+def _remember_session(event: dict) -> None:
+    """Exports the session for the commands that follow, through the file Claude Code reads them from."""
+    from livery import prefs
+
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file or not event.get("session_id"):
+        return
+    lines = [f"export {prefs.SESSION_ENV}={event['session_id']}"]
+    if event.get("transcript_path"):
+        lines.append(f"export {prefs.TRANSCRIPT_ENV}='{event['transcript_path']}'")
+    with open(env_file, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def _safe(label: str, part: Callable[[], list[str]]) -> list[str]:
     """One unreadable file, or a livery that doesn't import, costs its own line, not the whole status."""
     try:
@@ -91,6 +110,8 @@ def _safe(label: str, part: Callable[[], list[str]]) -> list[str]:
 
 def main() -> None:
     event = json.load(sys.stdin)
+    with contextlib.suppress(OSError, ImportError):  # the status still prints
+        _remember_session(event)
     cwd = Path(event.get("cwd") or ".")
     top, common = _git(
         cwd, "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"

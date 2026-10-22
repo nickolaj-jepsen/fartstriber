@@ -1,6 +1,6 @@
 # Livery rubric
 
-Shared by designers and the livery-critic, with the taste table (`taste.md`). Judge what the sim shots show, not what the script intends.
+Shared by designers and the livery-critic, with the taste table (`livery taste show`). Judge what the sim shots show, not what the script intends.
 
 ## Items, each scored 1–5
 
@@ -26,13 +26,13 @@ The scores and the overall are logged to follow a design over time; they decide 
 
 Ship is computed by `livery critic status`, never chosen; the conditions your verdict sets:
 
-- no fix that isn't optional is open: none of yours, and every one of the last round's marked `resolved`
-- the owner's note, when the pack has one, `resolved`
+- the owner's note, when the pack has one, each of its pins and every critic suggestion they endorsed `resolved`
 - nothing under `blocked`
-- every row of `taste.md` passing
+- every row of the taste table passing
+- no fix that isn't optional is open: none of yours, and every one of the last round's marked `resolved`
 
-On a round that doesn't ship, the critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
+The first three also decide whether the car goes back to the owner; your own fixes never hold it back. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
 
 ## Fixes
 
-At most three, the most important first, each describing what is visible and where, never how to code it: "the orange band dies at the C-pillar", "FIREPROOF sits 2 cm above the door shut line", "the right side's stripe is a step lower than the left's". Each is marked optional or not: optional is polish the owner wouldn't send the car back for.
+Every suggestion worth making, the most important first; the owner sees them after they answer and may tick any for their next change. Each describes what is visible and where, never how to code it: a `title` of about eight words that names the problem ("the orange band dies at the C-pillar", "FIREPROOF sits 2 cm above the door shut line"), `detail` (what is visible and why it matters, a sentence or two), `where` (view and spot, `front34: the left bonnet half`; `""` for the whole car) and `optional` (polish the owner wouldn't send the car back for).

@@ -17,10 +17,12 @@ from livery import kit as kits
 from livery.capture import SimInFront
 from livery.config import Workspace
 from livery.errors import LiveryError
+from livery.iracing import SimNotReady
 from livery.kit import View
 from livery.model import Material
 from livery.raster import tga_bytes
 from tests import fakesim
+from tests.conftest import write_policy
 from tests.test_simsession import H, W, World
 
 Y0, Y1, X0, X1 = 30, 60, 40, 120  # the car, in the window
@@ -42,7 +44,6 @@ class Mapped(World):
         self.canvas = canvas
         super().__init__(cfg)
         self.texture = self.read_texture()
-        self.wider = 0  # px the owner widened the window by
         # Once a test sets it to a list: each paint the sim is shown with a spec map, and that spec.
         self.painted: list[tuple[bytes, tuple[int, int, int]]] | None = None
 
@@ -67,7 +68,7 @@ class Mapped(World):
         if not grey:
             u, v = field()
             img[Y0:Y1, X0:X1] = self.texture[v.astype(int), u.astype(int)]
-        return np.pad(img, ((0, 0), (0, self.wider), (0, 0)))
+        return img
 
 
 @pytest.fixture
@@ -132,7 +133,7 @@ def test_a_capture_decodes_the_car_and_its_ladders_and_leaves_the_folder_as_it_w
             for m in spec:
                 assert (z[m] == z["levels"][:, None, None]).all()
     manifest = json.loads((run / "manifest.json").read_text())
-    assert manifest["window"] == [W, H]
+    assert manifest["identity"]["window"] == [W, H]
     assert manifest["summary"]["views"]["side"]["decoded_pct"] == 100
     assert set(manifest["summary"]["materials"]["satin"]["vs_gloss"]) == set(VIEWS)
 
@@ -146,13 +147,13 @@ def test_a_finish_shot_again_under_a_new_preset_brings_the_capture_up_to_date(wo
     meta["spec_presets"]["satin"] = [0, 110, 64]
     kits.write(ws.kits / "tiny", meta=meta)
     kit = kits.load(ws, "tiny")
-    assert bake.stale(world.cfg, kit, run)  # the capture shot satin under the old preset
+    assert bake.stale(world.cfg, ws, kit, run)  # the capture shot satin under the old preset
     before = folder(world)
 
     assert calibrate.reshoot(world.cfg, ws, kit, [Material.satin], log=world.logs.append) == run
 
     assert folder(world) == before
-    assert bake.stale(world.cfg, kit, run) == []
+    assert bake.stale(world.cfg, ws, kit, run) == []
     assert list(run.glob("jobs/*/*.png")) == []
     manifest = json.loads((run / "manifest.json").read_text())
     new = calibrate.ladder_key(manifest, Material.satin, (0, 110, 64))
@@ -200,26 +201,51 @@ def test_a_stopped_capture_carries_on_after_its_last_finished_paint(world, ws):
     assert shown(world, kit) == names[8:]  # the paint it stopped in, and the rest
 
 
-def test_a_capture_stops_when_the_window_changes_size_between_paints(world, ws, monkeypatch):
+def test_every_paint_is_shot_at_the_policys_window_whatever_the_owner_sets(world, ws, monkeypatch):
     before = folder(world)
+    owners = (W + 10, H)
     real = calibrate.SimSession
     paints = itertools.count(1)
 
     def session(*args, **kw):
-        if next(paints) == 6:
-            world.wider = 10  # the owner widens the window before the sixth paint
+        if next(paints) == 6:  # the owner maximises the window before the sixth paint
+            world.size, world.unsizable = owners, "it is maximised"
         return real(*args, **kw)
 
     monkeypatch.setattr(calibrate, "SimSession", session)
 
-    with pytest.raises(calibrate.CaptureFailed):
+    with pytest.raises(SimNotReady):
         capture_run(world, ws)
 
     assert folder(world) == before
-    world.wider = 0
+    world.unsizable = None
     monkeypatch.setattr(calibrate, "SimSession", real)
     run = capture_run(world, ws, resume=True)
-    assert json.loads((run / "manifest.json").read_text())["window"] == [W, H]
+    assert json.loads((run / "manifest.json").read_text())["summary"]["views"]["side"]["decoded_pct"] == 100
+    assert world.size == owners
+
+
+def test_a_capture_is_stale_once_the_policy_window_changes(world, ws, tmp_path):
+    from livery import bake
+
+    kit = kits.load(ws, "tiny")
+    run = capture_run(world, ws)
+    assert bake.stale(world.cfg, ws, kit, run) == []
+    write_policy(tmp_path / "wider.toml", (W + 10, H))
+
+    assert bake.stale(world.cfg, replace(ws, policy_file=tmp_path / "wider.toml"), kit, run)
+
+
+def test_a_capture_from_before_the_window_was_in_its_identity_holds_at_the_size_it_was_shot_at(world, ws):
+    from livery import bake
+
+    kit = kits.load(ws, "tiny")
+    run = capture_run(world, ws)
+    manifest = json.loads((run / "manifest.json").read_text())
+    del manifest["identity"]["window"]
+    for size, holds in (([W, H], True), ([W + 10, H], False)):
+        (run / "manifest.json").write_text(json.dumps(manifest | {"window": size}), encoding="utf-8")
+        assert (bake.stale(world.cfg, ws, kit, run) == []) == holds
 
 
 def test_a_capture_only_resumes_on_the_same_shots(world, ws):

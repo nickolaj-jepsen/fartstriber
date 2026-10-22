@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from livery import approvals, config, critic, hashing, install, preview_flat, sponsors
+from livery import approvals, config, critic, hashing, install, prefs, preview_flat, sponsors
 from livery import kit as kits
 from livery.check import run_build
 from livery.config import Workspace
@@ -55,7 +55,7 @@ def test_approvals_and_the_review_of_a_moved_build_name_the_owner_from_the_setti
         approvals.require(ws, "d", now)
     assert OWNER in str(refused.value)
     preview_flat.flat(ws, "d")
-    (ws.root / review_apply.LEDGER).unlink()  # its decision would name them too; now only the move does
+    prefs.ledger_path(ws).unlink()  # its decision would name them too; now only the move does
     (item,) = design_items(ws, ["d"])
     assert OWNER in item["body"]
 

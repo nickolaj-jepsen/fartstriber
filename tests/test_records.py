@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from livery import approvals, critic, metrics, preview_flat, stamps, stats, status
+from livery import approvals, critic, metrics, prefs, preview_flat, stamps, stats, status
 from livery.check import run_build
 from livery.config import Workspace
 from livery.review import items as review_items
@@ -233,8 +233,7 @@ def _round(at: str, overall: int, call: str, **extra) -> dict:
 
 
 def _ledger(ws: Workspace, lines: list[dict]) -> None:
-    (ws.root / "prefs").mkdir(exist_ok=True)
-    (ws.root / "prefs" / "decisions.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines))
+    prefs.append(ws, lines)
 
 
 def test_stats_sets_the_critic_beside_his_decisions_and_counts_the_loops(ws, tmp_path):

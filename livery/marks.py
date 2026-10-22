@@ -47,18 +47,22 @@ def variant_for(view: str, toward: str | None) -> str:
     return "right" if toward == reads else "left"
 
 
-def review_items(root: Path | None = None, out: Path = CACHE / "marks") -> list[dict]:
+def review_items(
+    root: Path | None = None, out: Path = CACHE / "marks", only: list[str] | None = None
+) -> list[dict]:
     """Each drawn marking with a variant not yet approved, as a review sheet: what `livery review --marks`
-    shows."""
+    shows. With `only` (the Library's Review again), those markings as they stand."""
     from livery.lint.run import thresholds
 
     root = root or MARKS
     min_stroke = thresholds().min_stroke_px
     items = []
     for toml in sorted(root.glob("*/brand.toml")):
+        if only and toml.parent.name not in only:
+            continue
         mark = load(toml.parent.name, root)
         pending = [n for n, v in mark.variants.items() if not v.approved]
-        if not pending:
+        if not pending and not only:
             continue
         sheet = sponsors.sheet(mark, out / mark.id / "sheet.png", min_stroke)
         draw = mark.dir / "draw.py"
@@ -69,9 +73,10 @@ def review_items(root: Path | None = None, out: Path = CACHE / "marks") -> list[
                 "id": f"mark:{mark.id}",
                 "kind": "mark",
                 "title": f"Race marking: {mark.id}",
-                "body": f"{about}\n\nTo approve: {', '.join(pending)}. Reject leaves it unapproved.",
+                "body": f"{about}\n\n"
+                + (f"To approve: {', '.join(pending)}. " if pending else "Approved. ")
+                + "No leaves it unapproved, to be redrawn.",
                 "images": [_rel(sheet)],
-                "mix": False,
             }
         )
     return items
@@ -82,15 +87,11 @@ def _rel(p: Path) -> str:
     return p.relative_to(REPO).as_posix() if p.is_relative_to(REPO) else p.as_posix()
 
 
-def apply_decision(name: str, decision: str | None, root: Path | None = None) -> str | None:
-    """Writes the owner's review decision on a marking: accepting approves its variants; a rejected one
-    stays unapproved for its draw.py to be reworked. Says what it did, None for any other decision."""
+def approve(name: str, root: Path | None = None) -> str:
+    """The owner's yes to a marking in review: its variants approved. Says what it did. A no unapproves it
+    (livery.review.library.drop_brand)."""
     root = root or MARKS
-    if decision == "accept":
-        return f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
-    if decision == "reject":
-        return f"marks/{name}: rejected, left unapproved; rework assets/marks/{name}/draw.py"
-    return None
+    return f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
 
 
 # --- the driver's name ---------------------------------------------------------------------------------

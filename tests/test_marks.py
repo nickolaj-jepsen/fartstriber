@@ -93,13 +93,11 @@ def test_a_pointing_marking_points_at_the_end_asked_for_on_each_side(kit, root):
         place(kit, "t", "tow", ("side_l", *DOOR), "#000000", 0.001, toward="nose")  # below its minimum
 
 
-def test_review_lists_unapproved_markings_and_applies_his_decisions(root, tmp_path):
+def test_review_lists_unapproved_markings_until_approved(root, tmp_path):
     items = marks.review_items(root, out=tmp_path / "sheets")
     assert {i["id"] for i in items} == {"mark:tow", "mark:e"}
     assert all((tmp_path / "sheets" / i["id"].split(":")[1] / "sheet.png").exists() for i in items)
-    assert marks.apply_decision("tow", "accept", root)
-    assert marks.apply_decision("e", "reject", root)
-    assert marks.apply_decision("e", "skip", root) is None
+    marks.approve("tow", root)
     assert all(v.approved for v in marks.load("tow").variants.values())
     assert not any(v.approved for v in marks.load("e").variants.values())
     assert [i["id"] for i in marks.review_items(root, out=tmp_path / "sheets")] == ["mark:e"]

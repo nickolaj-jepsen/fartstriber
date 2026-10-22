@@ -14,7 +14,7 @@ from livery.review import server
 
 def item(item_id: str, **extra) -> dict:
     kind, _, title = item_id.partition(":")
-    return {"id": item_id, "kind": kind, "title": title, "body": "", "images": [], "mix": False, **extra}
+    return {"id": item_id, "kind": kind, "title": title, "body": "", "images": [], **extra}
 
 
 def announced(message: str) -> str:
@@ -87,9 +87,8 @@ class Review:
         return json.loads(get(self.base + "api/state")[1])
 
     def state(self) -> dict:
-        """This review's group as the page sees it, with the ratings the page offers."""
-        page = self.page()
-        return {**next(g for g in page["groups"] if g["id"] == self.group), "ratings": page["ratings"]}
+        """This review's group as the page sees it."""
+        return next(g for g in self.page()["groups"] if g["id"] == self.group)
 
     def apply(self) -> dict:
         assert self.post("api/apply", {}) == 200

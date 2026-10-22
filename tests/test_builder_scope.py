@@ -104,10 +104,14 @@ BUILDER_RUNS = [
     "uv run livery preview sim alpha",
     "uv run livery bake status --design alpha --json",
     "uv run livery critic answer alpha answers.json",
+    "uv run livery taste show",
     "uv run livery review --help",
 ]
 REFUSED = {
-    "session": ["uv run livery review alpha", "uv run livery build --all", "livery kit review gt3"],
+    "session": [
+        *("uv run livery review alpha", "uv run livery build --all", "livery kit review gt3"),
+        "uv run livery taste put row.json",
+    ],
     "critic": ["uv run livery critic record alpha verdict.json", "uv run livery critic rank a b --pairs d"],
     "not a builder step": ["uv run livery launch alpha", "uv run livery sim launch"],  # steps added later
 }

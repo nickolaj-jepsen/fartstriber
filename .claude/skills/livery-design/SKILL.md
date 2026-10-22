@@ -8,9 +8,9 @@ description: Design knowledge for Fartstriber liveries - principles stated as nu
 Read before designing:
 
 1. `references.md`, the rows marked **yes**: the owner's taste anchors. Look at the pictures of the rows your brief names in `.cache/references/<#>/` (`livery references fetch` caches them).
-2. All of `prefs/log.md`: what the owner picked and rejected, in their words.
+2. All of the owner's `log.md` (`prefs/<person>/`): what they picked and rejected, in their words.
 3. `rubric.md` next to this file: how every round is judged.
-4. `taste.md` next to this file: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design ships only when all of them pass.
+4. The taste table, `uv run livery taste show`: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design goes back to the owner only when all of them pass.
 
 ## The concept brief
 
@@ -24,7 +24,7 @@ A concept's `brief.md` holds the owner's brief, then:
 
 ## Three distances
 
-The owner called every design that was only a clean big shape "boring" (`prefs/log.md`), and accepted the Evangelion finals only to be done with them. Their favourites (the **yes** rows of `references.md`) all work at three distances at once. Design all three, in this order:
+The owner called every design that was only a clean big shape "boring" (their `log.md`), and accepted the Evangelion finals only to be done with them. Their favourites (the **yes** rows of `references.md`) all work at three distances at once. Design all three, in this order:
 
 1. **50 m, the squint.** One big idea owns the car: a colour split, a band, a creature, an all-over pattern, a theme. Check the squint thumbnail (`livery preview flat`) and the critic pack's distance images: if the idea doesn't survive them, it isn't strong enough. Detail never decides this read. Proportions near 60 / 30 / 10: a dominant field, a second field, the accent.
 2. **10 m, the system.** A second layer that gives the big shape movement and finish. This is where our cars have fallen short; use most of these:
@@ -44,7 +44,7 @@ Then the race-car finish, which plain designs miss:
 - **The brand in every view.** When the brief has a lead sponsor, it reads from the side, from the front (bonnet) and from behind (rear deck or bumper). The roof carries the number or a big mark for the chase and overhead shots, as big as it fits (WRT's outlined 46, the 1970s bonnet).
 - **A sponsor ecosystem.** The references carry fifteen to thirty marks: ten to twenty small ones grouped in a few places (sills, bumper corners, haunch, mirrors, wing endplates, near the number), in one colour per field. They make a car look raced, not rendered.
 - **A theme from the brand's own graphics.** Polaroid's rainbow, Lucky Strike's roundel, the 1970s sunset: the sponsor's visual language becomes the pattern system. For Fireproof that is the pixel flame: stepped blocks, embers, hard pixels.
-- **Type is designed, not labelled.** The owner called plain label stacks "boring" and noticed off spacing at once (`prefs/log.md`). One hierarchy per field: a big designation (outlined, stencil-cut or raked with the lean, like WRT's 46) and small lines aligned to it. Stacks share a left edge and a line gap; text in a plate has equal padding; tracking is consistent; nothing is clipped by an outline or arch. Check every mark in the full-size sim shots.
+- **Type is designed, not labelled.** The owner called plain label stacks "boring" and noticed off spacing at once (their `log.md`). One hierarchy per field: a big designation (outlined, stencil-cut or raked with the lean, like WRT's 46) and small lines aligned to it. Stacks share a left edge and a line gap; text in a plate has equal padding; tracking is consistent; nothing is clipped by an outline or arch. Check every mark in the full-size sim shots.
 - **The sides may differ.** WRT swaps its fields (black nose on the left, white nose on the right); the Gulf Valkyrie is blue on one side and white on the other. The system stays the same on both sides; the arrangement may swap.
 
 ## Principles
@@ -63,7 +63,7 @@ The linter measures what it can; thresholds are the `[lint]` values in `policy.t
 
 ## Brand rules
 
-- **Fireproof is the owner's own brand, not a paying sponsor.** A design carries it only if the brief asks, and small and discreet is fine: "it's not important for my own personal brand" (`prefs/log.md`). The design leads; never size the car around the wordmark.
+- **Fireproof is the owner's own brand, not a paying sponsor.** A design carries it only if the brief asks, and small and discreet is fine: "it's not important for my own personal brand" (their `log.md`). The design leads; never size the car around the wordmark.
 - Fireproof is the roster brand `fireproof`, from the owner's Fireproof design system: the pixel-flame mark (`#f46200`, `#ff8000`, `#ffd500`), the lowercase pixel wordmark on the same grid, and the lockup of the two on one baseline. Place it with `sponsor(..., "fireproof", variant=..., color=...)`. `color="own"` keeps its colours: the flame's three tones, and "fire" in `#f46200` with "proof" in `#DAD8CE`, for dark grounds. One ink in any colour is the mono form, for any other ground (photos, the accent, light paint). Never trace, smooth, outline or redraw it.
 - **Other sponsors come from the roster** (`assets/sponsors/`, indexed by `roster.md`; `sponsors.roster()` lists what can be placed, with category and lettering voice). Mix categories and voices in a group, never one brand twice in a group, one colour per field. Place rows and stacks with `sponsor_group`; it balances their sizes and fails if they don't fit at their minimum size, so drop a brand or lengthen the field.
 - **A themed sponsor only this design needs** (an in-universe brand, a pun on the theme) is drawn into `designs/<name>/sponsors/<brand>/` with the helpers in `livery.sponsors` and placed the same way. Never add to `assets/sponsors` in a design session; propose a brand worth reusing to the owner.

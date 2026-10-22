@@ -1,12 +1,12 @@
 export const meta = {
   name: 'livery-concepts',
-  description: 'Fartstriber concepts: 6-8 sketches from different sources, ranked pairwise by fresh critics; the top 3 built to a passing check and shot in the sim for the concept pick',
+  description: 'Fartstriber concepts: 6-8 sketches from different sources, ranked pairwise by fresh critics; the top 3 built to a passing check and shot in the sim, or baked where the bake stands in, for the concept pick',
   whenToUse: 'The concepts step of livery-iterate, after the brief. Args: {brief, names, references}. Stops before livery review.',
   phases: [
     { title: 'Sources', detail: 'one concept brief per name, each from a different source' },
     { title: 'Sketch', detail: 'a livery-builder per concept, flat views and car.png only' },
     { title: 'Rank', detail: 'every pair in both orders, a fresh livery-critic each, then Bradley-Terry' },
-    { title: 'Build', detail: 'the top 3 to a passing check and a sim run' },
+    { title: 'Build', detail: 'the top 3 to a passing check, then baked views or a sim run' },
   ],
 }
 
@@ -134,7 +134,7 @@ const planned = await agent(
   'You plan the concepts of a Fartstriber livery session. Create, edit and delete no file.\n\n' +
     `The owner's brief:\n${indent(brief)}\n\nThe reference rows it names: ${rows.join(', ')}.\n\n` +
     'Read .claude/skills/livery-design/SKILL.md (the concept brief template and the three distances), ' +
-    'taste.md and rubric.md beside it, the yes rows of references.md and all of prefs/log.md, and look at ' +
+    'the taste table (uv run livery taste show), rubric.md beside it, the yes rows of references.md and all of the owner\'s prefs/<person>/log.md, and look at ' +
     'the pictures of the named rows in .cache/references/<row>/ (list any row without pictures under ' +
     'missing_pictures).\n\n' +
     `Write one concept brief for each of these names: ${names.join(', ')}. Builders sketch them in parallel ` +
@@ -174,11 +174,14 @@ if (ranked.error) throw new Error(ranked.error)
 const top = ranked.ranking.slice(0, TOP)
 log(`ranking: ${ranked.ranking.join(' > ')}`)
 
-// Build: the top 3 to a passing check and a sim run; their sim runs queue on the sim lock.
+// Build: the top 3 to a passing check, then baked views where the kit's bake stands in for the build's sim
+// shots (the review shows them, labelled as baked), else a sim run; sim runs queue on the sim lock.
 const built = await parallel(top.map((name, i) => () => agent(
   `design: ${name}\nBuild mode: this concept ranked ${i + 1} of ${rendered.length} in the critic's pairwise ` +
     'ranking and goes to the owner\'s concept pick. Keep the concept as it is: fix what livery check needs, ' +
-    'then livery build and livery preview sim, so they see it in the sim. There are no critic fixes yet.\n\n' +
+    `then livery build and livery bake status --design ${name}. Where it says baked views stand in for its sim ` +
+    `shots, finish with livery preview flat ${name} --baked and run no sim (sim_run ''); otherwise livery ` +
+    'preview sim, so they see it in the sim. There are no critic fixes yet.\n\n' +
     `The pair critics on it:\n${indent(ranked.why[name].join('\n'))}`,
   { agentType: 'livery-builder', schema: BUILT, label: `${name} build`, phase: 'Build' })))
 

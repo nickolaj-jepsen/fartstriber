@@ -4,32 +4,37 @@ import pytest
 
 from livery import critic
 from livery.config import Workspace
-from tests.conftest import checked, sim_run
+from tests.conftest import TASTE_IDS, checked, sim_run
 
 FIX = "the orange band stops short of the tail light"
-TASTE_ROW = critic.taste_ids()[0]  # any row of the owner's taste table
+TASTE_ROW = TASTE_IDS[0]  # any row of the test workspace's taste table
+
+
+def suggestion(title: str, optional: bool = False, **more) -> dict:
+    """A critic suggestion as a round records it."""
+    return {"title": title, "detail": "", "where": "", "optional": optional} | more
 
 
 def verdict(**change) -> dict:
     """A well-formed round verdict on a first round: every taste row passes, one fix that matters."""
     return {
         "previous": [],
-        "taste": [{"id": i, "pass": True, "where": ""} for i in critic.taste_ids()],
+        "taste": [{"id": i, "pass": True, "where": ""} for i in TASTE_IDS],
         "scores": dict.fromkeys(critic.rubric_keys(), 4),
         "overall": 7,
         "verdict": "iterate",
-        "fixes": [{"text": FIX, "optional": False}],
+        "fixes": [suggestion(FIX)],
         "lint_missed": [],
         "blocked": [],
     } | change
 
 
 def test_a_well_formed_verdict_passes():
-    assert critic.validate(verdict()) == verdict()
+    assert critic.validate(verdict(), taste=TASTE_IDS) == verdict()
 
 
 def _taste(fail: str, where: str = "") -> list[dict]:
-    return [{"id": i, "pass": i != fail, "where": where} for i in critic.taste_ids()]
+    return [{"id": i, "pass": i != fail, "where": where} for i in TASTE_IDS]
 
 
 @pytest.mark.parametrize(
@@ -38,8 +43,10 @@ def _taste(fail: str, where: str = "") -> list[dict]:
         {"verdict": "ship"},  # ship is computed, never the critic's call
         {"overall": 11},
         {"scores": dict.fromkeys(critic.rubric_keys()[:-1], 3)},
-        {"fixes": [{"text": "a", "optional": False}] * 4},
         {"fixes": ["a plain string"]},
+        {"fixes": [{"text": "a fix as it was before suggestions", "optional": False}]},
+        {"fixes": [{"title": "a", "detail": "b", "optional": False}]},  # where is text, maybe empty
+        {"fixes": [suggestion("a headline that runs on " + "and on " * 8)]},
         {"taste": _taste(TASTE_ROW)[1:]},  # a row left out
         {"taste": _taste(TASTE_ROW)},  # failing without saying where
         {"previous": [{"status": "resolved", "evidence": "side_l.png"}]},  # there was no last round
@@ -48,11 +55,22 @@ def _taste(fail: str, where: str = "") -> list[dict]:
 )
 def test_malformed_verdicts_are_refused(change):
     with pytest.raises(critic.BadVerdict):
-        critic.validate(verdict(**change))
+        critic.validate(verdict(**change), taste=TASTE_IDS)
+
+
+def test_a_round_suggests_as_many_fixes_as_it_takes_and_names_each_in_one_line():
+    many = [suggestion(f"fix {i}", detail=f"why {i}", where="front34: the nose") for i in range(6)]
+    last = critic.validate(verdict(fixes=many), taste=TASTE_IDS)
+
+    lines = [f["text"] for f in critic.fixes(last)]
+    assert len(set(lines)) == 6
+    assert all("fix" in t and "why" in t and "front34" in t for t in lines)
 
 
 def test_a_failing_taste_row_says_where():
-    critic.validate(verdict(taste=_taste(TASTE_ROW, where="front34: the bumper is one plain field")))
+    critic.validate(
+        verdict(taste=_taste(TASTE_ROW, where="front34: the bumper is one plain field")), taste=TASTE_IDS
+    )
 
 
 @pytest.mark.parametrize(
@@ -67,8 +85,10 @@ def test_a_failing_taste_row_says_where():
 def test_the_last_rounds_fixes_are_each_marked_with_evidence(previous):
     last = verdict()
     with pytest.raises(critic.BadVerdict):
-        critic.validate(verdict(previous=previous), last, images={"side_l.png"})
-    marked = critic.validate(verdict(previous=[{"status": "partly", "evidence": "x/side_l.png"}]), last)
+        critic.validate(verdict(previous=previous), last, TASTE_IDS, images={"side_l.png"})
+    marked = critic.validate(
+        verdict(previous=[{"status": "partly", "evidence": "x/side_l.png"}]), last, TASTE_IDS
+    )
     assert marked["previous"][0]["fix"] == FIX
 
 
@@ -101,7 +121,7 @@ def test_a_verdict_records_what_it_judged(ws):
     assert recorded["shots"] == ".cache/designs/d/sim/20260101-000000"
     assert recorded["design_hash"] == check["design_hash"]
     assert recorded["round"] == 1
-    assert recorded["rubric"] == critic.rubric_version()
+    assert recorded["rubric"] == critic.rubric_version(ws)
     assert recorded["model"] == critic.critic_model()
     assert critic.history(ws, "d")[-1]["fixes"] == verdict()["fixes"]
     assert not (ws.design_dir("d") / "notes.md").exists()  # verdicts.jsonl is the one store

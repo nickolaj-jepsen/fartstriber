@@ -182,6 +182,27 @@ def test_edges_agree_with_the_near_tangent_lint(ws, kit):
     assert lines.alongside(far).is_empty
 
 
+def test_a_collection_with_stray_lines_is_judged_and_snapped_by_its_polygons(kit):
+    """A difference or union can leave polygons with stray lines or points: a collection with no boundary."""
+    t, lines = thresholds(), geom.edges(kit)
+    x = C / 2 + (MEET_PX + t.near_tangent_px) / 2
+    beside = shapely.box(x, 40, x + 60, 40 + 3 * t.near_tangent_run_px)
+    far = shapely.box(C / 2 + 2 * t.near_tangent_px, 40, C / 2 + 80, 40 + 3 * t.near_tangent_run_px)
+    stray = [LineString([(C / 2 + 1, 20), (C / 2 + 1, C - 20)]), Point(C / 2 + 1, 10)]  # alongside the seam
+    for piece in (beside, far):
+        mixed = GeometryCollection([piece, *stray])
+        assert lines.touches(mixed) == lines.touches(piece)
+        assert lines.alongside(mixed).equals(lines.alongside(piece))
+    assert not lines.touches(GeometryCollection(stray))
+    assert lines.alongside(GeometryCollection(stray)).is_empty
+
+    alone, moves = geom.snapped(kit, "side_l", beside)
+    assert moves
+    out, mixed_moves = geom.snapped(kit, "side_l", GeometryCollection([beside, *stray]))
+    assert mixed_moves == moves
+    assert shapely.union_all(geom.polygons(out)).equals(alone)
+
+
 def test_a_piece_settled_with_a_margin_passes_the_lint(ws, kit):
     t = thresholds()
     x = C / 2 + (MEET_PX + t.near_tangent_px) / 2

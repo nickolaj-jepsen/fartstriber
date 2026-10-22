@@ -9,7 +9,7 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 | Build | renders the paint and spec textures |
 | Preview | flat views, sim-lit renders without the sim, and shots in the sim from fixed cameras |
 | Judge | a separate critic agent compares each round with the last |
-| Decide | you accept, edit or park it on the review page; `livery install` paints only what you accepted |
+| Decide | you race it, change it, park it or stop it on the review page; `livery install` paints only what you raced |
 
 ## Requirements
 
@@ -44,7 +44,7 @@ The repo is one person's studio as well as the tool. Fork it, then replace what 
 
 | What | Do |
 |---|---|
-| Taste | Empty `prefs/`. Replace the yes rows of `references.md`; `livery references fetch` caches their pictures. Start `.claude/skills/livery-design/taste.md` again, or let the retro propose rows |
+| Taste | Empty `prefs/`; your records go in `prefs/<your name>/`. Replace the yes rows of `references.md`; `livery references fetch` caches their pictures. The retro proposes your taste rows |
 | Liveries | Delete the designs in `designs/` except the fixtures, whose `design.py` sets `ROLE = "fixture"` |
 | Brand | Remove `assets/sponsors/fireproof/` and its row in `assets/sponsors/roster.md` (it isn't licensed to you, see NOTICE). Draw your own with the `sponsor-draw` skill. The other sponsors are invented and yours to use |
 | Settings | Your own `config.toml` (see Setup), with your name as `owner` |

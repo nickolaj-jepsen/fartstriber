@@ -47,6 +47,7 @@ VIEWS = (*SIDES, *(h for _, h in SIDES.values()), PLAN)
 REPORT = kits.FIT_REPORT
 # What a fit depends on in the capture's identity: not the spec presets or the sim's graphics options.
 WATCHED = {
+    "window": "the sim window's size (policy.toml)",
     "canvas": "the kit's canvas",
     "paint_folder": "the kit's paint folder",
     "frame": "the profile's frame",
@@ -238,8 +239,8 @@ def capture_shots(cfg: Config, ws: Workspace, kit: Kit, tpl: Template) -> tuple[
     run = calibrate.current(ws, kit.name)
     if run is None or not (run / "manifest.json").exists():
         raise FitError(f"{kit.name} has no calibration capture; run livery kit capture {kit.name}")
-    shot_with = (state.read_json(run / "manifest.json") or {}).get("identity", {})
-    now = calibrate.identity(cfg, kit, kits.profile(kit))
+    shot_with = calibrate.shot_with(state.read_json(run / "manifest.json") or {})
+    now = calibrate.identity(cfg, ws, kit, kits.profile(kit))
     moved = [what for key, what in WATCHED.items() if now.get(key) != shot_with.get(key)]
     if moved:
         raise FitError(

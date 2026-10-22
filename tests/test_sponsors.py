@@ -179,5 +179,5 @@ def test_review_marks_the_roster_and_approves_or_drops_drawn_brands(roster, tmp_
         "drop": "no",
         "new": "no",
     }
-    assert not (roster / "drop").exists()
+    assert not any(sponsors.approvals(roster / "drop").values())  # kept, to redraw
     assert [r["brand"] for r in sponsors.roster()] == ["keep"]

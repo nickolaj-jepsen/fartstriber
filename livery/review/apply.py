@@ -1,10 +1,8 @@
-"""Review decisions written back to the repo: what review owns, then every decision in the
-prefs/decisions.jsonl ledger, committed with what it decided. The owner's taste goes to prefs/log.md, by
-the agent, in their words."""
+"""Review decisions written back to the repo: what review owns, then every decision in the owner's ledger
+(prefs/<person>/decisions.jsonl, livery.prefs), committed with what it decided. The owner's taste goes to
+their log.md, by the agent, in their words."""
 
-import json
 import re
-import shutil
 import subprocess
 import time
 from collections.abc import Callable
@@ -12,15 +10,21 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from livery import approvals, config, critic, hashing, metrics, sponsors
+from PIL import Image
+
+from livery import approvals, config, critic, hashing, metrics, prefs, sponsors, state
 from livery import kit as kits
 from livery import marks as race_marks
 from livery.config import Workspace
 from livery.errors import LiveryError
-from livery.review.items import RATINGS
+from livery.review import pins
 
-LEDGER = Path("prefs") / "decisions.jsonl"  # under the workspace root
 DESIGNS = ("concept", "final")
+SHOTS = (
+    "review-shots"  # in the state dir: what each design decision showed, shrunk, so history outlives .cache
+)
+SHOT_PX = 1400
+EXTRAS = ("favourite", "strategy", "endorsed", "revived")  # what a decision may carry besides its note
 
 
 @dataclass
@@ -57,11 +61,19 @@ def _design(w: _Writes, key: str, d: dict, item: dict | None) -> None:
         w.folders.append(w.ws.design_dir(key))
 
 
-def _final(w: _Writes, key: str, d: dict, item: dict | None) -> None:
-    """Accepting pins the build shown."""
+def _final(w: _Writes, key: str, d: dict, item: dict | None) -> dict | None:
+    """Accepting pins the build shown; stopping takes back an approval."""
+    from livery.review import library
+
     _design(w, key, d, item)
-    if d.get("decision") == "accept" and item and item.get("pin"):
+    choice = d.get("decision")
+    if choice == "stop" and approvals.load_approval(w.ws, key):
+        was = library.unpin(w.ws, key)
+        w.written.append(f"designs/{key}/approved.json: revoked")
+        return {"was": was}
+    if choice == "accept" and item and item.get("pin"):
         w.written.append(approvals.pin(w.ws, key, item["pin"], d.get("note", "")))
+    return None
 
 
 def _kit(w: _Writes, key: str, d: dict, item: dict | None) -> None:
@@ -79,28 +91,43 @@ def _kit(w: _Writes, key: str, d: dict, item: dict | None) -> None:
     w.files.append(w.ws.kits / key / kits.APPROVAL)
 
 
-def _sponsor(w: _Writes, key: str, d: dict, item: dict | None) -> None:
-    """Accepting approves every variant; rejecting drops the brand and marks its roster row no."""
+def _drop(w: _Writes, kind: str, key: str) -> dict:
+    """A no to a brand or a marking: unapproved, and a brand's roster row turned down; its folder stays for
+    a redraw."""
+    from livery.review import library
+
+    was, touched = library.drop_brand(w.ws, kind, key)
+    # As folders, not files: a brand just drawn goes along with its review, committed or not.
+    w.folders += [p.parent if p.name == "brand.toml" else p for p in touched]
+    w.written.append(f"{kind} {key}: dropped")
+    return {"was": was}
+
+
+def _sponsor(w: _Writes, key: str, d: dict, item: dict | None) -> dict | None:
+    """Accepting approves every variant and makes its roster row a yes, since the owner judges the row with
+    its drawing."""
     choice, root = d.get("decision"), w.ws.sponsors
-    if choice not in ("accept", "reject") or item is None:
-        return
+    if item is None:
+        return None
+    if choice == "reject":
+        return _drop(w, "sponsor", key)
     if choice == "accept":
         w.written.append(f"{key}: approved {', '.join(sponsors.approve(root / key)) or 'nothing new'}")
-    else:
-        shutil.rmtree(root / key)
-        _mark_table(root / "roster.md", {key: "no"})
-        w.written.append(f"{key}: dropped")
-    w.folders.append(root / key)
-    if choice == "reject":
-        w.files.append(root / "roster.md")
+        if any(r["brand"] == key and r["status"] != "yes" for r in sponsors.roster_rows(root / "roster.md")):
+            _mark_table(root / "roster.md", {key: "yes"})
+        w.folders += [root / key, root / "roster.md"]
+    return None
 
 
-def _mark(w: _Writes, key: str, d: dict, item: dict | None) -> None:
-    done = race_marks.apply_decision(key, d.get("decision"), w.ws.marks)
-    if done:
-        w.written.append(done)
+def _mark(w: _Writes, key: str, d: dict, item: dict | None) -> dict | None:
+    choice = d.get("decision")
+    if choice == "reject" and item is not None:
+        return _drop(w, "mark", key)
+    if choice == "accept":
+        w.written.append(race_marks.approve(key, w.ws.marks))
         if w.ws.marks not in w.folders:
             w.folders.append(w.ws.marks)
+    return None
 
 
 def _roster(w: _Writes, key: str, d: dict, item: dict | None) -> None:
@@ -115,15 +142,21 @@ def _proposal(w: _Writes, key: str, d: dict, item: dict | None) -> None:
     """Nothing: the accepted ones go back to the agent (`proposals`)."""
 
 
-def _no_fields(ws: Workspace, key: str, item: dict) -> dict:
+def _no_fields(ws: Workspace, key: str, item: dict, uid: str) -> dict:
     return {}
 
 
-def _design_fields(ws: Workspace, key: str, item: dict) -> dict:
-    return {"runs": item.get("runs", []), **_design_record(ws, key, item)}
+def _design_fields(ws: Workspace, key: str, item: dict, uid: str) -> dict:
+    """The sim runs (or the baked run) its item showed, a kept copy of its shots, and what was decided on."""
+    out: dict = {"runs": item.get("runs", [])}
+    if baked := item.get("baked_run"):
+        out["baked_run"] = baked
+    if kept := _keep_shots(ws, item, uid):
+        out["shots"] = kept
+    return out | _design_record(ws, key, item)
 
 
-def _proposal_fields(ws: Workspace, key: str, item: dict) -> dict:
+def _proposal_fields(ws: Workspace, key: str, item: dict, uid: str) -> dict:
     return {"title": item.get("title")}
 
 
@@ -131,10 +164,11 @@ def _proposal_fields(ws: Workspace, key: str, item: dict) -> dict:
 class Kind:
     """What Apply does with a decision on one kind of review item (the id's prefix)."""
 
-    apply: Callable[[_Writes, str, dict, dict | None], None]
+    # Writes what review owns; returns what the decision replaced, for History's undo.
+    apply: Callable[[_Writes, str, dict, dict | None], dict | None]
     flag: str | None = None  # the `livery review` option that queues it; designs are named instead
     first: bool = False  # applied before every other kind
-    ledger: Callable[[Workspace, str, dict], dict] = _no_fields  # the fields its ledger lines add
+    ledger: Callable[[Workspace, str, dict, str], dict] = _no_fields  # the fields its ledger lines add
     metrics: bool = True  # a metrics line per decision
 
 
@@ -161,10 +195,11 @@ def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: 
         if not KINDS[kind].metrics:
             continue
         extra: dict = {"item": kind, "decision": d.get("decision"), "note": bool(d.get("note"))}
-        if d.get("mix_of"):
-            extra["mix_of"] = d["mix_of"]
-        if d.get("rating"):
-            extra["rating"] = d["rating"]
+        for k in EXTRAS:
+            if d.get(k):
+                extra[k] = d[k]
+        if d.get("pins"):
+            extra["pins"] = len(d["pins"])
         if kind in DESIGNS:
             rounds = critic.history(ws, key)
             if rounds:
@@ -177,11 +212,8 @@ def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: 
 
 
 def ledger(ws: Workspace) -> list[dict]:
-    """Every decision in prefs/decisions.jsonl, oldest first."""
-    path = ws.root / LEDGER
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    """Every decision in the owner's ledger as it stands, oldest first: edits folded in, undone ones out."""
+    return prefs.decisions(ws)
 
 
 def decisions_on(ws: Workspace, name: str) -> list[dict]:
@@ -196,12 +228,12 @@ def decisions_on(ws: Workspace, name: str) -> list[dict]:
 
 
 def latest_note(ws: Workspace, name: str) -> dict | None:
-    """The ledger line with the owner's latest note on a design, which every round after it answers to;
-    None once they have accepted the final since."""
+    """The ledger line with the owner's latest note on a design, their pins, or critic suggestions they
+    endorsed, which every round after it answers to; None once they have accepted the final since."""
     for line in reversed(decisions_on(ws, name)):
         if line["id"].startswith("final:") and line.get("decision") == "accept":
             return None
-        if line.get("note", "").strip():
+        if line.get("note", "").strip() or line.get("endorsed") or line.get("pins"):
             return line
     return None
 
@@ -222,29 +254,49 @@ def _design_record(ws: Workspace, name: str, item: dict) -> dict:
     return out
 
 
-def _record(ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], review: str) -> str:
-    """Appends every decision to the ledger, the owner's note verbatim, and for a design the sim runs its
-    item showed."""
+def _keep_shots(ws: Workspace, item: dict, uid: str) -> str | None:
+    """A shrunk copy of each view the item showed, under the state dir; the folder, relative to it."""
+    views = {v: ws.root / rel for v, rel in (item.get("views") or {}).items() if (ws.root / rel).is_file()}
+    if not views:
+        return None
+    out = state.root() / SHOTS / uid
+    out.mkdir(parents=True, exist_ok=True)
+    for view, src in views.items():
+        img = Image.open(src).convert("RGB")
+        img.thumbnail((SHOT_PX, SHOT_PX), Image.Resampling.LANCZOS)
+        img.save(out / f"{view}.jpg", quality=82)
+    return f"{SHOTS}/{uid}"
+
+
+def _record(
+    ws: Workspace, by_id: dict[str, dict], decisions: dict[str, dict], review: str, effects: dict[str, dict]
+) -> str:
+    """Appends every decision to the ledger, by the owner, their note verbatim, what it replaced
+    (`effects`), its pins, and its kind's own fields (`Kind.ledger`)."""
     lines = []
     for item_id, d in decisions.items():
         kind, _, key = item_id.partition(":")
         at = datetime.fromtimestamp(d.get("at") or time.time()).astimezone()
+        uid = prefs.new_uid()
         line = {
+            "uid": uid,
             "at": at.isoformat(timespec="seconds"),
             "review": review,
             "id": item_id,
             "decision": d.get("decision"),
             "note": d.get("note", ""),
-            "mix_of": d.get("mix_of", []),
-            "rating": d.get("rating"),
+            **prefs.owner_by(),
         }
-        line |= KINDS[kind].ledger(ws, key, by_id.get(item_id, {}))
-        lines.append(json.dumps(line) + "\n")
-    path = ws.root / LEDGER
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8", newline="\n") as f:
-        f.writelines(lines)
-    return f"{LEDGER.as_posix()}: {len(lines)} decisions"
+        item = by_id.get(item_id, {})
+        line |= {k: d[k] for k in EXTRAS if d.get(k)}
+        line |= effects.get(item_id, {})
+        line |= {k: True for k in ("still", "again") if item.get(k)}
+        if d.get("pins"):
+            line["pins"] = pins.resolve(ws, item, d["pins"], state.root() / SHOTS / uid, f"{SHOTS}/{uid}")
+        line |= KINDS[kind].ledger(ws, key, item, uid)
+        lines.append(line)
+    path = prefs.append(ws, lines)
+    return f"{path.relative_to(ws.root).as_posix()}: {len(lines)} decisions"
 
 
 def proposals(items: list[dict], decisions: dict[str, dict]) -> list[dict]:
@@ -265,11 +317,13 @@ def _message(decisions: dict[str, dict], review: str) -> str:
     rows = []
     for item_id, d in decisions.items():
         row = f"{item_id}: {d.get('decision')}"
-        if d.get("rating"):
-            row += f", rated {d['rating']} ({RATINGS[d['rating']]})"
-        if d.get("mix_of"):
-            row += f", mixed with {', '.join(d['mix_of'])}"
-        rows.append(row + "".join(f"\n    {n}" for n in d.get("note", "").strip().splitlines()))
+        if d.get("favourite"):
+            row += ", a favourite"
+        if d.get("strategy"):
+            row += f", as a {d['strategy']} round"
+        said = [*d.get("note", "").strip().splitlines()]
+        said += [f"pin on {p['view']}: {p['note'].strip()}" for p in d.get("pins") or []]
+        rows.append(row + "".join(f"\n    {n}" for n in said))
     return subject + "\n\n" + "\n".join(rows) + "\n"
 
 
@@ -308,7 +362,9 @@ def _last_line(p: subprocess.CompletedProcess[str]) -> str:
     return lines[-1] if lines else f"git exited {p.returncode}"
 
 
-def _commit(root: Path, before: set[str], files: list[Path], folders: list[Path], message: str) -> str | None:
+def _commit(
+    root: Path, before: set[str], files: list[Path], folders: list[Path], message: str, ledger: Path
+) -> str | None:
     """Commits exactly the files Apply wrote and the decided folders, nothing else that is staged, and never
     pushes. Refuses when a file it wrote already had changes Apply didn't make: those weren't the owner's
     decision. Only Apply writes the ledger, so uncommitted lines there are earlier decisions and go along."""
@@ -319,10 +375,11 @@ def _commit(root: Path, before: set[str], files: list[Path], folders: list[Path]
         except ValueError:
             return f"not committed: {p} is outside the repo"
     inside = rel[len(files) :]
+    ledger_rel = ledger.resolve().relative_to(root.resolve()).as_posix()
     stale = sorted(
         f
         for f in rel[: len(files)]
-        if f in before and f != LEDGER.as_posix() and not any(f.startswith(d + "/") for d in inside)
+        if f in before and f != ledger_rel and not any(f.startswith(d + "/") for d in inside)
     )
     if stale:
         return f"not committed: {', '.join(stale)} had changes Apply didn't make; commit them with yours"
@@ -354,23 +411,26 @@ def apply(
         raise LiveryError(f"Apply has no handler for {', '.join(unknown)}: kinds are {', '.join(KINDS)}")
     before = _dirty(ws.root) if commit else None
     review = review or time.strftime("%Y%m%d-%H%M%S")
-    w = _Writes(ws, files=[ws.root / LEDGER])
+    w = _Writes(ws, files=[prefs.ledger_path(ws)])
     by_id = {i["id"]: i for i in items}
+    effects: dict[str, dict] = {}  # what a decision replaced, for History's undo
     for first in (True, False):
         for item_id, d in decisions.items():
             kind, _, key = item_id.partition(":")
-            if KINDS[kind].first == first:
-                KINDS[kind].apply(w, key, d, by_id.get(item_id))
+            if KINDS[kind].first == first and (was := KINDS[kind].apply(w, key, d, by_id.get(item_id))):
+                effects[item_id] = was
     for table, marks in w.tables.items():
         _mark_table(table, marks)
         w.written.append(f"{table.name}: {len(marks)} marked")
         w.files.append(table)
     written = w.written
     if decisions:
-        written.append(_record(ws, by_id, decisions, review))
+        written.append(_record(ws, by_id, decisions, review, effects))
     _log(ws, items, decisions, written)
     if before is not None and decisions:
-        done = _commit(ws.root, before, w.files, w.folders, _message(decisions, review))
+        done = _commit(
+            ws.root, before, w.files, w.folders, _message(decisions, review), prefs.ledger_path(ws)
+        )
         if done:
             written.append(done)
     return written

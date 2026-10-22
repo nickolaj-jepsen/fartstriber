@@ -73,11 +73,12 @@ BUILDER_STEPS: dict[str, set[str] | None] = {
     "bake": {"status"},
     "critic": {"answer", "status"},
     "sim": {"status"},
+    "taste": {"show"},
 }
 # Whose the refused steps are, for the refusal to say.
 SESSION_STEPS = {
-    *("review", "install", "export", "kit", "stats", "config", "references", "build --all"),
-    *("preview cameras", "bake check", "critic pack", "sim pick-frame"),
+    *("review", "library", "install", "export", "kit", "stats", "config", "references", "build --all"),
+    *("preview cameras", "bake check", "critic pack", "sim pick-frame", "taste put", "taste retire"),
 }
 CRITIC_STEPS = {"critic record", "critic compare", "critic adversary", "critic rank"}
 RAW_WRITES = re.compile(

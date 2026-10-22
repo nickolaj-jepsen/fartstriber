@@ -15,12 +15,14 @@ from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 
 from livery import kit as kits
+from livery import taste
 from livery.config import REPO, Workspace
 from livery.kit import Kit, Profile, View
 from livery.model import Element
 
 FIXTURES = Path(__file__).parent / "fixtures"  # laid out like a workspace: designs/<name>/design.py
 CANVAS = 64
+SIM_WINDOW = (160, 90)  # the fake sim's client size (tests/test_simsession.py)
 SPEC = {
     "gloss": [0, 30, 255],
     "satin": [0, 110, 255],
@@ -41,6 +43,7 @@ def private_metrics(private_state, tmp_path, monkeypatch):
 
 REPLAY = 4242  # the fixture settings' preview replay, which the tiny kit's profile frames
 OWNER = "Ingrid"  # the fixture settings' owner: a name no message has of its own
+TASTE_IDS = ["boring", "front-as-back", "nothing-cut"]  # the rows of the test workspaces' taste table
 SETTINGS = """
 owner = "{owner}"
 customer_id = 111
@@ -80,17 +83,36 @@ def private_state(tmp_path, monkeypatch):
 
 @pytest.fixture
 def ws(tmp_path) -> Workspace:
-    """A workspace with one tiny kit (a 64 px canvas whose left half is the car) and the repo's fonts."""
+    """A workspace with one tiny kit (a 64 px canvas whose left half is the car), the repo's fonts, and the
+    repo's policy at the fake sim's window size."""
     kit = tmp_path / "kits" / "tiny"
     (kit / "overlays").mkdir(parents=True)
     mask = np.zeros((CANVAS, CANVAS), np.uint8)
     mask[:, : CANVAS // 2] = 255
     Image.fromarray(mask).save(kit / "overlays" / "mask.png")
     write_kit(kit, {"canvas": CANVAS, "paint_folder": "tiny", "bleed_px": 4})
-    ws = Workspace(root=tmp_path, assets=REPO / "assets")
+    policy = tmp_path / "policy.toml"
+    write_policy(policy, SIM_WINDOW)
+    ws = Workspace(root=tmp_path, assets=REPO / "assets", policy_file=policy)
     frame_kit(ws, kit)
     kits.approve(kit, "Tester", "")
+    write_taste(ws)
     return ws
+
+
+def write_taste(ws: Workspace, ids: list[str] = TASTE_IDS) -> None:
+    for i in ids:
+        taste.put(
+            ws, {"id": i, "words": [{"quote": f"not {i}"}], "look_for": f"no {i}", "where": "every shot"}
+        )
+
+
+def write_policy(path: Path, window: tuple[int, int]) -> None:
+    """The repo's policy with another sim window size."""
+    text = (REPO / "policy.toml").read_text(encoding="utf-8")
+    text, n = re.subn(r"(?m)^window = .*$", f"window = [{window[0]}, {window[1]}]", text)
+    assert n == 1
+    path.write_text(text, encoding="utf-8")
 
 
 def preview_views(ws: Workspace) -> dict[str, View]:
@@ -287,7 +309,8 @@ def two_islands(root: Path, stretch: float = 1.0) -> Workspace:
         },
     }
     write_kit(d, raw)
-    return Workspace(root=root, assets=REPO / "assets")
+    write_policy(root / "policy.toml", SIM_WINDOW)
+    return Workspace(root=root, assets=REPO / "assets", policy_file=root / "policy.toml")
 
 
 # Per screen pixel: the texel's u and v (NaN off the car) and the Jacobian d(u, v)/d(x, y).

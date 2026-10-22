@@ -1,20 +1,19 @@
-"""Park, ratings, the decision ledger, Apply's commit and retro proposals."""
+"""The answers each kind takes, the decision ledger, Apply's commit and retro proposals."""
 
 import json
 import shutil
 import subprocess
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from livery import approvals, hashing
+from livery import approvals, config, hashing, prefs
 from livery.config import Workspace
 from livery.errors import LiveryError
 from livery.review import apply as review_apply
 from livery.review import items as review_items
-from tests.conftest import checked, sim_run, write_design
+from tests.conftest import OWNER, checked, sim_run, write_design
 from tests.reviewpage import Review
 from tests.reviewpage import item as _item
 
@@ -22,83 +21,66 @@ BLUE = 'def build(kit, p):\n    return Livery(base="#3060c0")\n'
 
 
 def _final(ws: Workspace, name: str) -> dict:
-    return _item(f"final:{name}", park=True, rate=True, pin=approvals.pin_of(ws, name))
+    return _item(f"final:{name}", pin=approvals.pin_of(ws, name))
 
 
 def _ledger(ws: Workspace) -> list[dict]:
     return review_apply.ledger(ws)
 
 
-def test_park_and_a_rating_go_only_where_offered_and_reach_the_ledger(ws):
-    review = Review(ws, [_item("concept:a", park=True, rate=True), _item("kit:tiny")])
+def test_each_kind_takes_its_own_answers(ws):
+    review = Review(
+        ws, [_item("final:a"), _item("concept:b"), _item("kit:tiny"), _item("concept:s", sketch=True)]
+    )
 
-    assert review.post("api/decide", {"id": "concept:a", "decision": "park", "rating": 2}) == 200
+    taken = [
+        {"id": "final:a", "decision": "accept", "favourite": True},
+        {"id": "final:a", "decision": "edit", "note": "the front", "strategy": "quick"},
+        {"id": "final:a", "decision": "edit", "endorsed": ["the mirrors read as plain yellow"]},
+        {"id": "final:a", "decision": "park"},
+        {"id": "final:a", "decision": "stop"},
+        {"id": "concept:s", "decision": "accept", "revived": True},
+    ]
     refused = [
+        {"id": "final:a", "decision": "reject"},
+        {"id": "final:a", "decision": "park", "favourite": True},
+        {"id": "final:a", "decision": "accept", "strategy": "quick"},
+        {"id": "final:a", "decision": "edit", "strategy": "slow"},
+        {"id": "final:a", "decision": "accept", "endorsed": ["a fix"]},
+        {"id": "concept:b", "decision": "park"},
+        {"id": "concept:b", "decision": "accept", "revived": True},
+        {"id": "concept:b", "decision": "accept", "favourite": True},
         {"id": "kit:tiny", "decision": "park"},
-        {"id": "kit:tiny", "decision": "accept", "rating": 3},
-        {"id": "concept:a", "decision": "accept", "rating": 5},
-        {"id": "concept:a", "decision": "accept", "rating": True},
-        {"id": "concept:b", "decision": "accept"},
+        {"id": "concept:x", "decision": "accept"},
     ]
+    assert [review.post("api/decide", body) for body in taken] == [200] * len(taken)
     assert [review.post("api/decide", body) for body in refused] == [400] * len(refused)
-    state = review.state()
-    assert (state["decisions"]["concept:a"]["decision"], state["decisions"]["concept:a"]["rating"]) == (
-        "park",
-        2,
-    )
-    assert "2" in state["ratings"]
-    review.post("api/decide", {"id": "kit:tiny", "decision": "skip"})
+
+
+def test_a_change_is_kept_before_its_note_but_sent_only_with_one(ws):
+    review = Review(ws, [_item("final:a")])
+
+    assert review.post("api/decide", {"id": "final:a", "decision": "edit"}) == 200
+    assert review.post("api/apply", {}) == 409
+    assert review.post("api/decide", {"id": "final:a", "note": "a bigger, whiter number"}) == 200
     result = review.apply()
 
-    assert {d["id"]: (d["decision"], d["rating"]) for d in result["decisions"]} == {
-        "concept:a": ("park", 2),
-        "kit:tiny": ("skip", None),
-    }
-    lines = {line["id"]: line for line in _ledger(ws)}
-    assert (lines["concept:a"]["decision"], lines["concept:a"]["rating"]) == ("park", 2)
-    assert {line["review"] for line in lines.values()} == {result["review"]}
-    assert all(datetime.fromisoformat(line["at"]).tzinfo for line in lines.values())
+    (d,) = result["decisions"]
+    assert (d["decision"], d["note"]) == ("edit", "a bigger, whiter number")
 
 
-def test_edit_and_mix_need_a_note_and_a_note_alone_keeps_the_decision(ws):
-    review = Review(ws, [_item("concept:a", mix=True, rate=True), _item("concept:b", mix=True)])
-
-    blank = [
-        {"id": "concept:a", "decision": "edit", "note": ""},
-        {"id": "concept:a", "decision": "edit", "note": " \n"},
-        {"id": "concept:a", "decision": "mix", "mix_of": ["concept:b"]},
-    ]
-    assert [review.post("api/decide", body) for body in blank] == [400] * len(blank)
-    assert review.state()["decisions"] == {}
-    assert review.post("api/decide", {"id": "concept:a", "decision": "accept", "rating": 3}) == 200
-    assert review.post("api/decide", {"id": "concept:a", "note": "the back is nice"}) == 200
-    a = review.state()["decisions"]["concept:a"]
-    assert (a["decision"], a["note"], a["rating"]) == ("accept", "the back is nice", 3)
-    assert (
-        review.post("api/decide", {"id": "concept:b", "decision": "edit", "note": "a bigger number"}) == 200
-    )
-    assert review.post("api/decide", {"id": "concept:b", "note": ""}) == 400
-    assert review.post("api/decide", {"id": "concept:b", "note": "a bigger, whiter number"}) == 200
-    result = review.apply()
-
-    notes = {d["id"]: (d["decision"], d["note"]) for d in result["decisions"]}
-    assert notes == {
-        "concept:a": ("accept", "the back is nice"),
-        "concept:b": ("edit", "a bigger, whiter number"),
-    }
-
-
-def test_a_parked_final_is_neither_approved_nor_installable(ws, private_metrics):
+@pytest.mark.parametrize("answer", ["park", "stop"])
+def test_a_parked_or_stopped_final_is_neither_approved_nor_installable(ws, private_metrics, answer):
     built = checked(ws, "d", BLUE)
 
-    written = review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": "park", "rating": 1}})
+    written = review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": answer}})
 
     assert not any("pinned" in w for w in written)
     assert approvals.load_approval(ws, "d") is None
     with pytest.raises(approvals.NotApproved):
         approvals.require(ws, "d", built)
     metric = json.loads(private_metrics.read_text().splitlines()[-1])
-    assert (metric["decision"], metric["rating"]) == ("park", 1)
+    assert metric["decision"] == answer
 
 
 def _verdicts(ws: Workspace, name: str, rounds: list[dict]) -> None:
@@ -119,19 +101,22 @@ def test_the_ledger_keeps_old_lines_the_note_verbatim_and_the_critic_on_the_same
     )
     _verdicts(ws, "e", [{"design_hash": "an-earlier-version", "overall": 8, "verdict": "ship"}])
     old = {"at": "2026-10-18T12:50:46+02:00", "review": "x", "id": "kit:k", "decision": "accept", "note": ""}
-    (ws.root / "prefs").mkdir()
-    (ws.root / "prefs" / "decisions.jsonl").write_text(json.dumps(old) + "\n")
+    prefs.append(ws, [old])
     note = '  The back is nice,\nthe "front" is a bit boring '
 
     review_apply.apply(
         ws,
-        [_final(ws, "d"), _item("concept:e", park=True, rate=True)],
-        {"final:d": {"decision": "edit", "note": note, "rating": 3}, "concept:e": {"decision": "reject"}},
+        [_final(ws, "d"), _item("concept:e")],
+        {
+            "final:d": {"decision": "edit", "note": note, "strategy": "full"},
+            "concept:e": {"decision": "reject"},
+        },
     )
 
     first, d, e = _ledger(ws)
     assert first == old
-    assert (d["note"], d["rating"], d["design_hash"]) == (note, 3, h)
+    assert (d["note"], d["strategy"], d["design_hash"], d["by"]) == (note, "full", h, OWNER)
+    assert d["uid"] != e["uid"]
     assert (d["critic"]["overall"], d["critic"]["verdict"]) == (7, "iterate")
     assert e["design_hash"] == hashing.design_hash(ws, "e")
     assert "critic" not in e
@@ -213,19 +198,23 @@ def test_apply_commits_what_it_wrote_and_the_design_folder_and_nothing_else(ws, 
     start = _git(repo, "rev-parse", "HEAD")
     item = _final(ws, "d")
 
-    review_apply.apply(ws, [item], {"final:d": {"decision": "skip"}})
+    review_apply.apply(ws, [item], {"final:d": {"decision": "park"}})
     assert _git(repo, "rev-parse", "HEAD") == start  # tests and other callers never commit
 
     written = review_apply.apply(
         ws,
         [item],
-        {"final:d": {"decision": "accept", "note": "good enough to race", "rating": 3}},
+        {"final:d": {"decision": "accept", "note": "good enough to race", "favourite": True}},
         commit=True,
     )
 
     assert any(w.startswith("committed") for w in written)
     files = set(_git(repo, "show", "--name-only", "--format=", "HEAD").split())
-    assert files == {"designs/d/approved.json", "designs/d/notes.md", "prefs/decisions.jsonl"}
+    assert files == {
+        "designs/d/approved.json",
+        "designs/d/notes.md",
+        f"prefs/{config.person()}/decisions.jsonl",
+    }
     assert "good enough to race" in _git(repo, "log", "-1", "--format=%B")
     assert _git(repo, "status", "--porcelain", "--", "other.txt").strip()
 
@@ -249,6 +238,10 @@ def test_a_decision_on_a_kind_apply_does_not_know_fails_before_anything_is_writt
         review_apply.apply(ws, [_item("kit:tiny"), _item("poster:x")], decisions)
     assert not _ledger(ws)
     assert approval.read_text() == "{}\n"
+
+
+def test_every_kind_the_page_takes_answers_for_is_one_apply_writes():
+    assert set(review_items.ANSWERS) <= set(review_apply.KINDS)
 
 
 def test_proposals_are_reviewed_and_the_accepted_ones_come_back(ws, tmp_path):

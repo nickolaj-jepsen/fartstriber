@@ -1,7 +1,7 @@
 """PreToolUse on Edit|Write: records only the owner makes.
 
-An approval is the owner's accept of one build, so only `livery review` writes it. prefs/log.md is the
-owner's words: adding to it is the agent's job after a review, changing what is there needs their yes.
+An approval is the owner's accept of one build, so only `livery review` writes it. prefs/<person>/log.md is
+that person's words: adding to it is the agent's job after a review, changing what is there needs their yes.
 """
 
 import json
@@ -36,10 +36,14 @@ def main() -> None:
             "approved.json records the owner's accept of one build and only `livery review` writes it. "
             "Put the design up for review instead.",
         )
-    elif parts[-2:] == ["prefs", "log.md"] and not _only_adds(event.get("tool_name", ""), args, path):
+    elif (
+        parts[-1:] == ["log.md"]
+        and parts[-3:-2] == ["prefs"]
+        and not _only_adds(event.get("tool_name", ""), args, path)
+    ):
         _decide(
             "ask",
-            "prefs/log.md is the owner's words. This edit changes lines already there instead of adding new ones.",
+            "prefs/<person>/log.md is the owner's words. This edit changes lines already there instead of adding new ones.",
         )
 
 

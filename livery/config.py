@@ -1,12 +1,13 @@
 """Settings, from two files, and where everything lives.
 
-The project's policy (`policy.toml` in the checkout: lint thresholds, the views a preview shoots) is
-committed; its `[lint]` table is part of every check's hash. The user's settings (`config.toml` in the
-machine state dir, shared by every worktree: the owner's name, IDs, the iRacing folders, the preview
-replay) are not; `livery.example.toml` documents every key.
+The project's policy (`policy.toml` in the checkout: lint thresholds, the views a preview shoots and the
+sim window's size) is committed; its `[lint]` table is part of every check's hash. The user's settings
+(`config.toml` in the machine state dir, shared by every worktree: the owner's name, IDs, the iRacing
+folders, the preview replay) are not; `livery.example.toml` documents every key.
 """
 
 import hashlib
+import re
 import tomllib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -37,6 +38,7 @@ class Shot:
 class Policy:
     lint: dict  # the output lint's thresholds by name; `lint.run.thresholds` checks and types them
     preview: tuple[str, ...]  # the views `livery preview sim` shoots, in order; the kit's profile frames each
+    window: tuple[int, int]  # the sim window's client size every sim run shoots at
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,12 @@ def sha256(path: Path) -> str:
 @lru_cache(maxsize=4)
 def _policy(path: Path, _mtime: int) -> Policy:
     raw = _read(path)
-    return Policy(lint=dict(_get(raw, "lint", path)), preview=tuple(_get(raw, "preview.views", path)))
+    w, h = _get(raw, "preview.window", path)
+    return Policy(
+        lint=dict(_get(raw, "lint", path)),
+        preview=tuple(_get(raw, "preview.views", path)),
+        window=(int(w), int(h)),
+    )
 
 
 def policy(path: Path) -> Policy:
@@ -138,6 +145,13 @@ def owner() -> str:
         return _owner(_read(user_file()))
     except (OSError, ConfigError):
         return NO_OWNER
+
+
+def person(name: str | None = None) -> str:
+    """A person's folder name under prefs/: their name (the owner's by default) in lower case, other
+    characters as dashes."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or owner()).lower()).strip("-")
+    return "owner" if name is None and owner() == NO_OWNER else slug or "owner"
 
 
 def load(path: Path | None = None) -> Config:
@@ -208,7 +222,8 @@ class Workspace:
 
     @property
     def prefs(self) -> Path:
-        return self.root / "prefs"
+        """The owner's records; each person who reviews has a folder of their own (livery.prefs)."""
+        return self.root / "prefs" / person()
 
     @property
     def policy(self) -> Policy:

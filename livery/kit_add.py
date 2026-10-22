@@ -109,7 +109,7 @@ def captured(cfg: Config, ws: Workspace, kit: Kit) -> bool:
     """The kit's current calibration capture was shot of the kit as it is, on its frame and cameras."""
     run = calibrate.current(ws, kit.name)
     m = (state.read_json(run / "manifest.json") if run else None) or {}
-    return bool(m.get("complete")) and run is not None and not bake.stale(cfg, kit, run)
+    return bool(m.get("complete")) and run is not None and not bake.stale(cfg, ws, kit, run)
 
 
 def _reviewed(ws: Workspace, kit: Kit) -> bool:
