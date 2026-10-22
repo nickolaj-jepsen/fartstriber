@@ -3,463 +3,793 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Livery review</title>
+<title>Review</title>
 <style>
+  /* One screen at a time under a queue bar; pictures take the width, decisions sit in a rail at the right. */
   :root {
-    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e2e0db;
-    --accent: #f46200; --ok: #2f8f4e; --edit: #c28a00; --no: #c0392b; --skip: #8a8a8f; --mix: #6a4fc0; --park: #3a7ca5;
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e2e0db; --sunk: #eceae5;
+    --accent: #f46200; --race: #2f8f4e; --fav: #c98a00; --change: #c25a00; --park: #6a7fa8; --stop: #3a7ca5;
+    --no: #c0392b; --critic: #6a4fc0; --shot: #1b1b1d;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+      --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33; --sunk: #18181b;
+      --race: #4fb46d; --fav: #e0a82a; --change: #ff7a1f; --park: #8fa3cf; --stop: #5ea2cc; --no: #e0605a; --critic: #9a84f0;
+      color-scheme: dark;
     }
   }
-  :root[data-theme="dark"] { --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
-  .bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
-  .count { color: var(--muted); font-variant-numeric: tabular-nums; }
-  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  button.apply { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
-  .banner { display: none; padding: 8px 20px; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
-  .banner.show { display: block; }
-  main { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 57px); }
-  nav { border-right: 1px solid var(--line); overflow: auto; max-height: calc(100vh - 57px); position: sticky; top: 57px; }
-  nav a { display: flex; gap: 8px; align-items: center; padding: 8px 14px; color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); font-size: 13px; }
-  nav a.on { background: var(--bg); font-weight: 600; }
-  .ghead { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .glabel { display: flex; gap: 6px; align-items: center; font-weight: 600; font-size: 13px; word-break: break-all; }
-  .tag { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; flex: none; }
-  .group.stale .tag, .group.failed .tag { color: var(--no); border-color: var(--no); }
-  .group.applied .tag { color: var(--ok); border-color: var(--ok); }
-  .gmeta { font-size: 12px; color: var(--muted); word-break: break-all; }
-  .gres { font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
-  .gacts { display: flex; gap: 6px; margin-top: 6px; }
-  .gacts button { padding: 3px 10px; font-size: 13px; }
-  .empty { padding: 14px; color: var(--muted); font-size: 13px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
-  .accept { background: var(--ok); } .edit { background: var(--edit); } .reject { background: var(--no); } .skip { background: var(--skip); } .mix { background: var(--mix); } .park { background: var(--park); }
-  nav .r { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-  section { padding: 20px 24px 120px; max-width: 1400px; }
-  .kind { text-transform: uppercase; font-size: 12px; letter-spacing: .08em; color: var(--muted); }
-  h2 { margin: 4px 0 10px; font-size: 22px; }
-  .body { white-space: pre-wrap; color: var(--ink); max-width: 80ch; margin-bottom: 16px; }
-  .body.mono { font: 13px/1.5 ui-monospace, monospace; max-width: 110ch; }
-  .imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
-  .imgs img { width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #222; cursor: zoom-in; display: block; }
-  .imgs figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
-  .decide { position: fixed; bottom: 0; left: 280px; right: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 24px; display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
-  .decide textarea { flex: 1 1 340px; min-height: 38px; max-height: 140px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-  .decide button.sel { outline: 2px solid var(--accent); }
-  .mixwith { display: none; gap: 8px; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--muted); }
-  .mixwith.show { display: flex; }
-  .rate { display: none; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; font-size: 13px; color: var(--muted); }
-  .rate.show { display: flex; }
-  .hint { width: 100%; font-size: 13px; color: var(--no); }
-  .hint:empty { display: none; }
-  .rate button { padding: 4px 10px; }
-  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
-  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: none; align-items: center; justify-content: center; z-index: 5; cursor: zoom-out; }
-  .lightbox.show { display: flex; }
-  .lightbox img { max-width: 96vw; max-height: 94vh; }
-  .done { padding: 60px; text-align: center; font-size: 18px; color: var(--muted); }
-  @media (max-width: 760px) {
-    main { grid-template-columns: 1fr; }
-    nav { display: none; }
-    .decide { left: 0; padding: 10px 16px; }
-    section { padding: 16px 16px 200px; }
-    .imgs { grid-template-columns: 1fr; }
+  :root[data-theme="dark"] {
+    --bg: #141416; --panel: #1d1d20; --ink: #ececee; --muted: #9a9aa2; --line: #2e2e33; --sunk: #18181b;
+    --race: #4fb46d; --fav: #e0a82a; --change: #ff7a1f; --park: #8fa3cf; --stop: #5ea2cc; --no: #e0605a; --critic: #9a84f0;
+    color-scheme: dark;
   }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans); }
+  .wrap { padding-left: 16px; padding-right: 16px; }
+  header { position: sticky; top: 0; z-index: 4; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 12px; padding-block: 8px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; display: flex; gap: 8px; align-items: center; }
+  .count { background: var(--accent); color: #fff; border-radius: 999px; font-size: 12px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+  .count:empty { display: none; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .tabs button { border: 1px solid transparent; background: none; color: var(--muted); padding: 5px 10px; border-radius: 8px; font: inherit; font-size: 14px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+  .tabs button.on { background: var(--sunk); color: var(--ink); border-color: var(--line); }
+  .tabs .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .tabs .st { font-size: 11px; color: var(--no); }
+  .tsep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 6px; }
+  button { font: inherit; color: var(--ink); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: var(--panel); }
+  .screen { padding-block: 16px 48px; }
+  .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  h2 { font-size: 20px; margin: 2px 0 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .empty { padding: 60px 0; text-align: center; color: var(--muted); font-size: 17px; }
+  .banner { margin-top: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+  .banner.bad { border-color: var(--no); }
+  textarea, input[type="text"], select { width: 100%; font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  textarea { min-height: 64px; resize: vertical; }
+  .send { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; }
+  .send:disabled { opacity: .4; cursor: not-allowed; }
+  .ghost { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; z-index: 9; max-width: calc(100% - 32px); }
+  .lb { position: fixed; inset: 0; z-index: 8; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; cursor: zoom-out; padding: 16px; }
+  .lb img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+  .lb span { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(0,0,0,.6); padding: 2px 10px; border-radius: 4px; }
+  img.zoom { cursor: zoom-in; }
+
+  /* Focus */
+  .focus { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .viewtabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-end; margin: 10px 0 8px; }
+  .viewtabs .vt { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 4px; font-size: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; align-items: center; width: 96px; }
+  .viewtabs .vt img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; display: block; background: var(--shot); }
+  .viewtabs .vt.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); font-weight: 600; }
+  .viewtabs .sp { flex: 1; }
+  .flick { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .flick button { border: 0; background: var(--panel); padding: 4px 10px; font-size: 13px; cursor: pointer; }
+  .flick button.on { background: var(--ink); color: var(--bg); }
+  .stage { position: relative; background: var(--shot); border-radius: 10px; overflow: hidden; }
+  .stage img { width: 100%; display: block; }
+  .stage.preview { box-shadow: 0 0 0 2px var(--accent); }
+  .stage .tag { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+  .hintline { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .tl { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; margin-top: 6px; }
+  .tl button { flex: none; width: 150px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px; text-align: left; cursor: pointer; }
+  .tl button img, .tl button .noimg { width: 100%; border-radius: 4px; display: block; aspect-ratio: 16/9; object-fit: cover; background: var(--sunk); }
+  .tl button.agents { opacity: .62; }
+  .tl button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); opacity: 1; }
+  .tl .w { font-size: 12px; margin-top: 4px; display: block; }
+  .tl .d { font-size: 11px; color: var(--muted); display: block; }
+  .chk { margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 64px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .box h3 { margin: 0 0 8px; font-size: 16px; font-weight: 650; }
+  .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ans { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px 10px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .ans b { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  .ans span { font-size: 12px; color: var(--muted); }
+  .ans.on { box-shadow: inset 0 0 0 1px currentColor; }
+  .ans.on[data-a="race"] { border-color: var(--race); color: var(--race); }
+  .ans.on[data-a="fav"] { border-color: var(--fav); color: var(--fav); }
+  .ans.on[data-a="edit"] { border-color: var(--change); color: var(--change); }
+  .ans.on[data-a="park"] { border-color: var(--park); color: var(--park); }
+  .ans.on[data-a="stop"] { border-color: var(--stop); color: var(--stop); }
+  .ans.on[data-a="accept"] { border-color: var(--race); color: var(--race); }
+  .ans.on span { color: inherit; opacity: .8; }
+  .size { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .size label, .size .why { font-size: 12px; color: var(--muted); }
+  .critic .verdict { font-size: 12px; color: var(--muted); margin: -4px 0 6px; }
+  .sugg { border-top: 1px solid var(--line); padding: 8px 0; }
+  .sugg label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; font-size: 15px; font-weight: 550; }
+  .sugg input { margin-top: 4px; accent-color: var(--critic); }
+  .sugg p { margin: 3px 0 0 24px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .blk { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--stop); border: 1px solid var(--stop); border-radius: 4px; padding: 0 4px; flex: none; margin-top: 3px; }
+  .did p { margin: 0 0 6px; font-size: 14px; }
+  .did .muted { font-size: 12.5px; }
+  .ok { color: var(--race); font-weight: 600; }
+  .ctx { white-space: pre-wrap; font-size: 12.5px; line-height: 1.45; color: var(--muted); margin: 0; max-height: 420px; overflow: auto; }
+
+  /* Compare */
+  .cmp { display: grid; gap: 8px; align-items: start; margin-top: 12px; }
+  .cmp .vh { font-size: 12px; color: var(--muted); align-self: center; font-family: var(--mono); }
+  .cmp img { width: 100%; border-radius: 6px; display: block; background: var(--shot); }
+  .cmp .gap { aspect-ratio: 16/9; border-radius: 6px; border: 1px dashed var(--line); }
+  .carhead { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .carhead.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .carhead label { display: flex; gap: 8px; align-items: center; font-weight: 600; cursor: pointer; }
+  .carhead input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .cmpfoot { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; margin-top: 16px; align-items: start; }
+  .sketches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sketch { width: 200px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; font-size: 12px; }
+  .sketch img { width: 100%; border-radius: 4px; display: block; background: var(--sunk); }
+  .sketch.on { border-color: var(--accent); }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; margin-top: 12px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; outline: none; }
+  .tile.cur { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .tile img { width: 100%; border-radius: 6px; background: #fff; display: block; }
+  .tile .t { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; font-size: 16px; }
+  .tile .meta { font-size: 12.5px; color: var(--muted); white-space: pre-wrap; max-height: 9em; overflow: auto; }
+  .tile .acts { display: flex; gap: 6px; }
+  .tile .acts button { flex: 1; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 4px; cursor: pointer; font-size: 13px; }
+  .tile .acts button.on[data-d="accept"] { background: var(--race); color: #fff; border-color: var(--race); }
+  .tile .acts button.on[data-d="edit"] { background: var(--change); color: #fff; border-color: var(--change); }
+  .tile .acts button.on[data-d="reject"] { background: var(--no); color: #fff; border-color: var(--no); }
+  .gridbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .prog { flex: 1; min-width: 120px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .prog div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+
+  /* History */
+  .hfil { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .hfil button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 13px; cursor: pointer; }
+  .hfil button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .hfil select { width: auto; padding: 3px 8px; font-size: 13px; border-radius: 999px; }
+  .hist { list-style: none; padding: 0; margin: 12px 0 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .hist li { display: grid; grid-template-columns: 96px 70px 132px minmax(0, 1fr) auto; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); align-items: start; }
+  .hist li:first-child { border-top: 0; }
+  .hist .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .who { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 4px; padding: 1px 5px; justify-self: start; border: 1px solid var(--line); color: var(--muted); }
+  .who.me { color: var(--accent); border-color: var(--accent); }
+  .hist .th { width: 132px; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; display: block; background: var(--sunk); }
+  .hist .th.sheet { object-fit: contain; background: #fff; }
+  .hist .noth { width: 132px; aspect-ratio: 16/9; border-radius: 4px; border: 1px dashed var(--line); display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+  .hist .what { min-width: 0; font-size: 14px; }
+  .hist .sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .hist q { font-style: italic; }
+  .hist .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .hist .acts button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+  .hist li.undone .what > .main { text-decoration: line-through; color: var(--muted); }
+  .tasterow { margin-top: 6px; border-left: 3px solid var(--fav); background: var(--bg); border-radius: 0 6px 6px 0; padding: 6px 10px; font-size: 13px; }
+  .tasterow code { font: 600 12px var(--mono); }
+  .tasterow .lf { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .ask { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--fav); border-radius: 8px; font-size: 13px; }
+  .chip { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--muted); margin-left: 4px; }
+
+  /* Library */
+  .lfil { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .lfil button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 13px; cursor: pointer; }
+  .lfil button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .lfil input { width: min(260px, 100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
+  .lsec { margin-top: 22px; }
+  .lsec h3 { font-size: 16px; margin: 0 0 8px; display: flex; gap: 8px; align-items: baseline; }
+  .lsec h3 span { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+  .lcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .lcard img, .lcard .noimg { width: 100%; border-radius: 6px; display: block; aspect-ratio: 16/9; object-fit: cover; background: var(--shot); }
+  .lcard .noimg { background: var(--sunk); border: 1px dashed var(--line); display: grid; place-items: center; font-size: 12px; color: var(--muted); }
+  .lcard img.sheet { object-fit: contain; background: #fff; }
+  .lcard .t { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; }
+  .lcard .t code { font: 600 13px var(--mono); }
+  .lcard .meta { font-size: 12px; color: var(--muted); }
+  .lcard .lf { font-size: 12.5px; color: var(--muted); }
+  .state { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 4px; padding: 1px 6px; border: 1px solid; flex: none; font-weight: 600; color: var(--muted); }
+  .state.s-on-your-car, .state.s-approved { color: var(--race); }
+  .state.s-held, .state.s-changed { color: var(--no); }
+  .state.s-stopped, .state.s-parked { color: var(--stop); }
+  .state.s-live { color: var(--fav); }
+  .state.s-in-work, .state.s-revived, .state.s-to-review, .state.s-to-draw { color: var(--accent); }
+  .lcard .acts { display: flex; gap: 6px; }
+  .lcard .acts button { flex: 1; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 4px; cursor: pointer; font-size: 13px; }
+  .lcard .conf { font-size: 12.5px; border: 1px solid var(--change); border-radius: 6px; padding: 6px 8px; }
+  .lcard .conf textarea { margin-top: 6px; min-height: 40px; font-size: 13px; }
+  .lcard .conf .row { margin-top: 6px; }
+  .lcard .conf button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+  .lcard .conf label { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
+
+  @media (max-width: 900px) {
+    .focus, .cmpfoot { grid-template-columns: 1fr; }
+    .rail { position: static; }
+    .hist li { grid-template-columns: 132px minmax(0, 1fr); }
+    .hist .acts { grid-column: 1 / -1; justify-content: flex-start; }
+  }
+  @media (max-width: 520px) { .answers { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>Livery review</h1>
-  <div class="bar"><div id="bar"></div></div>
-  <span class="count" id="count"></span>
-  <button class="apply" id="apply" title="Write this review's decisions back in its session's checkout and return them to its agent">Apply</button>
+  <div class="wrap">
+    <h1>Review <span class="count" id="count"></span></h1>
+    <nav class="tabs" id="tabs" aria-label="Screens"></nav>
+  </div>
 </header>
-<div class="banner" id="banner">No review is waiting right now. This page picks up the next one by itself.</div>
-<main>
-  <nav id="nav"></nav>
-  <section id="item"></section>
-</main>
-<div class="decide" id="decide">
-  <button data-d="accept"><kbd>A</kbd> Accept</button>
-  <button data-d="edit"><kbd>E</kbd> Edit</button>
-  <button data-d="reject"><kbd>R</kbd> Reject</button>
-  <button data-d="skip"><kbd>S</kbd> Skip</button>
-  <button data-d="mix" id="mixbtn"><kbd>M</kbd> Mix</button>
-  <button data-d="park" id="parkbtn" title="Stop iterating: not approved, not installed"><kbd>P</kbd> Park</button>
-  <button id="allbtn" title="Accept every item of this kind in this review that has no decision yet"><kbd>Shift+A</kbd> Accept the rest</button>
-  <textarea id="note" placeholder="Note, in your words: saved as you type (E and M open this; Ctrl+Enter moves on, Esc takes back an empty edit)"></textarea>
-  <div class="hint" id="hint"></div>
-  <div class="mixwith" id="mixwith"></div>
-  <div class="rate" id="rate"></div>
-</div>
-<div class="lightbox" id="lightbox"><img alt=""></div>
+<main class="wrap screen" id="main"></main>
+<div class="toast" id="toast" hidden></div>
 <script>
-// Every session's waiting reviews, one group each. A group's decisions are stored here; Apply hands them to
-// the session that queued it, which writes them in its own checkout.
-let groups = [];
-let ratings = {};
-let cur = null;           // { g, id }: the item on screen
-let shown;                // the key of the item whose body and pictures are drawn
-let wanted = decodeURIComponent(location.hash.slice(1)) || null;  // the review the URL opens at
-let polling = null;
-let typing = null;
-let saving = Promise.resolve(true);
-let epoch = 0;            // counts the page's writes: a poll that started before one may not show it
-// What the page has that the server doesn't yet, by key(group, id): a decision with its note as typed, or a
-// rating pressed before any decision. An edit or a mix goes to the server only once it has a note.
-const draft = {};
+"use strict";
 const $ = (id) => document.getElementById(id);
-const key = (gid, id) => `${gid} ${id}`;
-const needsNote = (d) => d.decision === "edit" || d.decision === "mix";
-const open = (g) => !["applying", "applied"].includes(g.status);  // its decisions can still change
-const groupOf = (gid) => groups.find((g) => g.id === gid);
-const label = (g) => g.branch || g.root.split(/[\\/]/).pop();
-
-function rows() { return groups.filter(open).flatMap((g) => g.items.map((it) => ({ g, it }))); }
-
-function here() {
-  const g = cur && groupOf(cur.g);
-  const it = g && open(g) && g.items.find((i) => i.id === cur.id);
-  return it ? { g, it } : null;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const when = (at) => String(at || "").slice(0, 16).replace("T", " ");
+function toast(t) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => el.hidden = true, 3200); }
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", body: JSON.stringify(body) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(out.error || r.statusText);
+  return out;
 }
 
-function current(gid, id) { const g = groupOf(gid); return draft[key(gid, id)] || (g && g.decisions[id]) || null; }
-function decisionOf(gid, id) { return (current(gid, id) || {}).decision; }
-function blocked(gid, id) { const d = draft[key(gid, id)]; return !!d && needsNote(d) && !d.note.trim(); }
-function change(gid, id, patch) { draft[key(gid, id)] = { note: "", mix_of: [], rating: null, ...current(gid, id), ...patch, group: gid, id }; }
-function checked() { return [...$("mixwith").querySelectorAll("input:checked")].map((i) => i.value); }
-function hint(text) { $("hint").textContent = text; }
-function ratingOf(g, it) { return it.rate ? (current(g.id, it.id) || {}).rating || null : null; }
+// ---------- State ----------
+let S = { groups: [], owner: "" };
+let screen = location.hash.slice(1) || null;  // a group id, "library" or "history"
+const PAGES = ["library", "history"];
+const local = {};  // per group and item: what this page shows that the server needn't know (view, flick, timeline point)
+const L = (gid, id) => (local[gid + "|" + id] ||= { view: null, when: "now", point: -1 });
+let sig = "";
+
+function waiting() { return S.groups.filter((g) => g.status !== "applied").slice().sort((a, b) => b.created - a.created); }
+function group() { return S.groups.find((g) => g.id === screen); }
+function decision(g, id) { return g.decisions[id] || null; }
+const img = (g, p, w) => (p ? `/img?g=${encodeURIComponent(g.id)}&p=${encodeURIComponent(p)}${w ? `&w=${w}` : ""}` : "");
+// A picture shown smaller than it is, opening at full size in the lightbox.
+const pic = (g, p, w, alt, cls = "zoom") => `<img class="${cls}" src="${img(g, p, w)}" data-full="${img(g, p)}" alt="${esc(alt)}" loading="lazy">`;
 
 async function poll() {
-  clearTimeout(polling);
-  const since = epoch;
   try {
     const r = await fetch("/api/state");
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const s = await r.json();
-    if (since === epoch) { groups = s.groups; ratings = s.ratings; }  // a poll older than a write waits for the next
-    $("banner").classList.remove("show");
-  } catch {
-    $("banner").classList.add("show");  // the review that served the page is gone; another may take over
+    S = await r.json();
+  } catch (e) { return; }
+  const w = waiting();
+  $("count").textContent = w.filter((g) => g.status === "waiting").length || "";
+  document.title = (w.length ? `(${w.length}) ` : "") + "Review";
+  if (!screen || (!PAGES.includes(screen) && !S.groups.some((g) => g.id === screen))) screen = w[0]?.id || "library";
+  const now = JSON.stringify([screen, S.groups.map((g) => [g.id, g.status, Object.entries(g.decisions).map(([k, d]) => [k, d.decision, d.favourite, d.revived, (d.endorsed || []).length]), g.items.map((i) => !!i.critic)])]);
+  renderTabs();
+  if (now !== sig) { sig = now; render(); }
+}
+
+function go(s) {
+  if (s === "history") H = null;  // read again on every visit: a Send or a Library change may have written since
+  if (s === "library") LIB = null;
+  screen = s; location.hash = s; sig = ""; poll();
+}
+
+function renderTabs() {
+  const LABEL = { focus: "Final", compare: "Concepts", grid: "" };
+  const tabs = waiting().map((g) => {
+    const first = g.items[0];
+    const k = g.layout === "focus" ? (first.kind === "kit" ? "Kit" : first.still ? "Still OK?" : first.again ? "Again" : "Final") : g.layout === "compare" ? "Concepts" : (first.kind[0].toUpperCase() + first.kind.slice(1) + "s");
+    const name = g.layout === "focus" ? first.title : `${g.items.filter((i) => !i.sketch).length}`;
+    const st = g.status === "waiting" ? "" : `<span class="st">${esc(g.status)}</span>`;
+    return `<button class="${g.id === screen ? "on" : ""}" data-g="${esc(g.id)}"><span class="k">${esc(k || LABEL[g.layout])}</span> ${esc(name)} ${st}</button>`;
+  });
+  $("tabs").innerHTML = tabs.join("") + `<span class="tsep"></span>` + [["library", "Library"], ["history", "History"]].map(([s, t]) => `<button class="${screen === s ? "on" : ""}" data-g="${s}">${t}</button>`).join("");
+  $("tabs").querySelectorAll("button").forEach((b) => b.onclick = () => go(b.dataset.g));
+}
+
+function render() {
+  const m = $("main");
+  if (screen === "history") return renderHistory(m);
+  if (screen === "library") return renderLibrary(m);
+  const g = group();
+  if (!g) { m.innerHTML = `<div class="empty">Nothing is waiting. This page picks up the next review by itself.</div>`; return; }
+  const banner = statusBanner(g);
+  if (g.layout === "focus") renderFocus(m, g, banner);
+  else if (g.layout === "compare") renderCompare(m, g, banner);
+  else renderGrid(m, g, banner);
+}
+
+function statusBanner(g) {
+  if (g.status === "waiting") return "";
+  if (g.status === "applying") return `<div class="banner">Sending…</div>`;
+  if (g.status === "applied") return `<div class="banner">Sent. ${esc((g.result?.written || []).join(" · "))}</div>`;
+  const why = g.status === "failed" ? `Sending failed: ${esc(g.result?.error)}` : "Its session stopped waiting. The answers are kept; it sends when that session runs livery review again.";
+  return `<div class="banner bad">${why} <button class="ghost" data-clear="${esc(g.id)}">Take it off the page</button></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const c = e.target.closest("[data-clear]");
+  if (c) { try { await post("/api/clear", { group: c.dataset.clear }); go(""); } catch (err) { toast(err.message); } }
+});
+
+async function decide(g, id, patch) {
+  try { await post("/api/decide", { group: g.id, id, ...patch }); } catch (err) { toast(err.message); }
+  sig = ""; poll();
+}
+const debounced = {};
+function decideLater(g, id, patch) {
+  clearTimeout(debounced[g.id + id]);
+  debounced[g.id + id] = setTimeout(() => post("/api/decide", { group: g.id, id, ...patch }).catch((err) => toast(err.message)), 400);
+}
+async function send(g, before) {
+  try {
+    if (before) await before();
+    await post("/api/apply", { group: g.id });
+    toast("Sent.");
+    const next = waiting().find((x) => x.id !== g.id);
+    setTimeout(() => go(next ? next.id : "history"), 800);
+  } catch (err) { toast(err.message); }
+}
+
+// Lightbox
+function lightbox(src, cap) {
+  const lb = document.createElement("div"); lb.className = "lb";
+  lb.innerHTML = `<img alt=""><span></span>`;
+  lb.querySelector("img").src = src; lb.querySelector("span").textContent = (cap || "") + " · Esc or click to close";
+  const close = () => { lb.remove(); document.removeEventListener("keydown", key, true); };
+  const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  lb.onclick = close; document.addEventListener("keydown", key, true);
+  document.body.appendChild(lb);
+}
+document.addEventListener("click", (e) => { const im = e.target.closest("img.zoom"); if (im) lightbox(im.dataset.full || im.src, im.alt); });
+
+// ---------- Focus: a final, a kit, a still OK? ----------
+const FINAL_ANSWERS = [
+  ["race", "Race it", "R", "goes on your car"],
+  ["fav", "★ Favourite", "F", "on your car, and future designs learn from it"],
+  ["edit", "Change", "C", "another round on your note"],
+  ["park", "Park", "P", "not now: worth coming back to"],
+  ["stop", "Stop", "S", "done with it, not raced"],
+];
+const KIT_ANSWERS = [["accept", "Approve", "A", "the kit is right"], ["edit", "Change", "C", "say what's off"]];
+const STILL_ANSWERS = [
+  ["race", "Keep it", "K", "its approval moves to this build"],
+  ["edit", "Change", "C", "another round on your note"],
+  ["stop", "Stop", "S", "take its approval back"],
+];
+function answerOf(d) { if (!d) return null; if (d.decision === "accept") return d.favourite ? "fav" : "race"; return d.decision; }
+
+function focusPictures(it) {
+  // [{key, label, src, then}] : sim or baked shots by view, then the flat pictures (or a kit's images).
+  const out = [];
+  for (const [v, p] of Object.entries(it.views || {})) out.push({ key: v, label: v + (it.baked ? " · baked" : ""), src: p, then: (it.then || {})[v] });
+  const flat = it.flat || [];
+  for (const p of flat) out.push({ key: p, label: p.split("/").pop().replace(".png", ""), src: p });
+  if (!out.length) for (const p of it.images || []) out.push({ key: p, label: (it.captions || {})[p] || p.split("/").pop(), src: p });
+  return out;
+}
+
+function renderFocus(m, g, banner) {
+  const it = g.items[0], d = decision(g, it.id), st = L(g.id, it.id), isKit = it.kind === "kit";
+  const pics = focusPictures(it);
+  if (!st.view || !pics.some((p) => p.key === st.view)) st.view = pics[0]?.key;
+  const pic = () => pics.find((p) => p.key === st.view) || pics[0];
+  const answers = isKit ? KIT_ANSWERS : it.still ? STILL_ANSWERS : FINAL_ANSWERS;
+  const ans = answerOf(d);
+  const hasThen = pics.some((p) => p.then);
+  const crit = it.critic;
+  const note = it.owner_note;
+  m.innerHTML = `${banner}
+  <div class="focus">
+    <div>
+      <div class="eyebrow">${isKit ? "Kit" : it.still ? "Still OK? · a library or kit change moved this approved car" : "Final"}${it.again ? " · review again, from the Library" : ""}${it.pin ? " · checked build" : ""}</div>
+      <h2>${esc(it.title)}</h2>
+      <div class="viewtabs" id="vtabs">
+        ${pics.map((p) => `<button class="vt ${p.key === st.view ? "on" : ""}" data-v="${esc(p.key)}" title="${esc(p.label)}"><img src="${img(g, p.src, 240)}" alt="" loading="lazy">${esc(p.label)}</button>`).join("")}
+        <span class="sp"></span>
+        ${hasThen ? `<div class="flick" title="What you saw at your last decision (${esc(when(it.then_at))}) and now: T"><button data-f="then" class="${st.when === "then" ? "on" : ""}">Then</button><button data-f="now" class="${st.when === "now" ? "on" : ""}">Now</button></div>` : ""}
+      </div>
+      <div class="stage" id="stage"><img id="shot" class="zoom" alt=""><span class="tag" id="tag"></span></div>
+      <div class="hintline">Hover a view, Then or a checkpoint to preview it; click to keep it. <kbd>1</kbd>–<kbd>9</kbd> views${hasThen ? " · <kbd>T</kbd> then/now" : ""} · ${answers.map((a) => `<kbd>${a[2]}</kbd>`).join(" ")} answer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> send</div>
+      ${(it.timeline || []).length ? `<div style="margin-top:16px"><div class="row"><div class="eyebrow">Earlier checkpoints</div><button class="ghost" id="tonow" ${st.point < 0 ? "hidden" : ""} style="padding:1px 8px;font-size:12px">Back to now</button></div>
+      <div class="tl" id="tl">${it.timeline.map((p, i) => { const v = p.views[st.view] || p.views.front34 || Object.values(p.views)[0]; return `<button class="${p.who} ${i === st.point ? "on" : ""}" data-i="${i}">${v ? `<img src="${img(g, v, 320)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}<span class="w">${esc(p.label)}</span><span class="d">${esc(when(p.at))} · ${p.who === "you" ? "you" : "agents"}</span></button>`; }).join("")}</div>
+      <div class="chk" id="tlinfo" hidden></div></div>` : ""}
+    </div>
+    <aside class="rail">
+      <div class="box">
+        <div class="answers" id="answers">${answers.map(([a, label, k, sub]) => `<button class="ans ${ans === a ? "on" : ""}" data-a="${a}"><b>${label} <kbd>${k}</kbd></b><span>${sub}</span></button>`).join("")}</div>
+        <div id="notewrap" ${ans === "edit" || ans === "park" || ans === "stop" ? "" : "hidden"} style="margin-top:10px">
+          <label class="small muted" for="note">${ans === "edit" ? "What should change, in your words" : "Why? (optional, still counts as your words)"}</label>
+          <textarea id="note"></textarea>
+          ${!isKit && ans === "edit" ? `<div class="size"><label for="strategy">How the agents work on it</label>
+            <select id="strategy"><option value="quick">Quick fix · one round on your note</option><option value="full">Full round · up to 4 rounds</option></select>
+            <span class="why" id="why"></span></div>` : ""}
+        </div>
+        <div class="row" style="margin-top:10px"><button class="send" id="send">Send</button><span class="small muted" id="sendwhy"></span></div>
+      </div>
+      ${crit && ans ? `<div class="box critic"><h3>The critic would also change</h3>
+        <div class="verdict">${esc(crit.verdict || "")}${crit.overall ? ` · ${crit.overall}/10` : ""} · round ${esc(crit.round)}${crit.baked ? " (baked)" : ""}${crit.suggestions.length ? " · tick one to add it to your Change" : ""}</div>
+        ${crit.suggestions.map((s, i) => `<div class="sugg"><label><input type="checkbox" data-s="${i}" ${(d?.endorsed || []).includes(s.detail || s.title) ? "checked" : ""}><span>${esc(s.title)}${s.optional ? ` <span class="muted small">optional</span>` : ""}</span></label>${s.detail && s.detail !== s.title ? `<p>${esc(s.detail)}</p>` : ""}</div>`).join("") || `<p class="small muted">No open suggestions.</p>`}
+        ${crit.blocked.map((b) => `<div class="sugg"><label><span class="blk">blocked</span><span>${esc(b)}</span></label></div>`).join("")}
+      </div>` : ""}
+      ${note ? `<div class="box did"><h3>Your last note</h3>
+        <p class="muted">${esc(when(note.at))}: <q>${esc(note.note)}</q></p>
+        ${note.judged ? `<p><span class="${note.judged.status === "resolved" ? "ok" : ""}">${esc({ resolved: "Resolved", partly: "Partly resolved", not: "Not resolved" }[note.judged.status] || note.judged.status)}</span> <span class="muted">· the critic, round ${esc(note.judged.round)}${note.judged.this_build ? "" : ", an earlier build"} · ${esc(note.judged.evidence)}</span></p>` : `<p class="muted">No critic round has judged it yet.</p>`}
+      </div>` : ""}
+      <div class="box"><h3>Context</h3><p class="ctx">${esc(it.body || "")}</p></div>
+    </aside>
+  </div>`;
+
+  const shot = $("shot"), stage = $("stage");
+  function show(src, tag, preview) {
+    shot.src = img(g, src, 1800); shot.dataset.full = img(g, src); shot.alt = tag; $("tag").textContent = tag + (preview ? " · preview" : "");
+    stage.classList.toggle("preview", !!preview);
   }
-  if (!here()) pick();
-  render(false);
-  polling = setTimeout(poll, since !== epoch ? 100 : groups.some((g) => g.status === "applying") ? 300 : 2000);
-}
-
-function pick() {
-  const all = rows();
-  const mine = wanted ? all.filter(({ g }) => g.id === wanted) : [];
-  if (mine.length) wanted = null;
-  const list = mine.length ? mine : all;
-  const r = list.find(({ g, it }) => !decisionOf(g.id, it.id)) || list[0];
-  cur = r ? { g: r.g.id, id: r.it.id } : null;
-}
-
-function render(local = true) {
-  const all = rows();
-  const decided = all.filter(({ g, it }) => decisionOf(g.id, it.id)).length;
-  $("bar").style.width = all.length ? `${(100 * decided) / all.length}%` : "0";
-  $("count").textContent = `${decided} / ${all.length}`;
-  document.title = all.length > decided ? `(${all.length - decided}) Livery review` : "Livery review";
-  renderNav();
-  const h = here();
-  $("apply").style.display = h && h.g.status === "waiting" ? "" : "none";
-  const k = h ? key(h.g.id, h.it.id) : null;
-  if (k !== shown) {
-    renderItem(h);
-    shown = k;
-    local = true;
+  function current() {
+    const p = pic();
+    if (!p) return;
+    if (st.point >= 0) {
+      const t = it.timeline[st.point];
+      const v = t.views[p.key] || t.views.front34 || Object.values(t.views)[0];
+      return show(v || p.src, `${t.label} · ${when(t.at)}`);
+    }
+    if (st.when === "then" && p.then) return show(p.then, `then · ${p.label} · ${when(it.then_at)}`);
+    show(p.src, `now · ${p.label}`);
   }
-  if (local && h) renderDecide(h);  // a poll leaves the mix boxes and the rating alone
+  current();
+  $("vtabs").querySelectorAll(".vt").forEach((b) => {
+    b.onclick = () => { st.view = b.dataset.v; sig = ""; render(); };
+    b.onmouseenter = () => { const p = pics.find((x) => x.key === b.dataset.v); show(st.when === "then" && p.then ? p.then : p.src, p.label, true); };
+    b.onmouseleave = current;
+  });
+  m.querySelectorAll(".flick button").forEach((b) => {
+    b.onclick = () => { st.when = b.dataset.f; st.point = -1; sig = ""; render(); };
+    b.onmouseenter = () => { const p = pic(); const src = b.dataset.f === "then" ? p.then : p.src; if (src) show(src, `${b.dataset.f} · ${p.label}`, true); };
+    b.onmouseleave = current;
+  });
+  if ($("tl")) {
+    $("tl").scrollLeft = $("tl").scrollWidth;  // the newest checkpoints, beside now
+    $("tl").querySelectorAll("button").forEach((b) => {
+      const t = it.timeline[+b.dataset.i];
+      b.onclick = () => {
+        st.point = +b.dataset.i; current();
+        $("tl").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); $("tonow").hidden = false;
+        const c = t.critic && d ? `<br><span class="muted">Critic: ${esc(t.critic.verdict || "")}${t.critic.overall ? ` ${t.critic.overall}/10` : ""}${t.critic.suggestions.length ? ` · ${esc(t.critic.suggestions.map((s) => s.title).join("; "))}` : ""}</span>` : "";
+        $("tlinfo").innerHTML = `<b>${esc(t.label)}</b> · ${esc(when(t.at))} · ${t.who === "you" ? "you" : "agents"}${t.note ? `<br><q>${esc(t.note)}</q>` : ""}${c}`;
+        $("tlinfo").hidden = false;
+      };
+      b.onmouseenter = () => { const p = pic(); const v = t.views[p?.key] || t.views.front34 || Object.values(t.views)[0]; if (v) show(v, `${t.label} · ${when(t.at)}`, true); };
+      b.onmouseleave = current;
+    });
+    $("tonow").onclick = () => { st.point = -1; sig = ""; render(); };
+  }
+
+  // Answers
+  const noteEl = $("note");
+  if (noteEl) noteEl.value = st.note ?? d?.note ?? "";  // a draft typed here outlives a re-render before it is saved
+  function payload(a) {
+    if (a === "race" || a === "fav") return { decision: "accept", favourite: a === "fav", endorsed: [], strategy: null };
+    if (a === "edit") return { decision: "edit", favourite: false, strategy: isKit ? null : (d?.strategy || suggested()) };
+    return { decision: a, favourite: false, endorsed: [], strategy: null };
+  }
+  function suggested() {
+    const text = (noteEl?.value || "").trim();
+    const open = /boring|more |less |aggressive|different|whole|overall|vibe|direction/i.test(text);
+    return !open && (text.split(/\s+/).filter(Boolean).length <= 16 || (d?.endorsed || []).length) ? "quick" : "full";
+  }
+  m.querySelectorAll(".ans").forEach((b) => b.onclick = () => pick(b.dataset.a));
+  function pick(a) { decide(g, it.id, payload(a)); }
+  if (noteEl) noteEl.oninput = () => { st.note = noteEl.value; decideLater(g, it.id, { note: noteEl.value }); whyLine(); };
+  const strat = $("strategy");
+  function whyLine() {
+    if (!strat) return;
+    const s = suggested();
+    $("why").textContent = strat.value === s ? "Suggested from your note." : `You changed it; the suggestion was ${s === "quick" ? "Quick fix" : "Full round"}.`;
+  }
+  if (strat) { strat.value = d?.strategy || suggested(); whyLine(); strat.onchange = () => { decideLater(g, it.id, { strategy: strat.value }); whyLine(); }; }
+  m.querySelectorAll(".sugg input[type=checkbox]").forEach((c) => c.onchange = () => {
+    const picked = [...m.querySelectorAll(".sugg input[type=checkbox]")].filter((x) => x.checked).map((x) => { const s = crit.suggestions[+x.dataset.s]; return s.detail || s.title; });
+    if (picked.length && ans !== "edit") { toast("Ticking a suggestion makes this a Change."); decide(g, it.id, { ...payload("edit"), endorsed: picked }); }
+    else decide(g, it.id, { endorsed: picked });
+  });
+  const sendBtn = $("send");
+  function sendable() {
+    const unsaid = ans === "edit" && !(noteEl?.value || "").trim() && !(d?.endorsed || []).length;
+    sendBtn.disabled = g.status !== "waiting" || !ans || unsaid;
+    $("sendwhy").textContent = !ans ? "Pick an answer first" : unsaid ? "Say what to change, or tick a suggestion" : "";
+  }
+  sendable();
+  if (noteEl) noteEl.addEventListener("input", sendable);
+  sendBtn.onclick = () => send(g, async () => { if (noteEl) await post("/api/decide", { group: g.id, id: it.id, note: noteEl.value, ...(strat ? { strategy: strat.value } : {}) }); });
+
+  document.onkeydown = (e) => {
+    if (screen !== g.id || e.target.matches("input, textarea, select") || document.querySelector(".lb")) {
+      if (e.key === "Enter" && e.ctrlKey && !sendBtn.disabled) sendBtn.click();
+      return;
+    }
+    const k = e.key.toLowerCase();
+    if (/^[1-9]$/.test(k) && pics[+k - 1]) { st.view = pics[+k - 1].key; sig = ""; render(); }
+    else if (k === "t" && hasThen) { st.when = st.when === "now" ? "then" : "now"; st.point = -1; sig = ""; render(); }
+    else if (e.key === "Enter" && e.ctrlKey && !sendBtn.disabled) sendBtn.click();
+    else { const a = answers.find((x) => x[2].toLowerCase() === k); if (a) { e.preventDefault(); pick(a[0]); } }
+  };
 }
 
-function result(g) {
-  if (g.result) return g.result.error ? `Apply failed: ${g.result.error}` : `Applied.${g.result.written.length ? " Wrote:\n" + g.result.written.join("\n") : ""}`;
-  if (g.status === "stale") return "Its session stopped waiting. Decisions made here apply when it reviews again.";
-  if (g.status === "applying") return "Applying in its checkout…";
+// ---------- Compare: concepts ----------
+function renderCompare(m, g, banner) {
+  const cars = g.items.filter((i) => !i.sketch), sketches = g.items.filter((i) => i.sketch);
+  const views = [];
+  for (const c of cars) for (const v of Object.keys(c.views || {})) if (!views.includes(v)) views.push(v);
+  const flatRow = cars.some((c) => (c.flat || []).length);
+  const picked = (c) => decision(g, c.id)?.decision === "accept";
+  const cols = `90px repeat(${cars.length}, minmax(0, 1fr))`;
+  let rows = `<div></div>` + cars.map((c, i) => { const d = decision(g, c.id); return `<div class="carhead ${picked(c) ? "on" : ""}">
+    <label><input type="checkbox" data-c="${esc(c.id)}" ${picked(c) ? "checked" : ""}> <span>${esc(c.title)}</span> <kbd>${i + 1}</kbd></label>
+    <input type="text" data-n="${esc(c.id)}" placeholder="a note for this car" value="${esc(d?.note ?? "")}" ${picked(c) ? "" : "hidden"}></div>`; }).join("");
+  for (const v of views) rows += `<div class="vh">${esc(v)}</div>` + cars.map((c) => c.views?.[v] ? pic(g, c.views[v], 900, `${c.title} · ${v}`) : `<div class="gap"></div>`).join("");
+  if (flatRow) rows += `<div class="vh">flat</div>` + cars.map((c) => c.flat?.[0] ? pic(g, c.flat[0], 900, `${c.title} · flat`) : `<div class="gap"></div>`).join("");
+  m.innerHTML = `${banner}
+    <div class="eyebrow">Concepts · pick one or more</div>
+    <h2>${cars.length} concepts</h2>
+    <p class="small muted" style="margin:4px 0 0">Each picked car is refined on its own and comes back as its own final. Click any picture to see it large.</p>
+    <div class="cmp" style="grid-template-columns:${cols}">${rows}</div>
+    <div class="cmpfoot">
+      <div>${sketches.length ? `<div class="eyebrow">Didn't make the top three</div><p class="small muted" style="margin:4px 0 8px">Flat sketches. Revive one to refine it as if you'd picked it.</p>
+        <div class="sketches">${sketches.map((s) => `<div class="sketch ${picked(s) ? "on" : ""}">${pic(g, s.flat?.[0], 400, `${s.title} · sketch`)}<div class="row" style="justify-content:space-between;margin-top:4px"><span>${esc(s.title)}</span><button class="ghost" data-r="${esc(s.id)}" style="padding:1px 8px;font-size:12px">${picked(s) ? "Revived" : "Revive"}</button></div></div>`).join("")}</div>` : ""}</div>
+      <div class="box">
+        <label class="small muted" for="shared">A note for every pick</label>
+        <textarea id="shared" placeholder="e.g. all of them are too dark at the front"></textarea>
+        <div class="row" style="margin-top:10px"><button class="send" id="csend">Send</button><span class="small muted" id="csum"></span></div>
+      </div>
+    </div>`;
+  const all = [...cars, ...sketches].filter(picked);
+  $("csum").textContent = all.length ? `${all.length} to refine, one after another: ${all.map((c) => c.title).join(", ")}` : "Pick at least one, or send none to start again";
+  $("csend").disabled = g.status !== "waiting";
+  try { $("shared").value = sessionStorage.getItem("shared|" + g.id) || ""; } catch (e) {}
+  $("shared").oninput = () => { try { sessionStorage.setItem("shared|" + g.id, $("shared").value); } catch (e) {} };
+  const toggle = (id, revived) => {
+    const on = decision(g, id)?.decision === "accept";
+    if (on) post("/api/undecide", { group: g.id, id }).then(() => { sig = ""; poll(); }).catch((err) => toast(err.message));
+    else decide(g, id, { decision: "accept", note: "", revived: !!revived });
+  };
+  m.querySelectorAll("[data-c]").forEach((cb) => cb.onchange = () => toggle(cb.dataset.c));
+  m.querySelectorAll("[data-r]").forEach((b) => b.onclick = () => toggle(b.dataset.r, true));
+  m.querySelectorAll("[data-n]").forEach((t) => { t.onkeydown = (e) => e.stopPropagation(); t.oninput = () => decideLater(g, t.dataset.n, { note: t.value }); });
+  $("csend").onclick = () => send(g, async () => {
+    const shared = $("shared").value.trim();
+    for (const c of [...cars, ...sketches].filter(picked)) {
+      const own = (m.querySelector(`[data-n="${CSS.escape(c.id)}"]`)?.value || decision(g, c.id)?.note || "").trim();
+      await post("/api/decide", { group: g.id, id: c.id, note: [own, shared].filter(Boolean).join("\n\n") });
+    }
+    try { sessionStorage.removeItem("shared|" + g.id); } catch (e) {}
+  });
+  document.onkeydown = (e) => {
+    if (screen !== g.id || e.target.matches("input, textarea, select") || document.querySelector(".lb")) return;
+    if (/^[1-9]$/.test(e.key) && cars[+e.key - 1]) toggle(cars[+e.key - 1].id);
+  };
+}
+
+// ---------- Grid: brands, markings, roster rows, references, proposals ----------
+const GRID = { accept: ["Fine", "A"], edit: ["Change", "E"], reject: ["No", "R"] };
+const GRID_ANSWERS = { reference: ["accept", "reject"] };
+function renderGrid(m, g, banner) {
+  const st = L(g.id, "_grid");
+  st.cur = Math.min(st.cur || 0, g.items.length - 1);
+  const kind = g.items[0].kind;
+  const n = g.items.filter((i) => decision(g, i.id)).length;
+  m.innerHTML = `${banner}
+    <div class="eyebrow">${esc(kind)}s · every one needs an answer</div>
+    <h2>${g.items.length} to decide</h2>
+    <div class="gridbar"><div class="prog"><div style="width:${n / g.items.length * 100}%"></div></div><span class="small muted">${n} of ${g.items.length}</span>
+      <span class="small muted"><kbd>←</kbd><kbd>→</kbd> move · <kbd>A</kbd> fine · <kbd>E</kbd> change · <kbd>R</kbd> no</span>
+      <button class="send" id="gsend">Send</button></div>
+    <div class="grid" id="grid">${g.items.map((it, i) => { const d = decision(g, it.id); const ans = GRID_ANSWERS[it.kind] || ["accept", "edit", "reject"]; return `<div class="tile ${i === st.cur ? "cur" : ""}" tabindex="0" data-i="${i}">
+      ${it.images?.[0] ? pic(g, it.images[0], 1200, it.title) : ""}
+      <div class="t"><span>${esc(it.title)}</span></div>
+      ${it.body ? `<div class="meta">${esc(it.body)}</div>` : ""}
+      <div class="acts">${ans.map((a) => `<button data-d="${a}" class="${d?.decision === a ? "on" : ""}">${GRID[a][0]} <kbd>${GRID[a][1]}</kbd></button>`).join("")}</div>
+      <textarea data-n="${esc(it.id)}" placeholder="What's off, in your words" ${d?.decision === "edit" ? "" : "hidden"}>${esc(d?.note || "")}</textarea></div>`; }).join("")}</div>`;
+  const unsaid = g.items.filter((i) => decision(g, i.id)?.decision === "edit" && !(decision(g, i.id).note || "").trim());
+  $("gsend").disabled = g.status !== "waiting" || n < g.items.length || unsaid.length > 0;
+  $("gsend").title = n < g.items.length ? "Answer every tile first" : unsaid.length ? "Say what to change on every Change" : "";
+  $("gsend").onclick = () => send(g);
+  const tiles = [...m.querySelectorAll(".tile")];
+  const focus = (i) => { st.cur = Math.max(0, Math.min(tiles.length - 1, i)); tiles.forEach((t, j) => t.classList.toggle("cur", j === st.cur)); tiles[st.cur].focus(); };
+  tiles.forEach((t, i) => {
+    t.onfocus = () => { st.cur = i; tiles.forEach((x, j) => x.classList.toggle("cur", j === i)); };
+    t.querySelectorAll("[data-d]").forEach((b) => b.onclick = () => answer(i, b.dataset.d));
+  });
+  m.querySelectorAll("textarea[data-n]").forEach((t) => { t.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape" || (e.key === "Enter" && e.ctrlKey)) { e.preventDefault(); post("/api/decide", { group: g.id, id: t.dataset.n, note: t.value }).then(() => { sig = ""; poll(); }); focus(st.cur + 1); } }; t.oninput = () => decideLater(g, t.dataset.n, { note: t.value }); });
+  function answer(i, a) {
+    const it = g.items[i]; const ans = GRID_ANSWERS[it.kind] || ["accept", "edit", "reject"];
+    if (!ans.includes(a)) return;
+    st.cur = a === "edit" ? i : Math.min(i + 1, tiles.length - 1);
+    decide(g, it.id, { decision: a }).then(() => { if (a === "edit") setTimeout(() => m.querySelector(`textarea[data-n="${CSS.escape(it.id)}"]`)?.focus(), 50); else setTimeout(() => focus(st.cur), 50); });
+  }
+  document.onkeydown = (e) => {
+    if (screen !== g.id || e.target.matches("input, textarea, select") || document.querySelector(".lb")) return;
+    const cols = getComputedStyle($("grid")).gridTemplateColumns.split(" ").length;
+    const k = e.key.toLowerCase();
+    if (e.key === "ArrowRight") { e.preventDefault(); focus(st.cur + 1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); focus(st.cur - 1); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); focus(st.cur + cols); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); focus(st.cur - cols); }
+    else if (k === "a") answer(st.cur, "accept");
+    else if (k === "e") { e.preventDefault(); answer(st.cur, "edit"); }
+    else if (k === "r") answer(st.cur, "reject");
+  };
+}
+
+// ---------- History ----------
+let H = null, hf = "all", hd = "";
+const DECIDED = { accept: "accepted", edit: "change", reject: "no", park: "parked", stop: "stopped", skip: "skipped", mix: "mix",
+  revoke: "approval revoked", drop: "dropped", retire: "retired", revive: "revived", carry: "approval carried" };
+async function loadHistory() { try { H = await (await fetch("/api/history")).json(); } catch (e) { H = { entries: [] }; } }
+async function renderHistory(m) {
+  document.onkeydown = null;
+  if (!H) { m.innerHTML = `<div class="empty">Loading history…</div>`; await loadHistory(); }
+  const owner = H.owner;
+  const mine = (e) => e.by === owner || e.by === "owner";
+  const keys = [...new Set(H.entries.filter((e) => e.type === "decision").map((e) => e.key))].sort();
+  const shown = H.entries.filter((e) => (hf === "all" || (hf === "me" && mine(e)) || (hf === "ag" && !mine(e)) || (hf === "taste" && (e.type === "taste" || e.taste?.length))) && (!hd || e.key === hd));
+  const thumb = (p, sheet) => p ? `<img class="th zoom${sheet ? " sheet" : ""}" src="/history-img?p=${encodeURIComponent(p)}&w=300" data-full="/history-img?p=${encodeURIComponent(p)}" alt="as shown then" loading="lazy">` : `<span class="noth">no picture</span>`;
+  const who = (e) => `<span class="who ${mine(e) ? "me" : ""}" title="${esc(e.by)}${e.transcript ? " · " + esc(e.transcript) : ""}">${mine(e) ? "you" : "agent"}</span>`;
+  const row = (e) => {
+    if (e.type === "taste") {
+      const said = e.words.map((w) => `<q>${esc(w.quote)}</q>${w.design ? ` (${esc(w.design)})` : ""}`).join("; ");
+      const session = String(e.by).startsWith("agent:") ? `<div class="sub">session ${esc(e.by.slice(6))}${e.transcript ? ` · transcript: <code>${esc(e.transcript)}</code>` : ""}</div>` : "";
+      return `<li class="${e.status === "retired" ? "undone" : ""}"><span class="when">${esc(when(e.at))}</span>${who(e)}<span class="noth">taste</span>
+        <div class="what"><div class="main">Taste row <code>${esc(e.key)}</code>${e.status === "retired" ? " · retired" : ""}</div>
+        <div class="tasterow"><div class="lf">${esc(e.look_for)}</div><div class="sub" style="margin-top:4px">rests on ${e.support} of: ${said}</div></div>
+        ${e.retired ? `<div class="sub">retired ${esc(when(e.retired.at))}: ${esc(e.retired.why)}</div>` : ""}${session}<div data-ask="${esc(e.uid)}"></div></div>
+        <div class="acts">${e.status === "live" ? `<button data-t="keep" data-k="${esc(e.key)}" ${mine(e) ? "hidden" : ""}>Keep as mine</button><button data-t="retire" data-k="${esc(e.key)}">Retire</button>` : ""}</div></li>`;
+    }
+    const trail = (e.trail || []).filter((t) => t.kind === "edit").length ? `<div class="sub">edited; first: <q>${esc(e.first_note)}</q></div>` : "";
+    const taste = (e.taste || []).map((t) => `<div class="tasterow">fed taste row <code>${esc(t.id)}</code><div class="lf">${esc(t.look_for)}</div></div>`).join("");
+    const label = e.kind === "final" && e.decision === "accept" ? (e.favourite ? "★ raced, a favourite" : "raced") : e.kind === "concept" && e.decision === "accept" ? "picked" : e.kind === "concept" && e.decision === "reject" ? "not picked" : (DECIDED[e.decision] || e.decision);
+    return `<li class="${e.undone ? "undone" : ""}" data-u="${esc(e.uid)}"><span class="when">${esc(when(e.at))}</span>${who(e)}${thumb(e.picture, e.kind === "sponsor" || e.kind === "mark")}
+      <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${trail}${taste}
+      ${e.via ? `<div class="sub">from the ${esc(e.via[0].toUpperCase() + e.via.slice(1))}</div>` : ""}${e.still ? `<div class="sub">still OK?, after a library or kit change</div>` : ""}
+      ${e.moved ? `<div class="sub">moved by ${esc((e.moved.changed_by || []).join(", "))}, no paint or spec pixel past tolerance${String(e.by).startsWith("agent:") ? ` · session ${esc(e.by.slice(6))}` : ""}</div>` : ""}
+      ${e.held?.length ? `<div class="sub">held until a new final without it: ${esc(e.held.join(", "))}</div>` : ""}${e.undone ? `<div class="sub">undone</div>` : ""}<div data-ask="${esc(e.uid)}"></div></div>
+      <div class="acts">${e.undone ? `<button data-h="redo">Redo</button>` : `<button data-h="edit">Edit note</button><button data-h="undo">Undo</button>`}</div></li>`;
+  };
+  m.innerHTML = `<div class="eyebrow">Everything decided, by you or on your behalf · ${esc(H.root || "")}</div>
+    <h2>History</h2>
+    <div class="hfil" id="hfil">${[["all", "All"], ["me", "Mine"], ["ag", "Agents'"], ["taste", "Shapes my taste"]].map(([k, t]) => `<button data-f="${k}" class="${hf === k ? "on" : ""}">${t}</button>`).join("")}
+      <select id="hd" aria-label="Design or item"><option value="">Everything</option>${keys.map((k) => `<option ${k === hd ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+      <button class="ghost" id="hreload">Reload</button></div>
+    <ul class="hist">${shown.map(row).join("") || `<li><span></span><span></span><span></span><div class="muted">Nothing here.</div></li>`}</ul>`;
+  $("hfil").querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { hf = b.dataset.f; renderHistory(m); });
+  $("hd").onchange = () => { hd = $("hd").value; renderHistory(m); };
+  $("hreload").onclick = async () => { await loadHistory(); renderHistory(m); };
+  m.querySelectorAll("[data-h]").forEach((b) => b.onclick = async () => {
+    const li = b.closest("li"), of = li.dataset.u, kind = b.dataset.h, ask = li.querySelector("[data-ask]");
+    if (kind === "edit") {
+      const e = H.entries.find((x) => x.uid === of);
+      ask.innerHTML = `<div class="ask"><textarea>${esc(e.note)}</textarea><div class="row" style="margin-top:6px"><button class="ghost" data-k="save">Save</button><button class="ghost" data-k="no">Cancel</button></div></div>`;
+      ask.querySelector('[data-k="no"]').onclick = () => ask.innerHTML = "";
+      ask.querySelector('[data-k="save"]').onclick = () => change(of, "edit", ask.querySelector("textarea").value, ask);
+      return;
+    }
+    change(of, kind, null, ask);
+  });
+  m.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => {
+    const ask = b.closest("li").querySelector("[data-ask]");
+    if (b.dataset.t === "keep") return tasteDo(b.dataset.k, true, "", ask);
+    ask.innerHTML = `<div class="ask">Retired rows stop gating designs; a retro brings one back only with new evidence.<textarea placeholder="Why? (counts as your words)"></textarea><div class="row" style="margin-top:6px"><button class="ghost" data-k="go">Retire it</button><button class="ghost" data-k="no">Cancel</button></div></div>`;
+    ask.querySelector('[data-k="no"]').onclick = () => ask.innerHTML = "";
+    ask.querySelector('[data-k="go"]').onclick = () => tasteDo(b.dataset.k, false, ask.querySelector("textarea").value, ask);
+  });
+  async function change(of, kind, note, ask) {
+    try {
+      const out = await post("/api/history/change", { of, kind, note });
+      toast(`${kind === "edit" ? "Edited" : kind === "undo" ? "Undone" : "Redone"}${out.committed ? ": " + out.committed : ""}`);
+      LIB = null; await loadHistory(); renderHistory(m);
+      const box = m.querySelector(`[data-ask="${CSS.escape(of)}"]`);
+      if (out.thin?.length && box) {
+        box.innerHTML = out.thin.map((t) => `<div class="ask">Taste row <code>${esc(t.id)}</code> now rests on too few of your notes. <div class="row" style="margin-top:6px"><button class="ghost" data-keep="${esc(t.id)}">Keep it as mine</button><button class="ghost" data-retire="${esc(t.id)}">Retire it</button></div></div>`).join("");
+        box.querySelectorAll("[data-keep]").forEach((x) => x.onclick = () => tasteDo(x.dataset.keep, true, "", box));
+        box.querySelectorAll("[data-retire]").forEach((x) => x.onclick = () => tasteDo(x.dataset.retire, false, "after an undo in History", box));
+      }
+    } catch (err) { toast(err.message); }
+  }
+  async function tasteDo(id, keep, why, ask) {
+    try { await post("/api/history/taste", { id, keep, why }); toast(keep ? `Kept ${id} as yours` : `Retired ${id}`); LIB = null; await loadHistory(); renderHistory(m); }
+    catch (err) { toast(err.message); }
+  }
+}
+
+// ---------- Library: where everything stands now ----------
+let LIB = null, lsec = "all", lq = "";
+const SECTIONS = [["cars", "Cars"], ["brands", "Brands"], ["marks", "Marks"], ["kits", "Kits"], ["taste", "Taste"]];
+const ACT = { review: "Review again", revoke: "Revoke", drop: "Drop", retire: "Retire", revive: "Revive" };
+const VERB = { revoke: "Revoke it", drop: "Drop it", retire: "Retire it", revive: "Revive it" };
+const DONE = { revoke: "Revoked", drop: "Dropped", retire: "Retired", revive: "Revived" };
+async function loadLibrary() { try { LIB = await (await fetch("/api/library")).json(); } catch (e) { LIB = { sections: {} }; } }
+function decidedLabel(kind, decision) {
+  if (kind === "final" && decision === "accept") return "raced";
+  if (kind === "concept") return { accept: "picked", reject: "not picked" }[decision] || DECIDED[decision] || decision;
+  if (kind === "sponsor" || kind === "mark") return { accept: "fine", edit: "change asked", reject: "no" }[decision] || DECIDED[decision] || decision;
+  return DECIDED[decision] || decision;
+}
+function libMeta(c) {
+  const out = [];
+  const l = c.last;
+  if (l?.decision) out.push(`${decidedLabel(l.kind, l.decision)} ${when(l.at).slice(0, 10)}${l.by && l.by !== LIB.owner && l.by !== "owner" ? " by an agent" : ""}`);
+  if (c.approved?.date) out.push(`approved ${c.approved.date}`);
+  else if (typeof c.approved === "string") out.push(`approved ${c.approved}`);
+  if (c.about) out.push(c.about);
+  if (c.held?.length) out.push(`held: places ${c.held.join(", ")}`);
+  if (c.used_by?.length) out.push(`on ${c.used_by.join(", ")}`);
+  if (c.look_for !== undefined) out.push(`rests on ${c.support} of ${c.words} quotes`);
+  if (c.retired) out.push(`retired ${when(c.retired.at).slice(0, 10)}${c.retired.why ? `: ${c.retired.why}` : ""}`);
+  return out.join(" · ");
+}
+function libConfirm(c, a) {
+  if (a === "revoke") return c.state === "on your car"
+    ? `It's on your car now. Revoking stops it installing until a new final.<label><input type="checkbox" data-restore> Also put back the paint from before your first install (<code>livery install --restore</code>)</label>`
+    : "Not on your car now. Revoking stops it installing until a new final.";
+  if (a === "drop") {
+    if (!c.used_by?.length) return "No approved car places it. Dropping it means it is redrawn before any final can use it.";
+    const car = c.on_car?.length ? ` (on your car: ${esc(c.on_car.join(", "))})` : "";
+    return `Placed on <b>${esc(c.used_by.join(", "))}</b>${car}. Dropping it holds those cars until a new final without it${c.id.startsWith("sponsor:") ? ", and designs stop placing it" : ""}.`;
+  }
+  if (a === "retire") return "Retired rows stop gating designs; a retro brings one back only with new evidence.";
+  if (a === "revive") return `Back in work: the next design session on it starts from your words here.${c.here === false ? " Its folder comes back from git." : ""}`;
   return "";
 }
-
-function renderNav() {
-  const order = [...groups.filter(open), ...groups.filter((g) => !open(g))];  // done ones at the bottom
-  $("nav").innerHTML = order.map((g) => {
-    const decided = g.items.filter((i) => decisionOf(g.id, i.id)).length;
-    const acts = [];
-    if (g.status === "waiting") acts.push(`<button class="apply" data-apply="${esc(g.id)}">Apply</button>`);
-    if (!g.alive || g.status === "applied") acts.push(`<button data-clear="${esc(g.id)}">Clear</button>`);
-    const items = open(g) ? g.items.map((it) => {
-      const r = ratingOf(g, it);
-      const on = cur && cur.g === g.id && cur.id === it.id;
-      return `<a href="#" data-g="${esc(g.id)}" data-id="${esc(it.id)}" class="${on ? "on" : ""}"><span class="dot ${decisionOf(g.id, it.id) || ""}"></span>${esc(it.title)}${r ? `<span class="r" title="${esc(ratings[r])}">${r}</span>` : ""}</a>`;
-    }).join("") : "";
-    const res = result(g);
-    return `<div class="group ${g.status}"><div class="ghead">
-      <div class="glabel">${esc(label(g))}<span class="tag">${esc(g.status)}</span></div>
-      <div class="gmeta" title="${esc(g.root)}">${esc(g.root.split(/[\\/]/).pop())} · ${decided}/${g.items.length} decided</div>
-      ${res ? `<div class="gres">${esc(res)}</div>` : ""}
-      ${acts.length ? `<div class="gacts">${acts.join("")}</div>` : ""}
-    </div>${items}</div>`;
-  }).join("") || '<div class="empty">No reviews waiting.</div>';
-}
-
-function renderItem(h) {
-  $("decide").style.display = h ? "" : "none";
-  hint("");
-  if (!h) {
-    $("item").innerHTML = '<div class="done">Nothing to review. New reviews show up here by themselves.</div>';
-    return;
+async function renderLibrary(m) {
+  document.onkeydown = null;
+  if (!LIB) { m.innerHTML = `<div class="empty">Loading the library…</div>`; await loadLibrary(); }
+  const sec = LIB.sections || {};
+  const match = (c) => !lq || [c.title, c.key, c.state, c.about, c.look_for, ...(c.used_by || [])].join(" ").toLowerCase().includes(lq.toLowerCase());
+  const pic = (c, sheet) => c.picture
+    ? `<img class="zoom${sheet ? " sheet" : ""}" src="/library-img?p=${encodeURIComponent(c.picture)}&w=560" data-full="/library-img?p=${encodeURIComponent(c.picture)}" alt="${esc(c.title)}" loading="lazy">`
+    : `<span class="noimg">no picture</span>`;
+  const card = (s, c) => `<div class="lcard" data-id="${esc(c.id)}">
+      ${s === "taste" ? "" : pic(c, s === "brands" || s === "marks")}
+      <div class="t"><span>${s === "taste" ? `<code>${esc(c.title)}</code>` : esc(c.title)}</span><span class="state s-${esc(c.state.replace(/ /g, "-"))}">${esc(c.state)}</span></div>
+      ${c.look_for ? `<div class="lf">${esc(c.look_for)}</div>` : ""}
+      <div class="meta">${esc(libMeta(c))}</div>
+      ${c.actions.length ? `<div class="acts">${c.actions.map((a) => `<button data-a="${a}">${ACT[a]}</button>`).join("")}</div>` : ""}
+      <div class="slot"></div></div>`;
+  const shown = SECTIONS.filter(([k]) => lsec === "all" || lsec === k).map(([k, t]) => {
+    const cards = (sec[k] || []).filter(match);
+    return `<div class="lsec"><h3>${t} <span>${cards.length}</span></h3>${cards.length ? `<div class="lgrid">${cards.map((c) => card(k, c)).join("")}</div>` : `<p class="small muted">Nothing here.</p>`}</div>`;
+  }).join("");
+  m.innerHTML = `<div class="eyebrow">Where everything stands now · ${esc(LIB.root || "")}</div>
+    <h2>Library</h2>
+    <p class="small muted" style="margin:4px 0 0">Everything you've approved, raced, stopped or turned down. Changed your mind? Review it again, or take it back here; what depends on it is listed first. Each change has an Undo in History.</p>
+    <div class="lfil" id="lfil">${[["all", "All"], ...SECTIONS].map(([k, t]) => `<button data-f="${k}" class="${lsec === k ? "on" : ""}">${t}</button>`).join("")}
+      <input type="text" id="lq" placeholder="Filter" value="${esc(lq)}" aria-label="Filter"><button class="ghost" id="lreload">Reload</button></div>
+    ${shown}`;
+  $("lfil").querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { lsec = b.dataset.f; renderLibrary(m); });
+  $("lq").oninput = () => { lq = $("lq").value; const at = $("lq").selectionStart; renderLibrary(m).then(() => { $("lq").focus(); $("lq").setSelectionRange(at, at); }); };
+  $("lreload").onclick = async () => { await loadLibrary(); renderLibrary(m); };
+  const byId = Object.fromEntries(Object.values(sec).flat().map((c) => [c.id, c]));
+  m.querySelectorAll(".lcard .acts button").forEach((b) => b.onclick = () => {
+    const el = b.closest(".lcard"), c = byId[el.dataset.id], a = b.dataset.a, slot = el.querySelector(".slot");
+    if (a === "review") return again(c, b);
+    slot.innerHTML = `<div class="conf">${libConfirm(c, a)}<textarea placeholder="Why? (optional, counts as your words)"></textarea>
+      <div class="row"><button data-k="go">${VERB[a]}</button><button data-k="no">Cancel</button></div></div>`;
+    slot.querySelector('[data-k="no"]').onclick = () => slot.innerHTML = "";
+    slot.querySelector('[data-k="go"]').onclick = async () => {
+      const restore = slot.querySelector("[data-restore]")?.checked;
+      try {
+        const out = await post(`/api/library/${a}`, { id: c.id, why: slot.querySelector("textarea").value });
+        let said = `${DONE[a]}: ${c.title}. Undo in History.`;
+        if (out.committed) said += ` ${out.committed}`;
+        if (restore) { const r = await post("/api/library/restore", { id: c.id }); said += ` Putting back your old paint (it waits for the sim lock); log: ${r.log}`; }
+        toast(said);
+      } catch (err) { return toast(err.message); }
+      H = null; await loadLibrary(); renderLibrary(m);
+    };
+  });
+  async function again(c, b) {
+    b.disabled = true; b.textContent = "Queuing…";
+    toast(`Queuing ${c.title}${c.id.startsWith("final:") ? "; it is built first if its check isn't current" : ""}…`);
+    try { const out = await post("/api/library/review", { id: c.id }); toast(`${c.title} is in the queue as a screen of its own.`); go(out.group); }
+    catch (err) { toast(err.message); b.disabled = false; b.textContent = ACT.review; }
   }
-  const { g, it } = h;
-  const src = (p) => `/img?g=${encodeURIComponent(g.id)}&p=${encodeURIComponent(p)}`;
-  const caption = (p) => (it.captions && it.captions[p]) || p.split("/").slice(-2).join("/");
-  $("item").innerHTML = `
-    <div class="kind">${esc(it.kind)}${it.current ? " · currently " + esc(it.current) : ""} · ${esc(label(g))}</div>
-    <h2>${esc(it.title)}</h2>
-    <div class="body${it.kind === "proposal" ? " mono" : ""}">${esc(it.body || "")}</div>
-    <div class="imgs">${it.images.map((p) => `<figure style="margin:0"><img loading="lazy" src="${src(p)}" alt="${esc(p)}"><figcaption>${esc(caption(p))}</figcaption></figure>`).join("")}</div>`;
-  $("item").querySelectorAll("img").forEach((img) => img.onclick = () => { $("lightbox").querySelector("img").src = img.src; $("lightbox").classList.add("show"); });
-  $("note").value = (current(g.id, it.id) || {}).note || "";
 }
 
-function renderDecide({ g, it }) {
-  const d = current(g.id, it.id) || {};
-  if (document.activeElement !== $("note") && $("note").value !== (d.note || "")) $("note").value = d.note || "";
-  document.querySelectorAll(".decide button[data-d]").forEach((b) => b.classList.toggle("sel", b.dataset.d === d.decision));
-  $("mixbtn").style.display = it.mix ? "" : "none";
-  $("parkbtn").style.display = it.park ? "" : "none";
-  $("allbtn").style.display = it.bulk ? "" : "none";
-  $("rate").innerHTML = "Rating: " + Object.entries(ratings).map(([n, text]) => `<button data-r="${n}" class="${ratingOf(g, it) === +n ? "sel" : ""}"><kbd>${n}</kbd> ${esc(text)}</button>`).join("");
-  $("rate").querySelectorAll("button").forEach((b) => b.onclick = () => rate(+b.dataset.r));
-  $("rate").classList.toggle("show", !!it.rate);
-  const others = g.items.filter((o) => o.kind === it.kind && o.id !== it.id);
-  $("mixwith").innerHTML = "Mix with: " + others.map((o) => `<label><input type="checkbox" value="${esc(o.id)}" ${(d.mix_of || []).includes(o.id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("");
-  $("mixwith").classList.toggle("show", it.mix && d.decision === "mix");
-}
-
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-
-// A POST to the page's server: its answer, or null after saying why in the hint.
-async function post(path, body, failed) {
-  try {
-    const r = await fetch(path, { method: "POST", body: JSON.stringify(body) });
-    const out = await r.json();
-    if (r.ok) return out;
-    hint(`${failed}: ${out.error || `HTTP ${r.status}`}`);
-  } catch {
-    hint(`${failed}: no review is serving the page right now; it reconnects by itself, so try again in a moment`);
-  }
-  return null;
-}
-
-// Every change to a decision goes through here, one request at a time so the last one typed lands last.
-function save(gid, id) {
-  clearTimeout(typing);
-  saving = saving.then(() => send(gid, id));
-  return saving;
-}
-
-const body = (d) => ({ group: d.group, id: d.id, decision: d.decision, note: d.note, mix_of: d.mix_of, rating: d.rating });
-
-// Whether the server has the item's decision as the page shows it (true when there is none to send yet).
-async function send(gid, id) {
-  const k = key(gid, id);
-  const d = draft[k];
-  if (!d || !d.decision) return true;
-  if (blocked(gid, id)) return false;
-  if (!(await post("/api/decide", body(d), "Not saved"))) return false;
-  epoch++;
-  const g = groupOf(gid);
-  if (g) g.decisions[id] = body(d);
-  if (draft[k] === d) delete draft[k];  // else typed since, and saved next
-  render();
-  return true;
-}
-
-// An edit or a mix with no note yet keeps the owner on its item, in the note.
-function stay() {
-  hint("Edit and mix say what to change: write it here, or press Esc to take the decision back.");
-  $("note").focus();
-}
-
-// Whether the owner may leave the item on screen: only once the server has what it shows.
-async function leave() {
-  const h = here();
-  if (!h) return true;
-  if (blocked(h.g.id, h.it.id)) { stay(); return false; }
-  return save(h.g.id, h.it.id);
-}
-
-async function moveTo(gid, id) {
-  if (!(await leave())) return;
-  cur = { g: gid, id };
-  render();
-  window.scrollTo(0, 0);
-}
-
-function go(delta) {
-  const all = rows();
-  if (!all.length) return;
-  const at = all.findIndex(({ g, it }) => cur && g.id === cur.g && it.id === cur.id);
-  const r = all[Math.max(0, Math.min(all.length - 1, at + delta))];
-  moveTo(r.g.id, r.it.id);
-}
-
-function onward() {
-  const all = rows();
-  const at = all.findIndex(({ g, it }) => cur && g.id === cur.g && it.id === cur.id);
-  const next = all.find(({ g, it }, k) => k > at && !decisionOf(g.id, it.id));
-  if (next) moveTo(next.g.id, next.it.id);
-}
-
-function rate(n) {
-  const h = here();
-  if (!h || !h.it.rate) return;
-  const { g, it } = h;
-  change(g.id, it.id, { rating: ratingOf(g, it) === n ? null : n });  // the same key again clears it
-  render();
-  save(g.id, it.id);
-}
-
-async function decide(decision, advance = true) {
-  const h = here();
-  if (!h) return;
-  const { g, it } = h;
-  if ((decision === "mix" && !it.mix) || (decision === "park" && !it.park)) return;
-  hint("");
-  change(g.id, it.id, { decision, note: $("note").value, mix_of: checked() });
-  render();
-  if (needsNote(draft[key(g.id, it.id)]) && !advance) {
-    save(g.id, it.id);
-    $("note").focus();
-    return;
-  }
-  if (blocked(g.id, it.id)) return stay();
-  if (await save(g.id, it.id)) onward();
-}
-
-// Esc on an edit or a mix that has no note yet: back to the decision before it.
-function takeBack() {
-  const h = here();
-  if (!h || !blocked(h.g.id, h.it.id)) return;
-  const { g, it } = h;
-  const { rating } = draft[key(g.id, it.id)];
-  delete draft[key(g.id, it.id)];
-  if (ratingOf(g, it) !== rating) { change(g.id, it.id, { rating }); save(g.id, it.id); }
-  hint("");
-  render();
-}
-
-// Catalog items only (references, roster rows, drawn brands), within one review: designs and kits are judged
-// one at a time.
-async function acceptRest() {
-  const h = here();
-  if (!h || !h.it.bulk) return;
-  const { g, it } = h;
-  const rest = g.items.filter((o) => o.kind === it.kind && !decisionOf(g.id, o.id));
-  if (!rest.length || !confirm(`Accept the ${rest.length} ${it.kind} items in ${label(g)} that have no decision?`)) return;
-  for (const o of rest) {
-    change(g.id, o.id, { decision: "accept" });
-    if (!(await save(g.id, o.id))) break;
-  }
-  render();
-  onward();
-}
-
-async function apply(gid) {
-  const g = groupOf(gid);
-  if (!g || g.status !== "waiting") return;
-  const h = here();
-  if (h && h.g.id === gid && blocked(gid, h.it.id)) return stay();
-  for (const d of Object.values(draft)) if (d.group === gid && !(await save(gid, d.id))) return;
-  const left = g.items.filter((i) => !g.decisions[i.id]).length;
-  const ask = left ? `${left} items in ${label(g)} have no decision. Apply anyway?` : `Apply the decisions on ${label(g)}?`;
-  if (!confirm(ask) || !(await post("/api/apply", { group: gid }, "Not applied"))) return;
-  epoch++;
-  g.status = "applying";
-  render();
-  poll();
-}
-
-async function clear(gid) {
-  const g = groupOf(gid);
-  if (!g) return;
-  if (g.status !== "applied" && !confirm(`Take ${label(g)} off the page? Its decisions are dropped.`)) return;
-  if (!(await post("/api/clear", { group: gid }, "Not cleared"))) return;
-  epoch++;
-  for (const [k, d] of Object.entries(draft)) if (d.group === gid) delete draft[k];
-  groups = groups.filter((o) => o.id !== gid);
-  if (!here()) pick();
-  render();
-}
-
-$("nav").onclick = (e) => {
-  const a = e.target.closest("a[data-id]");
-  const ap = e.target.closest("[data-apply]");
-  const cl = e.target.closest("[data-clear]");
-  if (a) { e.preventDefault(); moveTo(a.dataset.g, a.dataset.id); }
-  else if (ap) apply(ap.dataset.apply);
-  else if (cl) clear(cl.dataset.clear);
-};
-document.querySelectorAll(".decide button[data-d]").forEach((b) => b.onclick = () => decide(b.dataset.d, !["edit", "mix"].includes(b.dataset.d)));
-$("allbtn").onclick = acceptRest;
-$("lightbox").onclick = () => $("lightbox").classList.remove("show");
-$("mixwith").addEventListener("change", () => {
-  const h = here();
-  if (!h) return;
-  change(h.g.id, h.it.id, { mix_of: checked() });
-  save(h.g.id, h.it.id);
-});
-$("note").addEventListener("input", () => {
-  const h = here();
-  if (!h) return;
-  const { g, it } = h;
-  change(g.id, it.id, { note: $("note").value, decision: decisionOf(g.id, it.id) || "edit" });  // a note alone asks for an edit
-  if (!blocked(g.id, it.id)) hint("");
-  render();
-  clearTimeout(typing);
-  typing = setTimeout(() => save(g.id, it.id), 500);
-});
-$("note").addEventListener("blur", () => { const h = here(); if (h) save(h.g.id, h.it.id); });
-$("note").addEventListener("keydown", (e) => {
-  const h = here();
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && h) {
-    e.preventDefault();
-    decide(decisionOf(h.g.id, h.it.id) || "edit", true);
-  }
-  if (e.key === "Escape") { takeBack(); $("note").blur(); }
-});
-addEventListener("pagehide", () => {
-  const h = here();
-  const d = h && draft[key(h.g.id, h.it.id)];
-  if (d && d.decision && !blocked(h.g.id, h.it.id)) navigator.sendBeacon("/api/decide", JSON.stringify(body(d)));
-});
-$("apply").onclick = () => { const h = here(); if (h) apply(h.g.id); };
-document.addEventListener("keydown", (e) => {
-  if (document.activeElement === $("note") || e.ctrlKey || e.metaKey || e.altKey) return;
-  if ($("lightbox").classList.contains("show")) { if (e.key === "Escape") $("lightbox").classList.remove("show"); return; }
-  const map = { a: "accept", r: "reject", s: "skip", p: "park" };
-  if (e.shiftKey && e.key.toLowerCase() === "a") acceptRest();
-  else if (map[e.key]) decide(map[e.key]);
-  else if (Object.hasOwn(ratings, e.key)) rate(+e.key);
-  else if (e.key === "e" || e.key === "m") {
-    e.preventDefault();  // they focus the note, which would take the key too
-    decide(e.key === "e" ? "edit" : "mix", false);
-  }
-  else if (e.key === "ArrowRight" || e.key === "j") go(1);
-  else if (e.key === "ArrowLeft" || e.key === "k") go(-1);
-});
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h && h !== screen) { screen = h; sig = ""; if (h === "history") H = null; if (h === "library") LIB = null; poll(); } });
 poll();
+setInterval(poll, 1000);
 </script>
 </body>
 </html>

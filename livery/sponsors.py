@@ -151,13 +151,14 @@ def roster_rows(path: Path | None = None) -> list[dict]:
 
 
 def roster(path: Path | None = None) -> tuple[dict, ...]:
-    """The brands a design can place: accepted in roster.md and drawn. Each row also lists its variants,
-    so a design can pick a mix of categories, and those not approved yet, which place and build but keep a
-    final review from pinning the build until the owner approves them."""
+    """The brands a design can place: drawn, and not turned down in roster.md (the owner judges a row with its
+    drawing, in `livery review --sponsors`). Each row also lists its variants, so a design can pick a mix of
+    categories, and those not approved yet, which place and build but keep a final review from pinning the
+    build until the owner approves them."""
     path = path or roster_dir() / "roster.md"
     out = []
     for row in roster_rows(path):
-        if row["status"] != "yes" or not (path.parent / row["brand"] / "brand.toml").exists():
+        if row["status"] == "no" or not (path.parent / row["brand"] / "brand.toml").exists():
             continue
         brand = load(row["brand"], path.parent)
         pending = tuple(n for n, v in brand.variants.items() if not v.approved)
@@ -339,6 +340,25 @@ def approve(brand_dir: Path, date: str | None = None) -> list[str]:
             done.append(name)
     _write_brand(path, raw)
     return done
+
+
+def approvals(brand_dir: Path) -> dict[str, str | None]:
+    """Each variant's approval date, None where it has none."""
+    raw = tomllib.loads((brand_dir / "brand.toml").read_text(encoding="utf-8"))
+    return {name: entry.get("approved") for name, entry in raw.get("variants", {}).items()}
+
+
+def set_approvals(brand_dir: Path, dates: dict[str, str | None]) -> None:
+    """Sets the named variants' approval dates as given (None: not approved), as dropping a brand and undoing
+    the drop do."""
+    path = brand_dir / "brand.toml"
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    for name, entry in raw.get("variants", {}).items():
+        if name in dates:
+            entry.pop("approved", None)
+            if dates[name]:
+                entry["approved"] = dates[name]
+    _write_brand(path, raw)
 
 
 def sheet(brand: Brand, out: Path, min_stroke_px: float, fonts: Path | None = None) -> Path:

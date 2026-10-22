@@ -8,9 +8,9 @@ description: Design knowledge for Fartstriber liveries - principles stated as nu
 Read before designing:
 
 1. `references.md`, the rows marked **yes**: the owner's taste anchors. Look at the pictures of the rows your brief names in `.cache/references/<#>/` (`livery references fetch` caches them).
-2. All of `prefs/log.md`: what the owner picked and rejected, in their words.
+2. All of the owner's `log.md` (`prefs/<person>/`): what they picked and rejected, in their words.
 3. `rubric.md` next to this file: how every round is judged.
-4. `taste.md` next to this file: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design ships only when all of them pass.
+4. The taste table, `uv run livery taste show`: what the owner has complained about more than once, as checks. Check every row in the shots before asking for a round; a design goes back to the owner only when all of them pass.
 
 ## The concept brief
 
@@ -24,7 +24,7 @@ A concept's `brief.md` holds the owner's brief, then:
 
 ## Three distances
 
-The owner called every design that was only a clean big shape "boring" (`prefs/log.md`), and accepted the Evangelion finals only to be done with them. Their favourites (`references.md` 21-34) all work at three distances at once. Design all three, in this order:
+The owner called every design that was only a clean big shape "boring" (their `log.md`), and accepted the Evangelion finals only to be done with them. Their favourites (`references.md` 21-34) all work at three distances at once. Design all three, in this order:
 
 1. **50 m, the squint.** One big idea owns the car: a colour split, a band, a creature, an all-over pattern, a theme. Check the squint thumbnail (`livery preview flat`) and the 200 px shot downscales: if the idea doesn't survive them, it isn't strong enough. Detail never decides this read. Proportions near 60 / 30 / 10: a dominant field, a second field, the accent.
 2. **10 m, the system.** A second layer that gives the big shape movement and finish. This is where our cars have fallen short; use most of these:
@@ -44,7 +44,7 @@ Then the race-car finish, which plain designs miss:
 - **The brand in every view.** When the brief has a lead sponsor, it reads from the side, from the front (bonnet) and from behind (rear deck or bumper). The roof carries the number or a big mark for the chase and overhead shots, as big as it fits (WRT's outlined 46, the 1970s bonnet).
 - **A sponsor ecosystem.** The references carry fifteen to thirty marks: ten to twenty small ones grouped in a few places (sills, bumper corners, haunch, mirrors, wing endplates, near the number), in one colour per field. They make a car look raced, not rendered.
 - **A theme from the brand's own graphics.** Polaroid's rainbow, Lucky Strike's roundel, the 1970s sunset: the sponsor's visual language becomes the pattern system. For Fireproof that is the pixel flame: stepped blocks, embers, hard pixels.
-- **Type is designed, not labelled.** The owner called plain label stacks "boring" and noticed off spacing at once (`prefs/log.md`). One hierarchy per field: a big designation (outlined, stencil-cut or raked with the lean, like WRT's 46) and small lines aligned to it. Stacks share a left edge and a line gap; text in a plate has equal padding; tracking is consistent; nothing is clipped by an outline or arch. Check every mark in the full-size sim shots.
+- **Type is designed, not labelled.** The owner called plain label stacks "boring" and noticed off spacing at once (their `log.md`). One hierarchy per field: a big designation (outlined, stencil-cut or raked with the lean, like WRT's 46) and small lines aligned to it. Stacks share a left edge and a line gap; text in a plate has equal padding; tracking is consistent; nothing is clipped by an outline or arch. Check every mark in the full-size sim shots.
 - **The sides may differ.** WRT swaps its fields (black nose on the left, white nose on the right); the Gulf Valkyrie is blue on one side and white on the other. The system stays the same on both sides; the arrangement may swap.
 
 ## Principles

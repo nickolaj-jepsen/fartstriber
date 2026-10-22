@@ -32,7 +32,7 @@ flowchart LR
 | `designs/<name>/` | `design.py`; `brief.md` and `notes.md` (where it stands now); `verdicts.jsonl`; `approved.json`; its own `sponsors/` | yes |
 | `kits/<kit>/` | a car's kit, written only by `livery kit` | yes |
 | `assets/` | fonts, roster brands (`sponsors/`), race markings (`marks/`) | yes |
-| `prefs/`, `references.md` | the owner's decisions, words and favourite liveries | yes |
+| `prefs/<person>/`, `references.md` | each reviewer's decisions, words and taste table; the favourite liveries | yes |
 | `policy.toml` | lint thresholds, the views a preview shoots and the sim window's size | yes |
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
@@ -75,14 +75,15 @@ A primitive that covers several views returns one element per view, with the vie
 ## Sponsors
 
 - A brand is a folder: one-colour SVG variants (`wordmark`, `lockup`, `mark`), a `brand.toml`, and the `draw.py` that drew them. Builds read only the SVGs; a redrawn variant loses its approval.
-- Roster brands live in `assets/sponsors/`, indexed by `roster.md`: name, category, lettering voice, mark, colours, the name-check evidence and the owner's yes or no.
+- Roster brands live in `assets/sponsors/`, indexed by `roster.md`: name, category, lettering voice, mark, colours, the name-check evidence and the owner's yes or no. The owner judges a row with its drawn brand (`review --sponsors`): fine makes it a yes, no turns it down. Designs place every drawn brand whose row isn't a no.
 - A design's own themed brands live in `designs/<name>/sponsors/`. They are looked up first and need no approval.
 - `source = "supplied"` marks a real logo kept byte for byte, `"owned"` the Fireproof brand.
 - `brand.toml` records per variant its aspect, ink share, thinnest stroke, narrowest counter and approval date. A variant's minimum height is `min_stroke_px` divided by the smaller of its stroke and counter. A `large_only` brand never goes below `large_min_px`.
 - `sponsor` places one brand by `height` or `fit=(w, h)`, in one colour or `"own"`, and refuses any variant below its minimum height.
 - `sponsor_group` spreads brands along a line, each sized by (ink × aspect)^-0.25. A group that doesn't fit shrinks, and fails rather than go below a minimum.
 - Race markings (tow, cut-off switch, extinguisher…) are brands in `assets/marks/`. `marks` places one at a car-space anchor; a marking that points has a variant drawn for each direction.
-- Unapproved roster variants and markings build and preview. A final review and `livery install` need them approved (`review --sponsors`, `review --marks`).
+- Unapproved roster variants and markings build and preview. A final review and `livery install` need them approved (`review --sponsors`, `review --marks`), one tile each.
+- Dropping a brand or a marking (a no on its tile, or Drop in the Library) unapproves its variants and keeps its drawing for a redraw. Every approved car placing it is held: it doesn't install until a new final without it, or the drop is undone.
 
 ## Lints
 
@@ -132,8 +133,11 @@ Outputs go to `.cache/designs/<name>/`: `layers.svg`, `spec.svg`, `paint.png`, `
 | Sim | `preview sim` | `sim/<time>/`: one shot per preview view (The sim) |
 
 - Every preview records the build it shows: TGA digests, design and toolchain hashes, and the `--set` values. A final review, an approval or a critic pack takes only previews of the checked build: a stale `flat/` is rendered again, but stale sim shots can't be.
-- A baked pixel samples paint and spec at its texel from linear-light mips, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder, and the sim's number shows from the background frame.
-- A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options and car model), and only after `livery bake check <kit> [design]` has passed. Bake check compares baked renders with one real sim run and passes when the p95 of every channel in every view is 12 or less. It takes the sim, so it is the session's step, not a builder's. `livery bake status` says whether baked views are usable.
+- A baked pixel (`livery/bake_render.py`) samples paint and spec at its texel from mips box-filtered in the paint's sRGB values, filtered as a GPU's anisotropic filter does (at the mip of the footprint's short axis, up to 8 taps along the long axis). Each material is looked up in that pixel's grey ladder and mixed in linear light, and the sim's number shows from the background frame.
+- A capture bakes only while everything its shots depend on holds (the window size, the presets' ladders, canvas, frame, preview views, replay, track camera set, graphics options, car model, the sim's executable and the track's files), and only after `livery bake check <kit> [designs]` has passed with this renderer. A capture shot before the sim's build was recorded is held against the build its last bake check recorded.
+- Bake check compares baked renders with one real sim run per design, per view in a band within 1.5 px of paint edges and in the rest, overall and per finish. It gates on the p95 per channel, looser along edges; the limits live in `livery.bake`. It covers the finishes of the designs that passed in every view; a design that fails covers none of its finishes, since a metal's glare spreads over its neighbours whatever their finish. A check of other designs adds to the last one's while the renderer and the sim's build are the same. It takes the sim, so it is the session's step, not a builder's.
+- Baked views stand in for a design's sim shots where the capture is checked and fresh and the check covered every finish the build uses: rounds judged on them can go back to the owner and ship, and the review shows them. `livery bake status --design <name>` says whether they do.
+- Every `preview sim` of a build they stand in for renders it baked, records the error per view in the run's manifest and telemetry, and warns when it fails the gate.
 
 ## Kits
 
@@ -207,7 +211,7 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
 | Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
 
-- `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken.
+- `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken, then measures the bake against the shots (Previews).
 - A shot with the replay UI over the car (drawn while the cursor is over the sim) is taken again once, then refused.
 - `livery sim status` reports what the next run would find, without sending the sim anything.
 
@@ -222,83 +226,119 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 
 ## Review
 
-- One localhost page (port 8765) serves every session on the machine, one item at a time.
-- Each `livery review` queues its items as a group in the state dir (`review/<id>/`) and blocks until the owner presses Apply on that group. Whichever waiting review holds the port serves the page; when it exits, the next one takes over.
-- A checkout has one waiting review at a time. A group whose process died stays on the page, and the next review from that checkout takes it over.
-- `--list` lists the groups; `--cancel` takes this checkout's group off the page.
+- One localhost page (port 8765) serves every session on the machine. Each `livery review` is one screen: it queues its items in the state dir (`review/<id>/`) and blocks until the owner presses Send on it. Whichever waiting review holds the port serves the page; when it exits, the next one takes over.
+- A checkout may have several screens waiting; their Sends take turns (a lock per checkout). A screen whose process died stays on the page, and the next review from that checkout with any of the same items takes it over; one still waiting with the same items is refused.
+- A review that queues sends a Windows notification that opens the page. The tab's title counts what's waiting, newest first.
+- A page screen has no session waiting on it: the Library's Review again and `build --all`'s "still OK?" queue one and go. It never goes stale, and whichever process serves the page applies it in its checkout on Send.
+- `--list` lists the screens; `--cancel` takes this checkout's off the page. `livery library --serve` keeps the page up while no review serves it.
 
-| Flag | Items |
+| Flag | Items | Layout |
+|---|---|---|
+| `<design>` | a final | Focus |
+| `<designs>` | concepts to pick from; `--sketch <name>` adds a concept outside the top three, shown small to revive | Compare |
+| `--kit <kit>` | a kit's overlays and calibration shots | Focus |
+| `--sponsors`, `--marks`, `--proposals <file>` | drawn brands with their roster rows, race markings, a retro's edits (`[{title, body}]`) | Grid |
+| `--roster`, `--references` | roster rows alone, `references.md` rows: rarely needed, since a row is judged with its drawing and a reference the owner supplies is a yes | Grid |
+
+What reaches the owner, and what doesn't:
+
+| Kind | On the page |
 |---|---|
-| `<designs>` | several are concepts to pick or mix; one is a final |
-| `--kit <kit>` | a kit's overlays and calibration shots |
-| `--roster` | proposed brands in `roster.md` |
-| `--sponsors` | drawn brands with an unapproved variant, then the `sponsor-roster` car |
-| `--marks` | unapproved race markings |
-| `--references` | `references.md` rows |
-| `--proposals <file>` | a retro's proposed edits (`[{title, body}]`) |
+| Concepts, finals, kits, retro proposals | yes |
+| New brands, race markings | yes, one tile each |
+| Roster rows | with their drawn brand |
+| References the owner supplies | no: the agent writes them into `references.md` as yes |
+| An approved design a library or kit change moved | no if no paint or spec channel moved past `approvals.TOLERANCE` (carried, by the agent); else a "still OK?" screen |
 
-| Key | Decision |
+| On | Answers (`items.ANSWERS`) |
 |---|---|
-| A | accept (for a design: good enough to race) |
-| E | edit, with a note |
-| R | reject |
-| S | skip |
-| M | mix concepts, with a note |
-| P | park a design: stop iterating, not approved |
-| 1–4 | rate a design: done with it, fine, would race, love it |
-| Shift+A | accept every undecided reference, roster row or brand |
+| a final | Race it (`accept`, maybe `favourite`), Change (`edit`, with a `strategy`, quick or full), Park (not now, worth coming back to), Stop (not worth more work; takes back an approval the design has) |
+| a "still OK?" final (`items.STILL`) | Keep it (`accept`: the approval moves to this build), Change, Stop |
+| concepts | picked (`accept`, a note each and one for all) or not (`reject`, what Send records for the rest); a picked sketch is `revived` |
+| a kit | approve, change |
+| a grid tile | fine, change, no (a reference: yes or no) |
 
-- A design item shows its sim shots in view order, then the flat views, the UI's car and the squint.
-- It opens with the owner's last decision and note on that design, the critic's judgement of the note, and `diff/reviewed-vs-now.png`.
-- The critic's scores and call never reach the page, so they can't anchor the owner.
+- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note with the critic's judgement of it. Hovering a view, Then or a checkpoint previews it.
+- The critic's call and its open suggestions reach the page only once the owner has answered the item (`items.HIDDEN`), so they can't anchor them. A ticked suggestion goes with a Change as `endorsed`: it counts for that round, never as the owner's taste.
+- A Change may be stored before its note; Send needs a note or a ticked suggestion. A grid sends only once every tile has an answer.
+- Pictures are fetched at the size they are shown; a click opens them whole.
 
-Apply runs in the checkout that queued the group:
+Send runs Apply in the checkout that queued the screen:
 
-1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, and brand and marking approvals. These come first, so a final that places a brand accepted in the same review can be pinned.
-2. It appends every decision to `prefs/decisions.jsonl`: the note verbatim, the rating, the sim runs shown, the design hash, and the critic's verdict on that hash.
+1. It writes what review owns: a kit's approval, the yes/no columns of `roster.md` and `references.md`, brand and marking approvals and drops, and a stopped design's approval taken back. Brands and markings come first, so a final that places a brand accepted in the same review can be pinned.
+2. It appends every decision to the owner's ledger (Records): the note verbatim, the extras, the sim runs (or baked run) shown and a shrunk copy of their shots in the state dir (`review-shots/<uid>/`), the design hash, and the critic's verdict on that hash.
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
-It prints the decisions as JSON, and the agent writes `prefs/log.md` from them in the owner's words (lines starting `Context:` are the agent's).
+It prints the decisions as JSON, and the agent writes the owner's `log.md` from them in their words (lines starting `Context:` are the agent's).
+
+### History
+
+The page's History lists every decision, newest first, with what it showed, the taste rows it fed and who made it, and every taste row with the words it rests on and the session that wrote it. It reads and writes the main checkout (the repository's first worktree) and commits there.
+
+| Action | Writes |
+|---|---|
+| Edit note, Undo, Redo | a line of its own in the ledger naming the decision by uid (`prefs.change`). Undo puts back what the decision changed and Redo does it again: an approval revoked, stopped or carried, a brand or marking dropped, a taste row retired, a design brought back from git |
+| Keep as mine | the taste row, by the owner |
+| Retire | as the Library's Retire |
+
+When an undo leaves a live taste row resting on fewer than two of the owner's notes, History asks whether to keep it as theirs or retire it.
+
+### Library
+
+The page's Library shows where everything stands now in the main checkout (`livery library` prints it): cars, brands, race markings, kits and taste rows, each with a picture, its state, its last decision and what depends on it. Each change is a ledger line by the owner carrying what it replaced (`was`), with an Undo in History, committed in the main checkout.
+
+| Action | On | Does |
+|---|---|---|
+| Review again | a car, brand, marking or kit | queues it as a page screen of its own; a car is built first if its check isn't current |
+| Revoke | an approved car | deletes `approved.json`; when the car is on the owner's car (its paint is in the paint folder), offers `livery install --restore` |
+| Drop | an approved brand or marking | as a no on its tile (Sponsors), after listing the cars it holds |
+| Retire | a live taste row | it stops gating designs; a retro brings it back only with new evidence |
+| Revive | a parked or stopped car, a concept not picked | back in work, from the owner's words; a deleted folder comes back from git |
+
+| Car state | When |
+|---|---|
+| on your car, approved | approved; its paint is on the owner's car, or not |
+| held | approved, but it places a brand or marking that isn't |
+| in work, revived | a concept picked or a change asked for; revived in the Library |
+| parked, stopped, not picked | the owner's last answer on it (a revoke is a stop) |
 
 ## Approvals
 
 - Accepting a final writes `designs/<name>/approved.json`: the output digests; the design, toolchain and policy hashes and the design hash's parts; the waivers; and the roster variants and markings it places. Its paint, spec and flat pictures are kept in `.cache/approved/<name>/<digest>/`.
 - Nothing is pinned if the build changed while the review was open, if `flat/` no longer shows it, or if it places an unapproved variant or marking.
 - `livery install` installs only the approved build, and only while what it places is approved. `--unapproved` overrides that, and says so.
-- `livery build --all` builds every design and reports each as approved, changed, unapproved or failed, with fixtures listed apart. It exits 1 when a design failed or an approved one changed.
+- `livery build --all` builds every design and reports each as approved, carried, changed, unapproved or failed, with fixtures listed apart. It exits 1 when a design failed or an approved one changed.
 - For a changed design it lists what moved and the share of pixels that moved more than `approvals.TOLERANCE`, and writes `diff/approved-vs-now.png`.
+- A design only the kit, `assets/`, the toolchain or the policy moved, with no car pixel of its paint or spec past `approvals.TOLERANCE`, is carried: its approval moves to the new build, keeping who approved it and when, as a ledger line by the agent (`decision: carry`) that History can undo. The session commits it with its change. Any other changed design on an approved kit is queued as a "still OK?" page screen.
 
 ## Critic
 
 A fresh `livery-critic` subagent judges each pack: it has only the Read tool, its model is pinned and it gets no CLAUDE.md. A judge compares more reliably than it scores, and favours whichever image comes first, so most of its jobs are comparisons run in both orders.
 
-`livery critic pack` makes a folder of what the critic may see, never the script. Every pack holds the rubric, the taste table, `references.md`, `prefs/log.md`, and per design `kit.md` (what the sim draws over the car and what hides its paint).
+`livery critic pack` makes a folder of what the critic may see, never the script. Every pack holds the rubric, the taste table (rendered from `taste.json` as `taste.md`), `references.md`, the owner's `log.md`, and per design `kit.md` (what the sim draws over the car and what hides its paint).
 
 | Pack | Holds |
 |---|---|
-| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note. It refuses a stale check, sim runs of another build and unanswered fixes |
-| `--baked` | the same, from baked renders, for the autonomous middle rounds |
+| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed. It refuses a stale check, sim runs of another build and unanswered fixes |
+| `--baked` | the same, from baked renders, for rounds judged without the sim |
 | `--compare` | this round and the last, as A/B and as B/A, unlabelled |
 | `--adversary` | a round without history or note, for a critic hunting the most boring part |
 | `--pairs c1 c2 …` | one pack per ordered pair of concepts: flat views, `car.png`, squint, brief |
 
 | Command | Records in `verdicts.jsonl` |
 |---|---|
-| `critic record` | a round: each of the last round's fixes and the owner's note marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); up to three fixes; iterate or rework; `lint_missed` and `blocked` |
+| `critic record` | a round: each of the last round's fixes, the owner's note and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
 | `critic compare` | better or worse where both orders agree, else same |
 | `critic adversary` | up to three findings, the most boring first |
 | `critic rank --pairs <dir>` | a Bradley-Terry ranking of concepts |
 | `critic answer` | the builder's reply to each fix: done, blocked or skipped |
 
-`critic status` says a design ships only when all of these hold:
+`critic status` computes two bars from the records:
 
-- the last round was judged on sim shots
-- no fix that isn't optional is open, and nothing is blocked
-- every taste row passes
-- the owner's latest note is resolved
-- the compare with the round before isn't worse
-- the adversary's top finding is optional
-- the design hasn't changed since
+| Bar | Holds when | Means |
+|---|---|---|
+| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
+| `ship` (what fails: `why`) | ready, and no fix that isn't optional is open, the compare with the round before isn't worse, and the adversary's top finding is optional | the critic's whole bar, reported beside the decision |
 
 Two compares in a row that come out the same are a plateau.
 
@@ -306,20 +346,27 @@ Two compares in a row that come out the same are a plateau.
 
 ```mermaid
 flowchart TD
-  brief["the owner's brief"] --> concepts["livery-concepts<br/>sketches ranked pairwise,<br/>top 3 built and shot in the sim"]
+  brief["the owner's brief"] --> concepts["livery-concepts<br/>sketches ranked pairwise,<br/>top 3 built, shot in the sim or baked"]
   concepts --> pick{{"concept pick<br/>livery review"}}
-  pick --> refine["livery-refine<br/>builder, sim, critics"]
-  refine -- "not shipped, budget left" --> refine
+  pick -- "each pick, one after another" --> refine["livery-refine<br/>builder, sim or bake, critics"]
+  refine -- "full: not ready, budget left" --> refine
   refine --> final{{"final review<br/>livery review"}}
-  final -- edit --> refine
+  final -- "change: quick or full" --> refine
   final -- accept --> install["install, export"]
   final -- park --> stop["stop"]
 ```
 
 - The owner decides twice, at the concept pick and at the final; the `livery-iterate` skill runs the session.
-- `livery-concepts` (in `.claude/workflows/`) writes concept briefs from different sources and a sketch for each. Critics judge every pair in both orders, and the top three are built and shot in the sim.
-- `livery-refine` runs rounds of a fresh builder, the sim and fresh critics until the design ships, or its budget (4 rounds), a blocked fix or a plateau stops it.
-  - Once the kit has passed bake check, middle rounds use baked renders; the last round uses sim shots.
+- `livery-concepts` (in `.claude/workflows/`) writes concept briefs from different sources and a sketch for each. Critics judge every pair in both orders, and the top three are built and shot in the sim, or baked where the bake stands in.
+- Each picked concept, a revived sketch included, refines on its own, one after another, and lands as its own final review.
+- `livery-refine` takes the strategy of the owner's Change (a pick is a full round):
+
+  | Strategy | Runs | Stops |
+  |---|---|---|
+  | quick | one builder round on exactly the owner's note and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
+  | full | rounds of a fresh builder (the note first, then the critic's fixes), the sim and fresh critics, a compare from round 2 | at the first of: `critic status` ready, a plateau the fork doesn't break, the budget (4 rounds), a block |
+
+  - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.
   - A plateau or a rework call forks three variants once, ranked pairwise against the design. A winning variant is adopted.
 - Both workflows stop before `livery review`, because a workflow takes no input mid-run. Workflow scripts have no shell, so the CLI steps between agents run in small agents.
 - A `livery-builder` owns the design named on its prompt's first line (`design: <name>`). Its hooks refuse writes outside `designs/<name>/` and the scratchpad, and shell commands other than the livery CLI, `uv run` and git. It is sent back once if it changed a file outside `designs/`.
@@ -329,12 +376,16 @@ flowchart TD
 | Record | Where | Committed |
 |---|---|---|
 | Verdicts | `designs/<name>/verdicts.jsonl` | yes |
-| Decisions | `prefs/decisions.jsonl`, written by Apply | yes |
-| The owner's words | `prefs/log.md` | yes |
+| Decisions | `prefs/<person>/decisions.jsonl`, written by Send, History, the Library and `build --all`'s carry | yes |
+| The owner's words | `prefs/<person>/log.md` | yes |
+| Their taste | `prefs/<person>/taste.json` (`livery taste`) | yes |
+| What each review showed | `review-shots/` in the state dir | no |
 | Approvals | `approved.json` in designs and kits | yes |
 | Where a design stands | `brief.md`, `notes.md` (now only; the history is in git and the verdicts) | yes |
 | Telemetry | `telemetry.jsonl` in the state dir: every livery command, sim run, install and review decision | no |
 
+- `prefs/<person>/` is the owner's by default (`owner` in `config.toml`, lower case); a contributor's PR brings their own. Every ledger line has a `uid` and `by`: the person, or `agent:<session>` (the SessionStart hook exports the session's id and transcript). Nothing is rewritten: an edit or undo is a later line naming the decision, and readers fold them in (`prefs.decisions`). Union merges keep appends from two branches (`.gitattributes`).
+- A taste row rests on quotes, each naming the decision it came from where there is one. `livery taste show` prints the live rows as the table builders read; `put` and `retire` change one, as this agent.
 - `livery status [design]` builds nothing. It reports the check, the TGAs, the approvals, whether the previews are fresh, and the critic's last round.
 - `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage and waits for the sim lock.
 - Every command takes `--json`.

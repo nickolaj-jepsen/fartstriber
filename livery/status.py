@@ -98,7 +98,7 @@ def _critic(ws: Workspace, name: str, design_hash: str | None) -> dict:
     for i, f in enumerate(critic.fixes(last)):
         if not f["optional"]:
             answer = answers[i].get("status") if i < len(answers) else None
-            open_fixes.append({"text": f["text"], "answer": answer})
+            open_fixes.append({"text": critic.fix_title(f), "answer": answer})
     return {
         "rounds": len(rounds),
         "round": last.get("round", len(rounds)),

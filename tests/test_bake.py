@@ -1,5 +1,6 @@
 """The bake: rendering a build from a calibration capture, refusing a stale capture, bake check against a
-sim run, and the critic's baked middle rounds."""
+sim run (its gate, the finishes it covers, the renderer it held), the drift check after a sim run, and baked
+views standing in for sim shots in the critic's rounds and the review."""
 
 import json
 from collections.abc import Sequence
@@ -11,6 +12,7 @@ import pytest
 from PIL import Image
 
 from livery import bake, calibrate, config, critic, graycode, iracing, state
+from livery import bake_render as render
 from livery import kit as kits
 from livery.config import Workspace
 from livery.kit import Profile
@@ -71,7 +73,24 @@ def halves(left: Sequence[int], right: Sequence[int]) -> np.ndarray:
     return img
 
 
-PASSED = {"passed": True, "worst": {"p95": 3.0}}
+def passed(*finishes: str) -> dict:
+    """A bake check with this renderer that passed and compared on enough pixels of each finish."""
+    return {
+        "passed": True,
+        "renderer": bake.renderer_hash(),
+        "worst": {"p95": 3.0},
+        "designs": {"fixture": {"finishes": dict.fromkeys(finishes, bake.COVER_PX), "views": {}}},
+    }
+
+
+def failed(*finishes: str) -> dict:
+    """A bake check with this renderer whose one design, showing these finishes, failed the gate."""
+    out = passed(*finishes)
+    out["designs"]["fixture"]["views"] = {"rear34": {"rest": {"p95": [bake.MAX_P95 + 1] * 3}}}
+    return out | {"passed": False, "worst": {"p95": bake.MAX_P95 + 1, "design": "fixture", "view": "rear34"}}
+
+
+PASSED = passed("gloss")
 
 
 def test_a_flat_grey_on_a_ladder_step_renders_as_that_step_at_every_pixel(ws):
@@ -118,11 +137,39 @@ def test_a_footprint_long_along_u_is_averaged_along_u_and_keeps_its_detail_acros
     jac = np.tile(np.array([[4, 0], [0, 1]], np.float32), (2, 1, 1))  # 4 texels along u per pixel, 1 along v
     car = np.ones((1, 2), bool)
     frame, levels = np.zeros((1, 2, 3), np.uint8), np.array(calibrate.LEVELS, np.float32)
-    view = bake.View("v", car, car, uv, *bake.footprint(jac), frame, levels, {}, bake._fill(car, car))
-    pyr = bake.Pyramid(rows)
+    view = render.View("v", car, car, uv, *render.footprint(jac), frame, levels, {}, render.fill(car, car))
+    pyr = render.Pyramid(rows)
 
-    assert bake.filtered(view, pyr, aniso=True)[:, 0].tolist() == [0, 1]
-    assert bake.filtered(view, pyr, aniso=False)[:, 0].tolist() == [0.5, 0.5]  # one sample blurs across
+    assert render.filtered(view, pyr, aniso=True)[:, 0].tolist() == [0, 1]
+    assert render.filtered(view, pyr, aniso=False)[:, 0].tolist() == [0.5, 0.5]  # one sample blurs across
+
+
+def test_mips_average_the_paint_as_stored_not_in_linear_light():
+    """The sim filters its textures in their own sRGB values: a mip of black and white texels is the
+    middle value, not the linear-light mean."""
+    paint = np.zeros((2, 2, 3), np.uint8)
+    paint[0] = 255
+    spec = np.full((2, 2, 3), SPEC["gloss"], np.uint8)
+
+    pyr = render.pyramids(paint, spec, {m: tuple(s) for m, s in SPEC.items()})["gloss"]
+
+    coverage, albedo = pyr.levels[1][0, 0, 0], pyr.levels[1][0, 0, 1:]
+    assert np.allclose(albedo / coverage, 0.5)
+
+
+# What a capture depends on.
+
+
+def _install(ws: Workspace, sim: bytes = b"sim v1", track: bytes = b"track v1") -> None:
+    """The sim's executable and signature, and the replay's track, in the fixture settings' install."""
+    cfg = config.load()
+    exe = cfg.install / cfg.process
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(sim)
+    exe.with_suffix(".sgn").write_bytes(b"signed " + sim)
+    folder = cfg.install.joinpath("tracks", *cfg.replay.track.split("\\"))
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "track.dat").write_bytes(track)
 
 
 def _moved_frame(ws: Workspace) -> None:
@@ -145,15 +192,26 @@ def _new_graphics(ws: Workspace) -> None:
     ini.write_text("[Graphics Options]\nMSAASamples=4\n", encoding="utf-8")
 
 
+def _sim_update(ws: Workspace) -> None:
+    _install(ws, sim=b"sim v2, a little longer")
+
+
+def _track_update(ws: Workspace) -> None:
+    _install(ws, track=b"track v2, a little longer")
+
+
 @pytest.mark.parametrize(
     ("change", "named"),
     [
         (_moved_frame, "frame"),
         (_new_spec, "spec presets"),
         (_new_graphics, "graphics options"),
+        (_sim_update, "sim's build"),
+        (_track_update, "track's files"),
     ],
 )
 def test_a_capture_is_refused_once_what_its_shots_depend_on_moves(ws, change, named):
+    _install(ws)
     run = capture(ws, PASSED)
     kit = kits.load(ws, "tiny")
     assert bake.capture(config.load(), ws, kit) == run
@@ -163,6 +221,20 @@ def test_a_capture_is_refused_once_what_its_shots_depend_on_moves(ws, change, na
     with pytest.raises(bake.StaleCapture, match=named):
         bake.capture(config.load(), ws, kits.load(ws, "tiny"))
     assert not bake.status(config.load(), ws, kits.load(ws, "tiny"))["checked"]
+
+
+def test_a_capture_shot_before_the_sims_build_was_recorded_holds_against_its_bake_checks_record(ws):
+    _install(ws)
+    run = capture(ws)
+    manifest = state.read_json(run / "manifest.json") or {}
+    then = {k: manifest["identity"].pop(k) for k in calibrate.VOUCHED}
+    state.write_json(run / "manifest.json", manifest | {"check": PASSED | {"identity": then}})
+    kit = kits.load(ws, "tiny")
+    assert bake.stale(config.load(), ws, kit, run) == []
+
+    _sim_update(ws)
+
+    assert bake.stale(config.load(), ws, kit, run)
 
 
 def test_a_refit_keeps_the_capture(ws):
@@ -183,6 +255,18 @@ def test_no_capture_and_an_unchecked_capture_are_refused(ws):
     assert bake.load_for(config.load(), ws, kit, require_check=False).views
 
 
+def test_a_check_done_with_another_renderer_asks_for_a_new_one(ws):
+    capture(ws, PASSED | {"renderer": "another"})
+    kit = kits.load(ws, "tiny")
+
+    with pytest.raises(bake.Unchecked):
+        bake.checked(config.load(), ws, kit)
+    assert not bake.status(config.load(), ws, kit)["checked"]
+
+
+# bake check.
+
+
 def test_error_statistics_are_per_channel_and_leave_out_the_silhouette_band(ws):
     run = capture(ws)
     view = bake.Bake.load(run, kits.load(ws, "tiny"), ["side_l"]).views["side_l"]
@@ -201,36 +285,46 @@ def _built(ws: Workspace, name: str, paint: np.ndarray, spec: np.ndarray) -> dic
     return checked(ws, name, outputs={"car.tga": tga_bytes(paint), "car_spec.tga": tga_bytes(spec)})
 
 
+def _shoot(b: bake.Bake, outputs: dict[str, bytes], run: Path, error: int, where: dict | None = None) -> Path:
+    """A sim run of the build: its baked render, `error` levels brighter in red on the car (or on `where`'s
+    pixels, per view), and anything at all in the silhouette band."""
+    run.mkdir(parents=True)
+    for view, frame in b.render_tgas(outputs).items():
+        frame = frame.astype(np.int16)
+        if where is None:
+            frame[CAR] += (error, 0, 0)
+        else:
+            frame[where[view]] += (error, 0, 0)
+        frame[4] = 0
+        Image.fromarray(np.clip(frame, 0, 255).astype(np.uint8)).save(run / f"{view}.png")
+    (run / "manifest.json").write_text(json.dumps({"window": [W, H]}), encoding="utf-8")
+    return run
+
+
 @pytest.fixture
 def fake_sim(ws, monkeypatch):
-    """`preview sim` that shoots the baked render of the build, `error` levels brighter in red on the car,
-    and anything at all in the silhouette band."""
+    """`preview sim` that shoots `_shoot` with the `error` and `where` set here. The tiny capture has few
+    pixels, so a check covers a finish it compared on any."""
     from livery import check as gate
     from livery import preview_sim as sim_module
 
-    shot = {"error": 0, "runs": 0}
+    monkeypatch.setattr(bake, "COVER_PX", 1)
+    shot: dict = {"error": 0, "where": None, "runs": 0}
     monkeypatch.setattr(gate, "run_build", lambda ws, name: {"passed": True})
 
-    def preview_sim(cfg, ws, name, log=print):
+    def preview_sim(cfg, ws, name, log=print, drift=True):
         b = bake.load_for(cfg, ws, kits.load(ws, "tiny"), require_check=False)
         built = ws.out(name)
         outputs = {f: (built / f).read_bytes() for f in ("car.tga", "car_spec.tga")}
         run = built / "sim" / f"20260101-00000{shot['runs']}"
         shot["runs"] += 1
-        run.mkdir(parents=True)
-        for view, frame in b.render_tgas(outputs).items():
-            frame = frame.astype(np.int16)
-            frame[CAR] += (shot["error"], 0, 0)
-            frame[4] = 0
-            Image.fromarray(np.clip(frame, 0, 255).astype(np.uint8)).save(run / f"{view}.png")
-        (run / "manifest.json").write_text(json.dumps({"window": [W, H]}), encoding="utf-8")
-        return run
+        return _shoot(b, outputs, run, shot["error"], shot["where"])
 
     monkeypatch.setattr(sim_module, "preview_sim", preview_sim)
     return shot
 
 
-@pytest.mark.parametrize(("error", "passes"), [(5, True), (int(bake.MAX_P95) + 8, False)])
+@pytest.mark.parametrize(("error", "passes"), [(5, True), (int(bake.MAX_EDGE_P95) + 8, False)])
 def test_bake_check_records_its_statistics_in_the_capture_and_passes_under_the_target(
     ws, fake_sim, error, passes
 ):
@@ -256,6 +350,98 @@ def test_bake_check_records_its_statistics_in_the_capture_and_passes_under_the_t
             bake.checked(config.load(), ws, kit)
 
 
+@pytest.mark.parametrize(("along_edges", "passes"), [(True, True), (False, False)])
+def test_the_gate_is_looser_along_paint_edges_than_away_from_them(ws, fake_sim, along_edges, passes):
+    """The same error on the same number of pixels passes in the band along a paint edge, where a texel of
+    registration noise lands on the other colour, and fails away from it."""
+    run = capture(ws)
+    paint, spec = halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["gloss"])
+    _built(ws, "fixture", paint, spec)
+    kit = kits.load(ws, "tiny")
+    b = bake.Bake.load(run, kit, list(ws.policy.preview))
+    idx = render.materials(spec, b.presets)
+    where = {}
+    for name, view in b.views.items():
+        _, keep = bake.errors(np.zeros((H, W, 3)), np.zeros((H, W, 3)), view)
+        band = bake.edges(view, paint, idx) & keep
+        away = np.zeros_like(band)
+        away.flat[np.flatnonzero(keep & ~band)[: int(band.sum())]] = True
+        where[name] = band if along_edges else away
+    fake_sim["error"] = int((bake.MAX_P95 + bake.MAX_EDGE_P95) / 2)
+    fake_sim["where"] = where
+
+    result = bake.check(config.load(), ws, kit, ["fixture"], log=lambda m: None)
+
+    assert result["passed"] is passes
+
+
+def test_bake_check_records_the_finishes_it_compared_on(ws, fake_sim):
+    capture(ws)
+    _built(ws, "fixture", halves((40, 40, 40), (200, 120, 0)), halves(SPEC["gloss"], SPEC["metallic"]))
+    kit = kits.load(ws, "tiny")
+
+    result = bake.check(config.load(), ws, kit, ["fixture"], log=lambda m: None)
+
+    assert result["covered"] == ["gloss", "metallic"]
+    assert bake.usable(config.load(), ws, kit, ["gloss", "metallic"]) == []
+    assert bake.usable(config.load(), ws, kit, ["gloss", "matte"])
+
+
+def _metal(b: bake.Bake, spec: np.ndarray) -> dict[str, np.ndarray]:
+    """Per view, the pixels whose texel is metallic."""
+    idx = render.materials(spec, b.presets)
+    return {v: b.finish_map(view, idx) == list(b.presets).index("metallic") for v, view in b.views.items()}
+
+
+def test_a_design_that_fails_covers_none_of_its_finishes_and_leaves_the_passing_ones_covered(ws, fake_sim):
+    """Metal glare spreads over the cells around it whatever their finish, so a design whose metal fails
+    vouches for none of its finishes; a design that passed still vouches for its own."""
+    run = capture(ws)
+    spec = halves(SPEC["gloss"], SPEC["metallic"])
+    _built(ws, "glossy", halves((40, 40, 40), (200, 120, 0)), halves(SPEC["gloss"], SPEC["gloss"]))
+    _built(ws, "fixture", halves((40, 40, 40), (200, 120, 0)), spec)
+    kit = kits.load(ws, "tiny")
+    bake.check(config.load(), ws, kit, ["glossy"], log=lambda m: None)
+    fake_sim["error"] = int(bake.MAX_EDGE_P95) + 8
+    fake_sim["where"] = _metal(bake.Bake.load(run, kit, list(ws.policy.preview)), spec)
+
+    result = bake.check(config.load(), ws, kit, ["fixture"], log=lambda m: None)
+
+    assert not result["passed"]
+    assert "gloss" in result["designs"]["fixture"]["finishes"]
+    assert result["covered"] == ["gloss"]
+    assert bake.checked(config.load(), ws, kit) == run
+    assert bake.usable(config.load(), ws, kit, ["gloss"]) == []
+    assert bake.usable(config.load(), ws, kit, ["gloss", "metallic"])
+
+
+def test_a_check_of_another_design_adds_to_the_finishes_the_last_one_covered(ws, fake_sim):
+    capture(ws)
+    _built(ws, "glossy", halves((40, 40, 40), (200, 120, 0)), halves(SPEC["gloss"], SPEC["gloss"]))
+    _built(ws, "metal", halves((40, 40, 40), (200, 120, 0)), halves(SPEC["metallic"], SPEC["metallic"]))
+    kit = kits.load(ws, "tiny")
+    bake.check(config.load(), ws, kit, ["glossy"], log=lambda m: None)
+
+    result = bake.check(config.load(), ws, kit, ["metal"], log=lambda m: None)
+
+    assert set(result["designs"]) == {"glossy", "metal"}
+    assert result["covered"] == ["gloss", "metallic"]
+
+
+@pytest.mark.parametrize(("right", "stands_in"), [("gloss", True), ("matte", False)])
+def test_baked_views_stand_in_for_a_design_only_where_the_check_covered_every_finish_it_uses(
+    ws, right, stands_in
+):
+    capture(ws, PASSED)
+    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC[right]))
+
+    found = bake.design_status(config.load(), ws, "d")
+
+    assert found["checked"]
+    assert found["usable"] is stands_in
+    assert bool(found["usable_why"]) is not stands_in
+
+
 def test_baked_previews_are_stamped_with_the_build_and_the_capture(ws, cheap_flat):
     from livery import preview_flat, stamps
 
@@ -275,16 +461,57 @@ def test_baked_previews_are_stamped_with_the_build_and_the_capture(ws, cheap_fla
     assert {p.stem for p in folder.glob("*.png")} == {*ws.policy.preview, "sheet"}
 
 
-# The critic's middle rounds.
+# The bake against every later sim run of a build it stands in for.
 
 
-def _baked_design(ws: Workspace) -> None:
+@pytest.mark.parametrize(("error", "passes"), [(2, True), (int(bake.MAX_EDGE_P95) + 8, False)])
+def test_a_sim_run_of_a_build_the_bake_stands_in_for_measures_the_bake_and_warns_when_it_drifted(
+    ws, error, passes
+):
+    from livery import preview_sim
+
     capture(ws, PASSED)
+    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["gloss"]))
+    kit = kits.load(ws, "tiny")
+    outputs = {f: (ws.out("d") / f).read_bytes() for f in ("car.tga", "car_spec.tga")}
+    shots = _shoot(bake.load_for(config.load(), ws, kit), outputs, ws.out("d") / "sim" / "run", error)
+    said: list[str] = []
+
+    found = preview_sim._drift(config.load(), ws, kit, outputs, shots, said.append)
+
+    recorded = (state.read_json(shots / "manifest.json") or {})["bake"]
+    assert recorded["usable"]
+    assert recorded["passed"] is passes
+    assert set(recorded["views"]) == set(ws.policy.preview)
+    assert found == recorded
+    assert bool(said) is not passes
+
+
+def test_a_sim_run_of_a_build_with_a_finish_the_check_didnt_cover_leaves_the_bake_alone(ws):
+    from livery import preview_sim
+
+    capture(ws, PASSED)
+    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
+    kit = kits.load(ws, "tiny")
+    outputs = {f: (ws.out("d") / f).read_bytes() for f in ("car.tga", "car_spec.tga")}
+    shots = _shoot(bake.load_for(config.load(), ws, kit), outputs, ws.out("d") / "sim" / "run", 0)
+
+    found = preview_sim._drift(config.load(), ws, kit, outputs, shots, print)
+
+    assert not found["usable"]
+    assert "views" not in found
+
+
+# The critic's rounds and the review.
+
+
+def _baked_design(ws: Workspace, check: dict) -> None:
+    capture(ws, check)
     _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
 
 
 def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
-    _baked_design(ws)
+    _baked_design(ws, PASSED)
 
     folder = critic.pack(ws, ["d"], baked=True)
 
@@ -299,8 +526,7 @@ def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
 
 
 def test_baked_renders_are_refused_before_the_capture_passed_bake_check(ws):
-    capture(ws, {"passed": False, "worst": {"p95": 30.0, "design": "calibration", "view": "rear34"}})
-    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
+    _baked_design(ws, failed("gloss"))
     with pytest.raises(bake.Unchecked, match="failed bake check"):
         critic.pack(ws, ["d"], baked=True)
 
@@ -324,13 +550,56 @@ def _round_two(ws: Workspace, baked: bool) -> None:
     critic.record_adversary(ws, "d", {"closest": None, "findings": [finding]})
 
 
-@pytest.mark.parametrize("baked", [False, True])
-def test_a_round_judged_on_baked_renders_never_ships(ws, baked):
-    _baked_design(ws)
+@pytest.mark.parametrize(
+    ("baked", "covered", "ships"),
+    [
+        (False, ("gloss",), True),
+        (True, ("gloss", "matte"), True),  # the check covered both finishes the design uses
+        (True, ("gloss",), False),  # it never compared matte
+    ],
+)
+def test_a_round_judged_on_baked_renders_ships_only_where_they_stand_in_for_sim_shots(
+    ws, baked, covered, ships
+):
+    _baked_design(ws, passed(*covered))
 
     _round_two(ws, baked)
 
     got = critic.status(ws, "d")
-    assert got["ship"] is not baked
+    assert got["ship"] is ships
     assert got["baked"] is baked
-    assert any("baked" in w for w in got["why"]) is baked
+    assert any("baked" in w for w in got["why"]) is not ships
+
+
+def test_a_baked_round_stops_shipping_once_the_capture_goes_stale(ws):
+    _install(ws)
+    _baked_design(ws, passed("gloss", "matte"))
+    _round_two(ws, baked=True)
+    assert critic.status(ws, "d")["ship"]
+
+    _sim_update(ws)
+
+    assert not critic.status(ws, "d")["ship"]
+
+
+@pytest.mark.parametrize(
+    ("sim_shots", "covered"), [(False, ("gloss", "matte")), (True, ("gloss", "matte")), (False, ("gloss",))]
+)
+def test_a_final_review_shows_sim_shots_first_and_baked_views_only_where_they_stand_in(
+    ws, cheap_flat, sim_shots, covered
+):
+    from livery.review.items import design_items
+    from tests.conftest import sim_run
+
+    _baked_design(ws, passed(*covered))
+    if sim_shots:
+        digests = json.loads((ws.out("d") / "check.json").read_text(encoding="utf-8"))["digests"]
+        sim_run(ws, "d", "20260101-000000", digests)
+
+    (item,) = design_items(ws, ["d"])
+
+    kinds = {c.rsplit(" · ", 1)[-1] for c in item["captions"].values() if " · " in c}
+    stands_in = not sim_shots and covered == ("gloss", "matte")
+    assert kinds == ({"baked"} if stands_in else {"sim"} if sim_shots else set())
+    assert bool(item["baked_run"]) is stands_in
+    assert bool(item["runs"]) is sim_shots

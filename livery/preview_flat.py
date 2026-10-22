@@ -191,7 +191,7 @@ def baked(
     from livery import bake
 
     b = with_bake or _bake(ws, kit)
-    stamp = stamps.make(ws, name, outputs, sets) | bake.stamp(b)
+    stamp = stamps.make(ws, name, outputs, sets) | bake.stamp(b, outputs)
     return bake.write_views(b, b.render_tgas(outputs), stamps.baked_dir(ws, name, sets), stamp)
 
 

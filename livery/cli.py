@@ -55,6 +55,8 @@ bake_app = typer.Typer(
 app.add_typer(bake_app, name="bake")
 config_app = typer.Typer(no_args_is_help=True, help="Your settings: config.toml in the state dir.")
 app.add_typer(config_app, name="config")
+taste_app = typer.Typer(no_args_is_help=True, help="The owner's taste table: prefs/<person>/taste.json.")
+app.add_typer(taste_app, name="taste")
 
 Design = Annotated[str, typer.Argument(help="Design name under designs/.")]
 Sets = Annotated[list[str] | None, typer.Option("--set", help="Try a param value without saving it: k=v.")]
@@ -311,7 +313,12 @@ def _standing(row: dict) -> str:
         moved = ", ".join(row["changed_by"]) or "?"
         paint, spec = row.get("paint_changed", "?"), row.get("spec_changed", "?")
         diff = row.get("diff", row.get("pictures"))
-        return f" by {moved}: paint {paint}, spec {spec} of the car; {diff}{waits}"
+        asked = "; still OK? queued on the review page" if row.get("asked") else ""
+        if row.get("not_asked"):
+            asked = f"; not asked still OK?: {row['not_asked']}"
+        return f" by {moved}: paint {paint}, spec {spec} of the car; {diff}{waits}{asked}"
+    if row["status"] == "carried":
+        return f" by {', '.join(row['changed_by'])}, no pixel past tolerance: approval kept (undo in History)"
     if row["status"] == "failed":
         return f": {row['errors'][0]}"
     return waits
@@ -329,9 +336,11 @@ def build(
 
     With --all, builds every design and reports each one's standing against its approval: approved,
     changed since approval (by what, how much of the car, and a diff picture), unapproved or failed.
-    Fixtures are listed apart and are 'built' rather than unapproved. It fails if a design failed or an
-    approved one changed. Run it after any kit or library change. The report also goes to
-    .cache/build-all.json.
+    Fixtures are listed apart and are 'built' rather than unapproved. Run it after any kit or library change:
+    an approved design only that moved, with no paint or spec channel past approvals.TOLERANCE, keeps its
+    approval ('carried', a ledger line by this agent the owner can undo in History; commit it with the
+    change); one moved further is queued on the review page as a "still OK?" screen. It fails if a design
+    failed or an approved one changed and wasn't carried. The report also goes to .cache/build-all.json.
     """
     from livery.check import run_build
 
@@ -350,9 +359,15 @@ def build(
         if not result["passed"]:
             raise typer.Exit(1)
         return
-    from livery import approvals
+    from livery import approvals, notify
+    from livery.review import library
 
     report = approvals.standings(ws)
+    settled = library.settle(ws, report)
+    if settled["asked"]:
+        notify.toast(
+            "Fartstriber review", f"Still OK? {', '.join(settled['asked'])}", "http://127.0.0.1:8765/"
+        )
     text = []
     for role, heading in (("livery", "liveries"), ("fixture", "fixtures")):
         rows = {name: row for name, row in report.items() if row["role"] == role}
@@ -530,6 +545,10 @@ def review(
             help="Designs: several are concepts, one is a final. With --cancel, review ids from --list."
         ),
     ] = None,
+    sketch: Annotated[
+        list[str] | None,
+        typer.Option(help="With concepts: a sketch that didn't make the top three, shown small to revive."),
+    ] = None,
     kit: Annotated[str | None, typer.Option(help="Review a kit's overlay and calibration shots.")] = None,
     roster: Annotated[bool, typer.Option(help="Accept or reject proposed brands in roster.md.")] = False,
     sponsors: Annotated[bool, typer.Option(help="Review drawn brands not yet approved.")] = False,
@@ -555,13 +574,13 @@ def review(
     port: int = 8765,
     as_json: AsJson = False,
 ) -> None:
-    """Queue a review on the page every session shares, block until the owner presses Apply on it, print the
-    decisions as JSON.
+    """Queue a screen on the page every session shares, block until the owner sends it, print the decisions
+    as JSON.
 
     A final shows the checked build: its flat preview is rendered again when it shows another build, and
-    sim shots of another build are marked. Apply writes what review owns in this checkout, appends every
-    decision to prefs/decisions.jsonl and commits what it wrote with each decided design's folder. The JSON
-    lists the proposals the owner accepted, for the agent to make.
+    sim shots of another build are marked. Send writes what review owns in this checkout, appends every
+    decision to the owner's prefs/<person>/decisions.jsonl and commits what it wrote with each decided
+    design's folder. The JSON lists the proposals the owner accepted, for the agent to make.
     """
     from livery import marks as race_marks
     from livery.review import items as ri
@@ -594,6 +613,10 @@ def review(
         queue += race_marks.review_items()
     if designs:
         queue += ri.design_items(ws, designs)
+    if sketch:
+        if not designs or len(designs) < 2:
+            raise typer.BadParameter("--sketch goes with concepts: name two or more designs")
+        queue += ri.sketch_items(ws, sketch)
     if references:
         queue += ri.reference_items(ws.references)
     if proposals:
@@ -605,6 +628,75 @@ def review(
         )
     result = serve(ws, queue, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
     _emit(as_json, result)
+
+
+@app.command()
+def library(
+    serve: Annotated[
+        bool, typer.Option("--serve", help="Keep the review page up, open on the Library, until Ctrl+C.")
+    ] = False,
+    port: int = 8765,
+    as_json: AsJson = False,
+) -> None:
+    """Where everything the owner decided stands now, in the main checkout: cars, brands, race markings, kits
+    and taste rows, each with its state and last decision. A car the owner revived waits for a design session.
+
+    On the page's Library the owner reviews any of them again, revokes a car, drops a brand or a marking,
+    retires a taste row or revives a car; each is a ledger line History can undo. With --serve, the page stays
+    up while no waiting review serves it.
+    """
+    from livery.review import history
+    from livery.review import library as lib
+    from livery.review.server import serve_page
+
+    ws = Workspace()
+    if serve:
+        return serve_page(ws, port=port, on_ready=lambda m: typer.echo(m, err=True), commit=True)
+    main = history.main_root(ws.root)
+    if main.resolve() != ws.root.resolve():
+        ws = Workspace(root=main, assets=main / "assets", policy_file=main / "policy.toml")
+    out = lib.sections(ws)
+    text = []
+    for section, cards in out.items():
+        text.append(section)
+        for c in cards:
+            last = c.get("last") or {}
+            when = str(last.get("at") or "")[:10]
+            text.append(f"  {c['title']:24} {c['state']:12} {when}  {', '.join(c.get('actions', []))}")
+    _emit(as_json, out, text)
+
+
+@taste_app.command("show")
+def taste_show(as_json: AsJson = False) -> None:
+    """The live rows as the table builders and the critic read (--json: every row, retired ones too)."""
+    from livery import taste
+
+    ws = Workspace()
+    _emit(as_json, {"rows": taste.rows(ws, retired=True)}, taste.markdown(ws).rstrip())
+
+
+@taste_app.command("put")
+def taste_put(row: Json, as_json: AsJson = False) -> None:
+    """Add a row, or replace the one with its id, from a JSON file: {id, words: [{quote, of?, design?, at?}],
+    look_for, where, source?}. `of` is the uid of the ledger decision a quote comes from. Recorded as this
+    agent's, with its session."""
+    from livery import taste
+
+    out = taste.put(Workspace(), json.loads(row.read_text(encoding="utf-8")))
+    _emit(as_json, out, f"taste row {out['id']}: live")
+
+
+@taste_app.command("retire")
+def taste_retire(
+    row_id: Annotated[str, typer.Argument(help="The row's id.")],
+    why: Annotated[str, typer.Option(help="Why it no longer gates designs.")],
+    as_json: AsJson = False,
+) -> None:
+    """Retire a row: it stops gating designs, and comes back only with new evidence."""
+    from livery import taste
+
+    out = taste.retire(Workspace(), row_id, why)
+    _emit(as_json, out, f"taste row {row_id}: retired")
 
 
 @app.command()
@@ -780,7 +872,7 @@ def critic_pack(
         bool,
         typer.Option(
             "--baked",
-            help="A middle round: baked renders of the checked build in place of sim shots. Never ships.",
+            help="Baked renders of the checked build in place of sim shots.",
         ),
     ] = False,
     as_json: AsJson = False,
@@ -797,8 +889,8 @@ def critic_pack(
 
     --baked, with a round, --compare or --adversary, packs baked renders of the checked build from the kit's
     calibration capture (once it passed livery bake check) in place of sim shots, marked as baked in the
-    manifest and in the verdict: a middle round of the autonomous loop. `critic status` never ships a round
-    judged on them.
+    manifest and in the verdict. `critic status` ships a round judged on them only where they stand in for
+    sim shots: that check covered every finish the build uses (`livery bake status --design`).
     """
     from livery import critic
 
@@ -830,7 +922,8 @@ def critic_record(design: Design, verdict: Json, as_json: AsJson = False) -> Non
     """Validate a round verdict against the last round and the pack it judged, and record it.
 
     It goes to the design's verdicts.jsonl with its round, the pack's design hash, shots, rubric version
-    and critic model. Ship is computed afterwards, by `critic status`.
+    and critic model. Its fixes are suggestions, {title, detail, where, optional}, the most important
+    first. Whether it goes back to the owner, and whether it ships, are computed by `critic status`.
     """
     from livery import metrics
     from livery.critic import record
@@ -868,12 +961,14 @@ def critic_adversary(design: Design, verdict: Json, as_json: AsJson = False) -> 
 
 @critic_app.command("status")
 def critic_status(design: Design, as_json: AsJson = False) -> None:
-    """Print whether the design ships, and why not, as JSON.
+    """Print whether the design goes back to the owner and whether it ships, and why not, as JSON.
 
-    Ship: the last round has no open fix that isn't optional, nothing blocked, every taste row passing
-    and the owner's latest note resolved, it isn't worse than the round before, and the adversary's top
-    finding is optional.
-    Otherwise the critic's call (iterate or rework) stands.
+    Ready: the last round, on sim shots or baked renders that stand in for them, judged the owner's
+    latest note and every critic suggestion they endorsed resolved, nothing is blocked and every taste
+    row passes; `holds` says what keeps it from that. The critic's own fixes never hold it back.
+    Ship, on top: no open fix that isn't optional, not worse than the round before, and the adversary's
+    top finding optional; `why` lists every reason it doesn't. Otherwise the critic's call (iterate or
+    rework) stands.
     """
     from livery.critic import status
 
@@ -938,18 +1033,24 @@ def references_fetch(as_json: AsJson = False) -> None:
 @bake_app.command("check")
 def bake_check(
     car: Annotated[str, typer.Argument(help="The kit whose calibration capture is checked.")],
-    design: Annotated[
-        str | None, typer.Argument(help="A design to check as well as the kit's calibration fixture.")
+    designs: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Designs to check as well as the kit's calibration fixture, such as one per finish."
+        ),
     ] = None,
     as_json: AsJson = False,
 ) -> None:
-    """Hold the bake against the sim: render the calibration fixture (and a design) baked, shoot each build
-    with one real preview sim run, and compare them outside a 2 px band along the silhouette.
+    """Hold the bake against the sim: render the calibration fixture (and the designs) baked, shoot each
+    build with one real preview sim run, and compare them outside a 2 px band along the silhouette.
 
-    Prints the median and p95 per channel at each view, writes a side by side and an error picture per
-    design into the capture's check/ folder, and records the result in the capture's manifest. Fails if any
-    view's p95 is over 12. Builders and middle critic rounds use baked views only after a check passed.
-    Queues behind any other sim run; never takes focus.
+    Prints the median and p95 per channel at each view, along paint edges and away from them, writes a side
+    by side and an error picture per design into the capture's check/ folder, and records the result in the
+    capture's manifest with the sim's build and the finishes it covers (those of the designs that passed),
+    beside an earlier check's other designs. Fails if any view is over the
+    gate (livery.bake: MAX_P95 away from edges, MAX_EDGE_P95 along them). Baked views stand in for a
+    design's sim shots only after a check with this renderer passed and covered every finish the design
+    uses. Queues behind any other sim run; never takes focus.
     """
     from livery import bake, config, kit
     from livery.designs import kit_name, script
@@ -957,24 +1058,28 @@ def bake_check(
     ws = Workspace()
     k = kit.load(ws, car)
     fixture = "calibration"  # designs/calibration: the calibration livery, for the kit it names
-    designs = (
+    names = (
         [fixture]
         if (ws.design_dir(fixture) / "design.py").exists() and kit_name(script(ws, fixture)) == car
         else []
     )
-    designs += [design] if design and design not in designs else []
-    if not designs:
+    names += [d for d in dict.fromkeys(designs or []) if d not in names]
+    if not names:
         raise typer.BadParameter(f"the calibration fixture is drawn for another kit: name a design on {car}")
-    result = bake.check(config.load(), ws, k, designs, log=_progress(as_json))
+    result = bake.check(config.load(), ws, k, names, log=_progress(as_json))
     text = [
-        f"{name} {view}: median {s['median']}, p95 {s['p95']}"
+        f"{name} {view}: p95 {s['p95']}, along edges {s['edge']['p95']}, away {s['rest']['p95']}"
         for name, r in result["designs"].items()
         for view, s in r["views"].items()
     ]
     text += [f"pictures: {r['pictures']['side_by_side']}" for r in result["designs"].values()]
     worst = result["worst"]
     verdict = "passed" if result["passed"] else "failed"
-    text.append(f"{verdict}: the worst p95 is {worst['p95']} ({worst.get('design')} {worst.get('view')})")
+    text.append(
+        f"{verdict}: worst {worst.get('design')} {worst.get('view')}, p95 {worst['p95']} away from edges "
+        f"(gate {bake.MAX_P95}), {worst['edge_p95']} along them (gate {bake.MAX_EDGE_P95})"
+    )
+    text.append(f"finishes covered: {', '.join(result['covered']) or 'none'}")
     _emit(as_json, result, text)
     if not result["passed"]:
         raise typer.Exit(1)
@@ -986,16 +1091,17 @@ def bake_status(
     design: Annotated[str | None, typer.Option(help="The kit this design is drawn for.")] = None,
     as_json: AsJson = False,
 ) -> None:
-    """Whether the kit's calibration capture can bake previews: what changed since it was shot, and its last
-    bake check. `checked` is true when baked views may be used."""
+    """Whether the kit's calibration capture can bake previews: what changed since it was shot, its last
+    bake check and the finishes it covered. `checked` is true when baked views may be used in a builder's
+    loop. With --design, `usable` is true when that design's checked build may be judged and reviewed on
+    baked views instead of sim shots: the check covered every finish it uses."""
     from livery import bake, config, kit
-    from livery.designs import kit_name, script
 
     ws = Workspace()
     if (car is None) == (design is None):
         raise typer.BadParameter("name a kit, or pass --design")
-    k = kit.load(ws, car or kit_name(script(ws, str(design))))
-    found = bake.status(config.load(), ws, k)
+    cfg = config.load()
+    found = bake.design_status(cfg, ws, design) if design else bake.status(cfg, ws, kit.load(ws, str(car)))
     check = found["check"] or {}
     text = [
         f"capture: {found['capture'] or 'none'}",
@@ -1007,8 +1113,16 @@ def bake_status(
             if check
             else "none"
         ),
-        f"baked views usable: {'yes' if found['checked'] else 'no'}",
+        f"finishes covered: {', '.join(found['covered']) or 'none'}",
+        f"baked views usable: {'yes' if found['checked'] else 'no'}"
+        + (f" ({found['why']})" if found["why"] else ""),
     ]
+    if design:
+        why = "; ".join(found["usable_why"])
+        text.append(f"{design} uses: {', '.join(found['finishes'] or []) or 'unknown'}")
+        text.append(
+            f"baked views stand in for {design}'s sim shots: {'yes' if found['usable'] else f'no ({why})'}"
+        )
     _emit(as_json, found, text)
 
 

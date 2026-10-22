@@ -1,4 +1,6 @@
-"""`livery preview sim`: the design in the sim, from every shot preset, on a checked build only."""
+"""`livery preview sim`: the design in the sim, from every shot preset, on a checked build only. Where the
+kit's bake stands in for this build's sim shots, the run also measures the bake against them
+(`livery.bake.drift`), into its manifest and telemetry, and warns when it fails the bake check's gate."""
 
 import hashlib
 import os
@@ -7,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from livery import metrics
+from livery import metrics, state
 from livery.check import NotChecked, checked_build
 from livery.config import Config, Workspace
 from livery.designs import kit_name, script
@@ -15,7 +17,7 @@ from livery.kit import load, profile, require_replay
 from livery.simsession import SimSession, fresh_name
 
 
-def preview_sim(cfg: Config, ws: Workspace, name: str, log=print) -> Path:
+def preview_sim(cfg: Config, ws: Workspace, name: str, log=print, drift: bool = True) -> Path:
     """Install, reload, shoot every preset, put the paint folder back. Logs a metrics line.
 
     The shots go to sim/<time>/ only once every one is taken; a run that stops leaves its shots and manifest
@@ -70,6 +72,7 @@ def preview_sim(cfg: Config, ws: Workspace, name: str, log=print) -> Path:
     shots_dir = built / "sim" / stamp
     shots_dir.parent.mkdir(parents=True, exist_ok=True)
     os.replace(s.out, shots_dir)
+    baked = _drift(cfg, ws, kit, {"car.tga": paint, "car_spec.tga": spec}, shots_dir, log) if drift else None
     d = dict(s.timings, total=time.perf_counter() - t_all)
     metrics.log(
         name,
@@ -79,5 +82,25 @@ def preview_sim(cfg: Config, ws: Workspace, name: str, log=print) -> Path:
         lint_errors=0,  # it passed check
         lint_warnings=len(stored.get("warnings", [])),
         critic=None,
+        bake=baked and {k: baked.get(k) for k in ("usable", "passed", "worst", "capture", "why")},
     )
     return shots_dir
+
+
+def _drift(cfg: Config, ws: Workspace, kit, outputs: dict[str, bytes], shots: Path, log) -> dict:
+    """The bake against this run, recorded in its manifest; a warning when it fails the gate."""
+    from livery import bake
+
+    t = time.perf_counter()
+    found = bake.drift(cfg, ws, kit, outputs, shots) | {"s": None}
+    found["s"] = round(time.perf_counter() - t, 1)
+    manifest = state.read_json(shots / "manifest.json") or {}
+    state.write_json(shots / "manifest.json", manifest | {"bake": found})
+    if found["usable"] and not found.get("passed"):
+        worst = found.get("worst") or {}
+        log(
+            f"warning: the bake no longer matches the sim for {kit.name} (p95 {worst.get('p95')}, along edges "
+            f"{worst.get('edge_p95')}, in {worst.get('view')}; {'; '.join(found.get('why') or [])}): run "
+            f"livery bake check {kit.name} before trusting baked views"
+        )
+    return found
