@@ -40,12 +40,14 @@ TOP_A = (-1.15, 1.15)
 # Flank sponsor fields (view, (u0, v0, u1, v1)): no tier block is placed under them, so each mark sits on one
 # field of the collage. Ahead of the number on the panel behind the front wheel (64 px clear of the number,
 # keep_clear_px), and above the rear arch on the paper; both above what the low side camera's verge hides.
-FRONT_FIELD = (0.318, 0.3, 0.366, 0.8)  # its rear edge 64 px ahead of the number (keep_clear_px)
-FLANK_V = (0.4, 0.7)  # the marks' row and the extinguisher E
+# Ahead of the number only the marks' own rows are kept free (`flank_pad_px` round each), so blocks fill the
+# rest of the strip between the arch and the number (round 3: the strip was one flat terracotta field).
+FRONT_FIELD = (0.318, 0.2, 0.366, 0.8)  # its rear edge 64 px ahead of the number (keep_clear_px)
+FLANK_V = (0.4, 0.7, 0.27)  # the marks' row, the extinguisher E and the third mark under the row
 HAUNCH_FIELD = (0.775, 0.8, 0.865, 0.9)  # ahead of the shoulder's crease at u 0.87
 BONNET_FIELD = (0.015, -0.34, 0.08, 0.34)  # (u0, w0, u1, w1) on top: the bonnet front's sponsor row
 SPONSOR_FIELDS = (
-    *((v, f) for v in ("side_l", "side_r") for f in (FRONT_FIELD, HAUNCH_FIELD)),
+    *((v, HAUNCH_FIELD) for v in ("side_l", "side_r")),
     ("top", BONNET_FIELD),
 )
 
@@ -66,21 +68,33 @@ class Params(DesignParams):
     big_reach: float = param(0.18, 0.03, 0.4)  # car lengths from a split where they thin to nothing
     field_density: float = param(0.3, 0.0, 0.6)  # big tone blocks anywhere in the paper
     black_density: float = param(0.6, 0.0, 0.8)  # big tone blocks and embers anywhere in the black
-    core_fill: float = param(0.25, 0.0, 0.8)  # big and mid tone blocks anywhere in the core
+    core_fill: float = param(0.6, 0.0, 0.8)  # big and mid tone blocks anywhere in the core, on the sides
+    top_core_fill: float = param(0.25, 0.0, 0.8)  # ... and on top, where the roof was dense already
     mid_density: float = param(0.45, 0.0, 1.0)
     mid_reach: float = param(0.12, 0.02, 0.4)
     mid_floor: float = param(0.05, 0.0, 0.2)  # mid strays anywhere
     dust_density: float = param(0.35, 0.0, 1.0)
     dust_reach: float = param(0.07, 0.01, 0.2)
+    # dust anywhere in the core on the sides (the roof had it already)
+    core_dust: float = param(0.4, 0.0, 0.5)
+    flank_pad_px: float = param(8.0, 8.0, 48.0)  # kept free round each flank mark
     nose_density: float = param(0.5, 0.0, 1.0)  # big, mid and dust blocks growing towards the nose
     nose_reach: float = param(0.3, 0.04, 0.45)  # car lengths from the nose where they thin to nothing
     black_mid: float = param(0.15, 0.0, 0.5)  # mid tone blocks anywhere in the black
-    number_halo_px: float = param(48.0, 0.0, 96.0)  # no #6B3528 block this close to the number block
+    core_mix: float = param(0.4, 0.0, 1.0)  # black and paper among the core's own big tone blocks
+    key_px: float = param(16.0, 14.0, 32.0)  # the paper keyline round the door number blocks
     pin_px: float = param(20.0, 14.0, 32.0)
     flank_h: float = param(0.022, 0.016, 0.03)
     bumper_px: float = param(40.0, 32.0, 96.0)
     bumper_density: float = param(0.75, 0.0, 0.9)  # few squares fit the corners' narrow bands at all
     haunch_h: float = param(0.02, 0.014, 0.03)
+    mirror_h: float = param(0.013, 0.01, 0.03)
+    # off the shell's centre, clear of its fold
+    mirror_dv: float = param(-0.02, -0.03, 0.03)
+    mirror_du: float = param(0.008, -0.012, 0.012)
+    deck_u: float = param(0.983, 0.97, 0.99)
+    deck_h: float = param(0.019, 0.016, 0.024)
+    bonnet_h: float = param(0.027, 0.02, 0.045)  # 0.034 ran the R over the bonnet's seam
     sill_top: float = param(0.14, 0.06, 0.25)  # the sill band's top (v)
     sill_u0: float = param(0.44, 0.42, 0.46)  # the door island's sill, ahead of the side blade's strip
     sill_v: float = param(0.07, 0.03, 0.12)
@@ -109,6 +123,12 @@ def _pick(x: float, weights: dict[str, float]) -> str | None:
     return list(weights)[-1]
 
 
+def _lines(g) -> list[LineString]:
+    if isinstance(g, LineString):
+        return [] if g.is_empty else [g]
+    return [x for part in getattr(g, "geoms", []) for x in _lines(part)]
+
+
 def _falloff(d: float, reach: float) -> float:
     return max(0.0, 1.0 - d / reach) ** 1.5
 
@@ -122,6 +142,7 @@ def _collage(kit, view: str, p: Params) -> list:
     S = carspace.px_per_unit(kit, view, ref)[0]  # texture px per car length, about the same both ways seen
     q = 8.0 / S  # every edge sits on an 8 px grid, so no sliver is thinner than that
     B, M, D = (_snap(px / S, q) for px in (p.big_px, p.mid_px, p.dust_px))
+    core_fill = p.core_fill if side else p.top_core_fill
     a_lo, a_hi = SIDE_A if side else TOP_A
     y_lo, y_hi = a_lo * k, a_hi * k
     rng = p.rng(f"rows.{view}")
@@ -207,9 +228,9 @@ def _collage(kit, view: str, p: Params) -> list:
         _, _, b1, b2 = row_at(cy)
         f = 0 if cx < b1 else (1 if cx < b2 else 2)
         d1, d2 = abs(cx - b1), abs(cx - b2)
-        return f, min(d1, d2), d2 < d1
+        return f, min(d1, d2), d2 < d1, min(1.0, max(0.0, (cx - b1) / (b2 - b1)))
 
-    def colours(tier: str, f: int, d: float, rear: bool, near: float) -> dict[str, float]:
+    def colours(tier: str, f: int, d: float, rear: bool, near: float, frac: float) -> dict[str, float]:
         if f == 0:  # the black: its tone, and terracotta embers reaching forward from the core
             if tier == "field":
                 return {BLACK_T: 0.5, TERRA_D: 0.35, TERRA: 0.15}
@@ -218,12 +239,11 @@ def _collage(kit, view: str, p: Params) -> list:
             if tier == "field":
                 return {PAPER_D: 0.3, MUTED: 0.3, PAPER_L: 0.3, TERRA: 0.1}
             return {PAPER_D: 0.2, MUTED: 0.25, PAPER_L: 0.25, TERRA: 0.2 + 0.5 * near, TERRA_D: 0.1 * near}
-        if tier == "field":  # the core's own big tone blocks
-            return {TERRA_D: 1.0}
+        if tier == "field":  # the core's own big tone blocks, and its neighbours deep inside it
+            return {TERRA_D: 1.0, BLACK: p.core_mix * (1 - frac), PAPER: p.core_mix * frac}
         # the core: its dark tone, and the neighbour on the near side reaching in
-        out = {
+        out = {  # no terracotta: on the core it would be a block that doesn't show
             TERRA_D: 0.5,
-            TERRA: 0.15,
             BLACK: 0.0 if rear else 0.45 * near,
             PAPER: 0.45 * near if rear else 0.0,
         }
@@ -242,7 +262,7 @@ def _collage(kit, view: str, p: Params) -> list:
             B,
             [1.0, 1.5, 2.0, 3.0],
             [0.5, 1.0, 1.0],
-            lambda f, d, x: (p.black_density, p.core_fill, p.field_density)[f],
+            lambda f, d, x: (p.black_density, core_fill, p.field_density)[f],
         ),
         (
             "big",
@@ -257,7 +277,7 @@ def _collage(kit, view: str, p: Params) -> list:
             [1.0, 1.0, 2.0, 3.0],
             [1.0, 1.0, 2.0],
             lambda f, d, x: (
-                (p.core_fill if f == 1 else (p.black_mid if f == 0 else p.mid_floor))
+                (core_fill if f == 1 else (p.black_mid if f == 0 else p.mid_floor))
                 + p.mid_density * _falloff(d, p.mid_reach)
                 + nose(f, x, 1.0)
             ),
@@ -267,13 +287,24 @@ def _collage(kit, view: str, p: Params) -> list:
             D,
             [1.0, 1.0, 2.0],
             [1.0],
-            lambda f, d, x: (p.dust_density * _falloff(d, p.dust_reach) if f == 1 else 0.0) + nose(f, x, 0.8),
+            lambda f, d, x: (
+                (
+                    p.dust_density * _falloff(d, p.dust_reach) + (p.core_dust if side else 0.0)
+                    if f == 1
+                    else 0.0
+                )
+                + nose(f, x, 0.8)
+            ),
         ),
     ]
-    halo = num.buffer(p.number_halo_px / S)
-    reserved = shapely.union_all(
-        [shapely.box(a, b * k, c, e * k) for vw, (a, b, c, e) in SPONSOR_FIELDS if vw == view] or [Polygon()]
-    )
+    fields = [shapely.box(a, b * k, c, e * k) for vw, (a, b, c, e) in SPONSOR_FIELDS if vw == view]
+    if side:
+        # The mark pair's row across the field, and the single marks (about as wide as tall) on its centre line.
+        fu0, _, fu1, _ = FRONT_FIELD
+        fu, fp, hh = (fu0 + fu1) / 2, p.flank_pad_px / S, p.flank_h / 2
+        for v, (a, b) in zip(FLANK_V, ((fu0, fu1), (fu - hh, fu + hh), (fu - hh, fu + hh)), strict=True):
+            fields.append(shapely.box(a - fp, v * k - hh - fp, b + fp, v * k + hh + fp))
+    reserved = shapely.union_all(fields or [Polygon()])
     for name, T, wm, hm, chance in tiers:
         tr = p.rng(f"tier.{name}.{view}")
         nx = math.ceil((U_HI - U_LO) / T)
@@ -285,16 +316,14 @@ def _collage(kit, view: str, p: Params) -> list:
                 x0, y0 = ox + i * T, oy + j * T
                 w = _snap(T * wm[int(r[2] * len(wm))], q)
                 h = _snap(T * hm[int(r[3] * len(hm))], q)
-                f, d, rear = place(x0 + w / 2, y0 + h / 2)
+                f, d, rear, frac = place(x0 + w / 2, y0 + h / 2)
                 if r[0] >= chance(f, d, x0 + w / 2):
                     continue
                 rect = shapely.box(x0, y0, x0 + w, y0 + h)
                 if rect.intersects(keep_out) or rect.intersects(reserved):
                     continue
                 reach = {"big": p.big_reach, "mid": p.mid_reach, "dust": p.dust_reach}.get(name, 1.0)
-                c = _pick(r[1], colours(name, f, d, rear, max(0.0, 1.0 - d / reach)))
-                if c == TERRA_D and rect.intersects(halo):
-                    c = TERRA  # the number block keeps its edge: no block of its own tone touches it
+                c = _pick(r[1], colours(name, f, d, rear, max(0.0, 1.0 - d / reach), frac))
                 if c is not None and clear(rect):
                     items.append((rect, c))
 
@@ -311,13 +340,6 @@ def _collage(kit, view: str, p: Params) -> list:
             u = nxt
         pts.append((U_HI, y_lo))
         items.append((Polygon(pts), BLACK))
-        # The pinline stops at the number block's sides: under it, it would run along the number zone.
-        nb = num.bounds
-        top_line = LineString(pts[1:-1])
-        sill_top = (
-            geom.as_car(top_line, k),
-            geom.as_car(top_line.difference(shapely.box(nb[0], y_lo, nb[2], y_hi)), k),
-        )
     items += solid
 
     # What shows of each colour: later items cover earlier ones.
@@ -328,8 +350,26 @@ def _collage(kit, view: str, p: Params) -> list:
         if not vis.is_empty:
             shows.setdefault(c, []).append(vis)
         covered = covered.union(g)
-    layers = {c: [geom.as_car(shapely.union_all(gs), k)] for c, gs in shows.items()}
-    return layers, sill_top
+    seen = {c: shapely.union_all(gs) for c, gs in shows.items()}
+    layers = {c: [geom.as_car(g, k)] for c, g in seen.items()}
+
+    if side:
+        # The pinline stops at the number block's sides: under it, it would run along the number zone. It is
+        # terracotta under the black and the paper, and paper where the terracotta core sits on the sill, so
+        # it shows all along (round 2: terracotta on terracotta vanished under the core).
+        nb = num.bounds
+        top_line = LineString(pts[1:-1])
+        free = top_line.difference(shapely.box(nb[0], y_lo, nb[2], y_hi))
+        hit = shapely.line_merge(
+            shapely.union_all(_lines(free.intersection(seen.get(TERRA, Polygon()).buffer(q / 2))))
+        )
+        on_core = shapely.union_all([g for g in _lines(hit) if g.length >= B])  # no short flickers
+        rest = free.difference(on_core.buffer(q / 4)) if not on_core.is_empty else free
+        sill_top = (
+            geom.as_car(top_line, k),
+            [(geom.as_car(g, k), c) for g, c in ((rest, TERRA), (on_core, PAPER)) if not g.is_empty],
+        )
+    return layers, sill_top, (geom.as_car(num, k) if side else None)
 
 
 def _detail(kit, p: Params) -> list:
@@ -386,6 +426,9 @@ def _detail(kit, p: Params) -> list:
         color=PAPER,
         z=7,
     )
+    out += mirror_sides(
+        sponsor, kit, "flank_low", "zentiq", (fu, FLANK_V[2]), PAPER, height=p.flank_h, variant="mark", z=7
+    )
     hu0, hv0, hu1, hv1 = HAUNCH_FIELD
     hv = (hv0 + hv1) / 2
     out += mirror_sides(
@@ -412,32 +455,49 @@ def _detail(kit, p: Params) -> list:
         z=7,
         axis="column",
     )
-    # Bonnet front: paper on the black; rear deck: black on the paper.
-    out += sponsor_group(
+    # The mirror shells: one black mark on each terracotta shell.
+    mu, mv = kit.feature("mirror_shell_l").at
+    out += mirror_sides(
+        sponsor,
         kit,
-        "bonnet_sponsors",
-        "top",
-        [("hexmoor", "mark"), ("avelor", "wordmark"), ("zentiq", "mark")],
-        start=(0.045, -0.3),
-        end=(0.045, 0.3),
-        height=0.026,
-        color=PAPER,
+        "mirror_mark",
+        "drexa",
+        (mu + p.mirror_du, mv + p.mirror_dv),
+        BLACK,
+        height=p.mirror_h,
+        variant="mark",
         z=7,
+    )
+    # Bonnet front: paper on the black, the wordmark alone between the bonnet's curved seams (at this size the
+    # marks either side of it were cut by them); rear deck: black on the paper.
+    out.append(
+        sponsor(
+            kit,
+            "bonnet_avelor",
+            "top",
+            "avelor",
+            (0.045, 0.0),
+            PAPER,
+            height=p.bonnet_h,
+            variant="wordmark",
+            z=7,
+        )
     )
     out += sponsor_group(
         kit,
         "deck_sponsors",
         "top",
         [("drexa", "wordmark"), ("brandvik", "wordmark")],
-        start=(0.978, -0.36),
-        end=(0.978, 0.36),
-        height=0.022,
+        # Back from the engine cover's rear edge, which hid the top of BRANDVIK's letters from above at u 0.978.
+        start=(p.deck_u, -0.36),
+        end=(p.deck_u, 0.36),
+        height=p.deck_h,
         color=BLACK,
         z=7,
     )
-    # Race markings in each field's contrast colour.
+    # Race markings in each field's contrast colour. No tow arrow on the front fender crest: seen at a grazing
+    # angle there it showed as a torn paper fleck in front34 and top (round 3).
     for view in kit.side_views:
-        out.append(marks(kit, f"tow_f.{view}", "tow", (view, 0.12, 0.765), PAPER, 0.02, toward="nose", z=7))
         out.append(marks(kit, f"ext.{view}", "extinguisher", (view, fu, FLANK_V[1]), PAPER, p.flank_h, z=7))
     return out
 
@@ -492,14 +552,19 @@ def build(kit, p: Params):
         panel(kit, "splitter_top", "splitter_top", BLACK, z=1),
     ]
     for view in kit.views:
-        layers, sill_top = _collage(kit, view, p)
+        layers, sill_top, num = _collage(kit, view, p)
         collage = geom.fill(kit, f"collage.{view}", view, layers, z=1)
         els.append(clip_out(kit, whole[view], collage) if view in whole else collage)
         if sill_top is not None:
-            # The terracotta pinline on the sill band's stepped top edge.
-            line, along = sill_top
+            # The pinline on the sill band's stepped top edge: terracotta, paper over the core.
+            line, runs = sill_top
             sill = Polygon([(U_LO, -0.5), *line.coords, (U_HI, -0.5)])
-            els += geom.outline(kit, f"sill_pin.{view}", view, sill, [(p.pin_px, TERRA)], along=along, z=2)
+            for i, (along, c) in enumerate(runs):
+                els += geom.outline(kit, f"sill_pin{i}.{view}", view, sill, [(p.pin_px, c)], along=along, z=2)
+        if num is not None:
+            # A paper keyline round the door number block, so it keeps its edge beside the core's own
+            # #6B3528 blocks (round 2: in side_r it merged with one at its upper left).
+            els += geom.outline(kit, f"num_key.{view}", view, num, [(p.key_px, PAPER)], z=2)
     els += _rear_number_block(kit, p)
     els += _detail(kit, p)
     els += [
