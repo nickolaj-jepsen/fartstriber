@@ -1,6 +1,6 @@
 # Fartstriber
 
-Claude Code designs iRacing liveries as Python code. You describe a livery. Agents write it as a script, check it, shoot it in the sim and critique it, and stop at a local review page whenever the next decision is yours.
+An agent designs iRacing liveries as Python code. You describe a livery. Agents write it as a script, check it, shoot it in the sim and critique it, and stop at a local review page whenever the next decision is yours.
 
 | Step | What happens |
 |---|---|
@@ -15,7 +15,7 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 
 - Windows: the screen capture and the iRacing SDK only exist there.
 - iRacing, with the car and a replay of it. A sim preview needs the sim open on that replay, windowed and not minimised; it never takes focus or sends input. With the optional `[sim]` settings, agents start the sim themselves while you're away and close it when they're done.
-- [uv](https://docs.astral.sh/uv/) (it installs the Python in `.python-version`), [Claude Code](https://code.claude.com/) and [prek](https://prek.j178.dev/). For agent launches, Chrome or Edge, to sign in to iRacing once.
+- [uv](https://docs.astral.sh/uv/) (it installs the Python in `.python-version`), an agent harness that reads `AGENTS.md` and follows the Agent Skills standard ([Claude Code](https://code.claude.com/) is the one the workflows and hooks are wired for), and [prek](https://prek.j178.dev/). For agent launches, Chrome or Edge, to sign in to iRacing once.
 
 ## Setup
 
@@ -25,19 +25,19 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 4. Run `uv run livery preview cameras <kit> --arm`, then reopen the replay so the sim loads the cameras. On a replay other than the one the kit was framed on, also run `uv run livery sim pick-frame <kit>`.
 5. Run `uv tool install prek`, then `prek install`.
 6. Optional, so agents start and close the sim: add the `[sim]` table from `livery.example.toml`, run `uv run livery sim login` and sign in to iRacing in the window it opens, then check `uv run livery sim status`.
-7. Start Claude Code in the repo and accept the folder trust prompt, which turns on the project's permission rules.
+7. Start your agent in the repo. In Claude Code, accept the folder trust prompt, which turns on the project's permission rules and hooks.
 
 ## Use
 
-- Ask Claude Code for a new livery, or a change to one. The `livery-iterate` skill runs the session.
+- Ask your agent for a new livery, or a change to one. The `livery-iterate` skill runs the session.
 - To add a car, use the `kit-calibrate` skill.
-- `uv run livery --help` explains every command; CLAUDE.md lists the everyday ones.
+- `uv run livery --help` explains every command; AGENTS.md lists the everyday ones.
 
 | Doc | For |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | how the system works and why |
 | [docs/sim.md](docs/sim.md) | how iRacing behaves, as measured |
-| [CLAUDE.md](CLAUDE.md) | the agent's commands and rules |
+| [AGENTS.md](AGENTS.md) | the agent's commands and rules |
 
 ## Making it yours
 

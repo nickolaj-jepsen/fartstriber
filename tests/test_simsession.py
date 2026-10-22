@@ -1,4 +1,4 @@
-"""The sim rules (CLAUDE.md) against a fake sim: a dict-backed SDK and a capture that draws the car in the
+"""The sim rules (AGENTS.md) against a fake sim: a dict-backed SDK and a capture that draws the car in the
 colour of the paint file the last reload loaded."""
 
 import io

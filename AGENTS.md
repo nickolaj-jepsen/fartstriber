@@ -1,6 +1,17 @@
 # Fartstriber
 
-Claude Code designs iRacing liveries as Python code, renders and checks them, and looks at them in the sim. How the system works and why: `docs/architecture.md`. How iRacing behaves, as measured: `docs/sim.md`.
+An agent designs iRacing liveries as Python code, renders and checks them, and looks at them in the sim. How the system works and why: `docs/architecture.md`. How iRacing behaves, as measured: `docs/sim.md`.
+
+## Harnesses
+
+This file is the project's instructions, and every agent reads it: Claude Code reads `AGENTS.md` directly, as does any other harness that reads it. The skills are markdown in the Agent Skills format, in `.agents/skills/`. A piece below that needs a harness's own driver says what to do without one.
+
+| Piece | Where | On a harness that doesn't load it |
+|---|---|---|
+| Skills | `.agents/skills/<name>/SKILL.md`, one per task, with its own files beside it | read the one whose description matches the task, with its files beside it |
+| Roles | `.claude/agents/<name>.md`: the prompt a fresh subagent gets, with its tools | start a fresh subagent with that file's body as the prompt, and only the tools it names |
+| Workflows | `.claude/workflows/<name>.js`: the steps, the agents they start and their arguments | Claude Code starts one with the Workflow tool and its `scriptPath`; elsewhere run the steps the file lists, in order, and keep its stop before `livery review` |
+| Hooks | `.claude/hooks/`, wired in `.claude/settings.json` | they refuse only what the rules below already refuse: hold to those yourself |
 
 ## Commands
 
@@ -29,7 +40,7 @@ Every deterministic step is a `uv run livery` command; `--help` explains each on
 
 - Design sessions edit only `designs/<name>/`. Never edit `livery/`, a kit, another design, or anything in `.cache/` during a design session. A missing primitive is drawn with `svg(raw)` or proposed to the owner as a library change, which re-checks every design.
 - Never edit a kit by hand; go through `livery kit review`.
-- Patch files with the Edit tool or a `.py` script in the scratchpad, never with inline heredocs in Bash.
+- Patch files with the edit tool or a `.py` script in the scratchpad, never with inline heredocs in a shell.
 - Each task session works in its own git worktree and branch; run `uv sync` there first (sessions run with `UV_NO_SYNC=1`), and again after changing pyproject.toml or uv.lock. Commit and push your own work as you go, on that branch; it merges into main once tests and CI pass. A failing pre-commit hook means fix and commit again, never `--no-verify`.
 - The sim lock and the paint journal are machine-wide, in `%LOCALAPPDATA%\fartstriber`, so parallel sessions queue for the one sim.
 - The sim loop must never get in the owner's way: no keystrokes or mouse input, never focus, raise or restore the iRacing window, reload through the SDK, and stop the moment they bring the sim to the front. A run may resize a normal sim window (not minimised, maximised or fullscreen) behind other windows to `policy.toml` `[preview] window`, and always puts its size back. If a capture comes back blank, stop and report. Ask them to keep the cursor off the sim window during a run: the sim draws its replay UI over the car there.

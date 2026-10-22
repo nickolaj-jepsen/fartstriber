@@ -35,7 +35,8 @@ flowchart LR
 | `prefs/<person>/`, `references.md` | each reviewer's decisions, words and taste table; the favourite liveries | yes |
 | `policy.toml` | lint thresholds, the views a preview shoots and the sim window's size | yes |
 | `livery/` | the library and the CLI | yes |
-| `.claude/` | agents, skills, workflows, hooks and permissions | yes |
+| `.claude/` | agent roles, workflows, and Claude Code's hooks and permissions | yes |
+| `.agents/skills/` | the skills, in the Agent Skills format every harness reads | yes |
 | `.cache/` | what commands write for this checkout: builds, previews, critic packs and the like | no |
 | `%LOCALAPPDATA%\fartstriber` | what belongs to the machine and its sim rather than a checkout, shared by every worktree: `config.toml`, the sim lock, the paint journal, captures and the like (`livery.state`; `FARTSTRIBER_STATE` moves it) | no |
 
@@ -311,7 +312,7 @@ The page's Library shows where everything stands now in the main checkout (`live
 
 ## Critic
 
-A fresh `livery-critic` subagent judges each pack: it has only the Read tool, its model is pinned and it gets no CLAUDE.md. A judge compares more reliably than it scores, and favours whichever image comes first, so most of its jobs are comparisons run in both orders.
+A fresh `livery-critic` subagent judges each pack: it has only the Read tool, its model is pinned and it gets no AGENTS.md. A judge compares more reliably than it scores, and favours whichever image comes first, so most of its jobs are comparisons run in both orders.
 
 `livery critic pack` makes a folder of what the critic may see, never the script; `livery critic pack --help` says what each kind of pack holds. A round pack refuses a stale check, sim runs of another build and unanswered fixes.
 
@@ -344,7 +345,7 @@ flowchart TD
   - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.
   - A plateau or a rework call forks variants once, ranked pairwise against the design. A winning variant is adopted.
 - Both workflows stop before `livery review`, because a workflow takes no input mid-run. Workflow scripts have no shell, so the CLI steps between agents run in small agents.
-- A `livery-builder` owns the design named on its prompt's first line (`design: <name>`). Its hooks refuse writes outside `designs/<name>/` and the scratchpad, and shell commands other than the livery CLI, `uv run` and git. It is sent back once if it changed a file outside `designs/`.
+- A `livery-builder` owns the design named on its prompt's first line (`design: <name>`). The hooks in its role refuse writes outside `designs/<name>/` and the scratchpad, and shell commands other than the livery CLI, `uv run` and git. It is sent back once if it changed a file outside `designs/`.
 
 ## Records
 

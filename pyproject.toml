@@ -49,7 +49,7 @@ src = ["."]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PT"]
 ignore = [
     "E501",  # ruff format owns line length; the rest is prose
-    "PT011",  # tests assert behaviour, not message text (CLAUDE.md), so no match=
+    "PT011",  # tests assert behaviour, not message text (AGENTS.md), so no match=
 ]
 
 [tool.ruff.format]

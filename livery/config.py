@@ -189,7 +189,8 @@ class Workspace:
     root: Path = REPO
     assets: Path = REPO / "assets"
     policy_file: Path = REPO / "policy.toml"
-    agents: Path = REPO / ".claude"  # the agent definitions and skills the critic's pack copies from
+    agents: Path = REPO / ".claude"  # the agent roles the critic's pack copies from
+    skills: Path = REPO / ".agents" / "skills"  # the skills it copies from, in the shared location
     ui_cars_dir: Path | None = None  # the UI's car previews; None: under the user's iRacing install
 
     @property

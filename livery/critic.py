@@ -131,8 +131,8 @@ def owner_note(ws: Workspace, name: str) -> dict | None:
 
 def _judged_by(ws: Workspace | None) -> tuple[Path, Path]:
     """The rubric (which designers read too) and the critic's own definition."""
-    agents = (ws or Workspace()).agents
-    return agents / "skills" / "livery-design" / "rubric.md", agents / "agents" / "livery-critic.md"
+    ws = ws or Workspace()
+    return ws.skills / "livery-design" / "rubric.md", ws.agents / "agents" / "livery-critic.md"
 
 
 def taste_ids(ws: Workspace | None = None) -> list[str]:

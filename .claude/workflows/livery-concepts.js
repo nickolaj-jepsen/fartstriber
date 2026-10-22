@@ -133,7 +133,7 @@ async function rankPairs(contenders, phase) {
 const planned = await agent(
   'You plan the concepts of a Fartstriber livery session. Create, edit and delete no file.\n\n' +
     `The owner's brief:\n${indent(brief)}\n\nThe reference rows it names: ${rows.join(', ')}.\n\n` +
-    'Read .claude/skills/livery-design/SKILL.md (the concept brief template and the three distances), ' +
+    'Read .agents/skills/livery-design/SKILL.md (the concept brief template and the three distances), ' +
     'the taste table (uv run livery taste show), rubric.md beside it, the yes rows of references.md and all of the owner\'s prefs/<person>/log.md, and look at ' +
     'the pictures of the named rows in .cache/references/<row>/ (list any row without pictures under ' +
     'missing_pictures).\n\n' +
