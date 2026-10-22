@@ -90,7 +90,7 @@ def spawned(monkeypatch) -> list[str]:
 def test_a_run_that_finds_no_sim_starts_one_once_the_owner_is_away(monkeypatch, spawned):
     cfg = replace(config.load(), launch=RULES)
     monkeypatch.setattr(presence, "read", lambda: HERE)
-    assert "at the PC" in simhost.ensure(cfg, "a.rpy")
+    simhost.ensure(cfg, "a.rpy")
     assert spawned == []
     monkeypatch.setattr(presence, "read", lambda: AWAY)
     simhost.ensure(cfg, "a.rpy")

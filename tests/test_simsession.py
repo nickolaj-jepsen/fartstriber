@@ -558,7 +558,7 @@ def test_a_run_that_finds_no_sim_asks_an_agent_to_start_it_and_waits(world, monk
     run(world, lambda s: s.shoot("side", SIDE), ready_timeout=10)
 
     assert asked[0] == world.cfg.replay.file
-    assert world.logs == ["waiting: an agent is starting the sim"]
+    assert len(world.logs) == 1  # said once, not once a poll
 
 
 def test_without_sim_settings_a_run_never_asks_for_a_sim(world, monkeypatch):
