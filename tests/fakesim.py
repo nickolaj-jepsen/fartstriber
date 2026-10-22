@@ -13,6 +13,7 @@ QUICK = {
     "LOAD_S": 0.0,
     "STEADY_S": 0.5,
     "UI_RETRY_S": 0.0,
+    "CLOSING_POLL_S": 0.0,
     "READY_WAIT_S": 0.0,  # a sim that isn't ready is refused at once
 }
 

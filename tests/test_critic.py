@@ -2,18 +2,18 @@
 
 import itertools
 import json
-import sys
+import re
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from livery import check, cli, critic, references
+from livery import check, critic, references
 from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
-from tests.conftest import OWNER, TASTE_IDS, checked, sim_run, write_design
-from tests.test_review_critic import suggestion, verdict
+from tests.conftest import OWNER, TASTE_IDS, checked, run_cli, sim_run, write_design
+from tests.test_review_critic import TASTE_ROW, suggestion, verdict
 
 FIX = suggestion("the bonnet is one plain field")
 
@@ -30,15 +30,13 @@ def _run(ws: Workspace, name: str, stamp: str, colour: str = "purple") -> Path:
 
 
 def _files(manifest: dict | list | str | bool) -> list[str]:
-    """Every path a manifest names: all its strings but the mode, the owner's name and the fix texts."""
+    """Every path a manifest names: each of its strings that is a file name, extension and all."""
     if isinstance(manifest, str):
-        return [manifest]
+        return [manifest] if re.fullmatch(r"[\w./-]+\.\w+", manifest) else []
     if isinstance(manifest, list):
         return [p for v in manifest for p in _files(v)]
     if isinstance(manifest, dict):
-        return [
-            p for k, v in manifest.items() if k not in ("mode", "owner", "previous_fixes") for p in _files(v)
-        ]
+        return [p for v in manifest.values() for p in _files(v)]
     return []  # a flag, like baked
 
 
@@ -56,7 +54,7 @@ def test_a_round_pack_holds_its_own_copies_upscaled_distance_images_and_anchors(
     (ws.prefs / "log.md").write_text("He likes a second layer.\n", encoding="utf-8")
     warnings: list[str] = []
 
-    folder = critic.pack(ws, ["d"], warn=warnings.append)
+    folder = critic.pack(ws, "d", warn=warnings.append)
 
     manifest = json.loads((folder / "manifest.json").read_text())
     named = _files(manifest)
@@ -85,7 +83,7 @@ def test_a_pack_says_what_the_sim_draws_over_the_car_and_what_hides_its_paint(ws
     )
     _run(ws, "d", "20260101-000000")
 
-    folder = critic.pack(ws, ["d"])
+    folder = critic.pack(ws, "d")
 
     entry = json.loads((folder / "manifest.json").read_text())["designs"]["d"]
     notes = (folder / entry["kit"]).read_text(encoding="utf-8")
@@ -94,21 +92,21 @@ def test_a_pack_says_what_the_sim_draws_over_the_car_and_what_hides_its_paint(ws
 
 
 def test_only_shots_of_the_checked_build_are_packed(ws):
-    checked(ws, "d")
+    digests = checked(ws, "d")["digests"]
     sim_run(ws, "d", "20260101-000000", None)  # from before runs recorded their build
     with pytest.raises(critic.StaleShots):
-        critic.pack(ws, ["d"])
-    shot = sim_run(ws, "d", "20260102-000000", _digests(ws, "d"))
+        critic.pack(ws, "d")
+    shot = sim_run(ws, "d", "20260102-000000", digests)
     sim_run(ws, "d", "20260103-000000", {"car.tga": "older", "car_spec.tga": "older"})
 
-    folder = critic.pack(ws, ["d"])
+    folder = critic.pack(ws, "d")
 
     assert critic.records(ws, "d") == []
-    assert json.loads((ws.out("d") / "critic.json").read_text())["round"]["shots"].endswith(shot.name)
+    assert critic.record(ws, "d", verdict(fixes=[]))["shots"].endswith(shot.name)
     assert (folder / "d" / "squint.png").exists()
     write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#c03030")\n')
     with pytest.raises(check.NotChecked):  # edited since the build: build it, then shoot it
-        critic.pack(ws, ["d"])
+        critic.pack(ws, "d")
 
 
 def test_compare_packs_show_both_orders_without_saying_which_is_newer(ws):
@@ -171,12 +169,12 @@ def _two_rounds(ws, *, first=None, second=None, compare=("A", "B"), top_optional
     critic.record(ws, "d", first or verdict(fixes=[FIX]))
     critic.answer(ws, "d", [{"status": "done", "note": "tones on the bonnet"}])
     _run(ws, "d", "20260102-000000")
-    critic.pack(ws, ["d"])
+    critic.pack(ws, "d")
     resolved = [{"status": "resolved", "evidence": "front34.png"}]
     critic.record(ws, "d", second or verdict(previous=resolved, fixes=[suggestion("polish", optional=True)]))
     critic.pack_compare(ws, "d")
     critic.record_compare(ws, "d", {"better": compare[0]}, {"better": compare[1]})
-    critic.pack(ws, ["d"], mode="adversary")
+    critic.pack(ws, "d", mode="adversary")
     finding = {"text": "the mirrors are plain", "view": "front34", "optional": top_optional}
     critic.record_adversary(ws, "d", {"closest": "25", "findings": [finding]})
 
@@ -201,7 +199,7 @@ RESOLVED = [{"status": "resolved", "evidence": "front34.png"}]
         {"second": verdict(previous=RESOLVED, fixes=[FIX])},  # an open fix that matters
         {"second": verdict(previous=[{"status": "partly", "evidence": "front34.png"}], fixes=[])},
         {"second": verdict(previous=RESOLVED, fixes=[], blocked=["the beltline steps at the door"])},
-        {"second": verdict(previous=RESOLVED, fixes=[], taste=_failing("front-as-back"))},
+        {"second": verdict(previous=RESOLVED, fixes=[], taste=_failing(TASTE_ROW))},
         {"compare": ("B", "A")},  # worse than the last round
         {"top_optional": False},
     ],
@@ -249,7 +247,7 @@ def test_a_round_judges_the_owners_latest_note_until_they_accept_the_final(ws):
     _decide(ws, "edit", NOTE)
     _decide(ws, "edit")  # a decision without a note leaves the last one standing
 
-    folder = critic.pack(ws, ["d"])
+    folder = critic.pack(ws, "d")
 
     entry = json.loads((folder / "manifest.json").read_text())["designs"]["d"]
     assert json.loads((folder / entry["owner_note"]).read_text())["note"] == NOTE
@@ -262,7 +260,7 @@ def test_a_round_judges_the_owners_latest_note_until_they_accept_the_final(ws):
 
     _decide(ws, "accept")
     critic.answer(ws, "d", [{"status": "done", "note": "the pixels wrap the nose"}])
-    entry = json.loads((critic.pack(ws, ["d"]) / "manifest.json").read_text())["designs"]["d"]
+    entry = json.loads((critic.pack(ws, "d") / "manifest.json").read_text())["designs"]["d"]
     assert "owner_note" not in entry
 
 
@@ -342,7 +340,7 @@ def test_a_suggestion_the_owner_endorsed_is_judged_every_round_until_it_is_resol
     item = {"id": "final:d", "kind": "final", "title": "d", "body": "", "images": [], "mix": False}
     review_apply.apply(ws, [item], {"final:d": {"decision": "edit", "note": "", "endorsed": [ENDORSED]}})
 
-    folder = critic.pack(ws, ["d"])
+    folder = critic.pack(ws, "d")
 
     entry = json.loads((folder / "manifest.json").read_text())["designs"]["d"]
     assert json.loads((folder / entry["owner_note"]).read_text())["endorsed"] == [ENDORSED]
@@ -356,7 +354,7 @@ def test_a_suggestion_the_owner_endorsed_is_judged_every_round_until_it_is_resol
     assert recorded["endorsed"][0]["suggestion"] == ENDORSED
     assert not critic.status(ws, "d")["ready"]
 
-    critic.pack(ws, ["d"])
+    critic.pack(ws, "d")
     critic.record(ws, "d", verdict(fixes=[], endorsed=[_judged("resolved")]))
     assert critic.status(ws, "d")["ready"]
 
@@ -431,18 +429,11 @@ def test_a_pair_needs_two_concepts_with_flat_previews_of_their_scripts(ws):
         critic.pack_pairs(ws, ["c1", "c2"])
 
 
-def _cli(monkeypatch, ws, *args: str) -> int:
-    monkeypatch.setattr(cli, "Workspace", lambda: ws)
-    monkeypatch.setattr(sys, "argv", ["livery", *args])
-    with pytest.raises(SystemExit) as e:
-        cli.main()
-    return int(e.value.code or 0)
-
-
 def test_the_cli_prints_the_ship_decision_and_refuses_a_rank_with_no_source(monkeypatch, ws, capsys):
     _run(ws, "d", "20260101-000000")
-    assert _cli(monkeypatch, ws, "critic", "status", "d") == 0
+    assert run_cli(monkeypatch, ws, "critic", "status", "d") == 0
     assert json.loads(capsys.readouterr().out)["ship"] is False
-    assert _cli(monkeypatch, ws, "critic", "rank", "a", "b") == 2
-    assert _cli(monkeypatch, ws, "critic", "pack", "d", "--compare", "--adversary") == 2
-    assert _cli(monkeypatch, ws, "critic", "pack", "d", "--compare") == 1  # no earlier round
+    assert run_cli(monkeypatch, ws, "critic", "rank", "a", "b") == 2
+    assert run_cli(monkeypatch, ws, "critic", "pack", "d", "--compare", "--adversary") == 2
+    assert run_cli(monkeypatch, ws, "critic", "pack", "d", "e") == 2  # several designs are concepts: --pairs
+    assert run_cli(monkeypatch, ws, "critic", "pack", "d", "--compare") == 1  # no earlier round

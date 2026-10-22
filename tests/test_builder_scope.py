@@ -96,6 +96,70 @@ def test_the_design_line_counts_only_before_any_other(tmp_path, capsys, workflow
     assert not _allowed(capsys, _event(tmp_path, messages, workflow, "designs/alpha/design.py"))
 
 
+BUILDER_RUNS = [
+    "uv run livery lint alpha",
+    "uv run livery preview flat alpha --baked --set band=0.4",
+    "uv run livery sheet alpha --wedge band=0.3..0.5..0.1",
+    "uv run livery check alpha && uv run livery build alpha",
+    "uv run livery preview sim alpha",
+    "uv run livery bake status --design alpha --json",
+    "uv run livery critic answer alpha answers.json",
+    "uv run livery taste show",
+    "uv run livery review --help",
+]
+REFUSED = {
+    "session": [
+        *("uv run livery review alpha", "uv run livery build --all", "livery kit review gt3"),
+        "uv run livery taste put row.json",
+    ],
+    "critic": ["uv run livery critic record alpha verdict.json", "uv run livery critic rank a b --pairs d"],
+    "owner's": ["uv run livery sim up", "uv run livery sim login"],
+    "not a builder step": ["uv run livery launch alpha", "uv run livery sim launch"],  # steps added later
+}
+
+
+@pytest.mark.parametrize("command", BUILDER_RUNS)
+def test_a_builder_runs_its_own_livery_steps(command):
+    assert scope._why(command) is None
+
+
+@pytest.mark.parametrize(("whose", "command"), [(w, c) for w, cs in REFUSED.items() for c in cs])
+def test_every_other_livery_step_is_refused_saying_whose_it_is(whose, command):
+    why = scope._why(command)
+    assert why is not None
+    assert whose in why
+
+
+def _cli_steps() -> set[str]:
+    """Every `livery` command, as `<command>` or `<group> <subcommand>`."""
+    import typer.main
+
+    from livery.cli import app
+
+    root = typer.main.get_command(app)
+    steps = set()
+    for name, command in getattr(root, "commands", {}).items():
+        subs = getattr(command, "commands", None)
+        steps |= {f"{name} {s}" for s in subs} if subs else {name}
+    return steps
+
+
+def test_every_step_the_scope_names_is_a_real_command():
+    real = _cli_steps()
+    named = {f"{c} {s}" for c, subs in scope.BUILDER_STEPS.items() for s in subs or ()}
+    named |= {c for c, subs in scope.BUILDER_STEPS.items() if subs is None}
+    named |= {s.removesuffix(" --all") for s in scope.SESSION_STEPS | scope.CRITIC_STEPS | scope.OWNER_STEPS}
+    tops = {s.split()[0] for s in real}
+    assert {s for s in named if s not in real and s not in tops} == set()
+
+
+def test_every_real_command_is_a_builders_or_refused_as_someone_elses():
+    """A new command is refused until someone decides whose step it is."""
+    for step in _cli_steps():
+        why = scope._livery([*step.split(), "alpha"])
+        assert why is None or "not a builder step" not in why, why
+
+
 @pytest.mark.parametrize("step", ["up", "down", "hold --for 3h", "allow", "login"])
 def test_a_builder_never_starts_holds_or_signs_in_to_the_sim(step):
     assert scope._why(f"uv run livery sim {step}") is not None

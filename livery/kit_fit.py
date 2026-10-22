@@ -294,12 +294,15 @@ def _residual_grid(u: np.ndarray, v: np.ndarray, resid: np.ndarray) -> dict:
     nv = max(2, int(np.ceil((v1 - v0) / GRID_CELL)) + 1)
     iu = np.clip(np.rint((u - u0) / (u1 - u0) * (nu - 1)).astype(int), 0, nu - 1)
     iv = np.clip(np.rint((v - v0) / (v1 - v0) * (nv - 1)).astype(int), 0, nv - 1)
-    d = np.full((nu, nv, 2), np.nan)
+    d = np.full((nu * nv, 2), np.nan)
     cell = iu * nv + iv
-    for c in np.unique(cell):
-        m = cell == c
-        if m.sum() >= GRID_MIN_CELL_SAMPLES:
-            d[c // nv, c % nv] = np.median(resid[m], axis=0)
+    cells, first, count = np.unique(np.sort(cell), return_index=True, return_counts=True)
+    full = count >= GRID_MIN_CELL_SAMPLES
+    lo, hi = (first + (count - 1) // 2)[full], (first + count // 2)[full]
+    for k in range(2):  # each cell's median, as np.median takes it: the mean of the middle two
+        r = resid[np.lexsort((resid[:, k], cell)), k]
+        d[cells[full], k] = (r[lo] + r[hi]) / 2
+    d = d.reshape(nu, nv, 2)
     _, (ia, ib) = ndimage.distance_transform_edt(np.isnan(d[..., 0]), return_indices=True)
     d = d[ia, ib]
     d = np.stack([ndimage.gaussian_filter(d[..., k], 1.0, mode="nearest") for k in range(2)], -1)
@@ -1020,33 +1023,43 @@ def seam_pairs_of(pieces: dict[str, tuple[carspace.Piece, ...]], canvas: int) ->
                 if ring.is_empty or not hasattr(ring, "exterior"):
                     continue
                 edge = ring.exterior
-                for d in np.arange(0, edge.length, SEAM_STEP_PX):
-                    pa = edge.interpolate(d)
-                    inside = shapely.Point(pa.x, pa.y).buffer(3).intersection(a.area).centroid
-                    if inside.is_empty:
+                on_edge = shapely.line_interpolate_point(edge, np.arange(0, edge.length, SEAM_STEP_PX))
+                inside = _inside(on_edge, a.area)
+                inside = inside[~np.isnan(inside[:, 0])]
+                car, _ = carspace.invert_many(a, inside, start)
+                held = carspace.covers_car(a, car)
+                inside, car = inside[held], car[held]
+                for b in pcs:
+                    if b is a:
                         continue
-                    car, _ = carspace.invert(a, (inside.x, inside.y), start)
-                    if not a.covers_car(car):
+                    m = carspace.covers_car(b, car)
+                    xy = shapely.points(b.to_px_each(car[m]))
+                    reach = shapely.distance(b.area, xy) <= SEAM_REACH_PX
+                    m[m] = reach
+                    nb = _inside(shapely.get_point(shapely.shortest_line(b.area, xy[reach]), 0), b.area)
+                    m[m] = ~np.isnan(nb[:, 0])
+                    nb, there = nb[~np.isnan(nb[:, 0])], car[m]
+                    if not len(nb):
                         continue
-                    for b in pcs:
-                        if b is a or not b.covers_car(car):
-                            continue
-                        xy = b.to_px(car[None])[0]
-                        if b.area.distance(shapely.Point(xy)) > SEAM_REACH_PX:
-                            continue
-                        near = shapely.ops.nearest_points(b.area, shapely.Point(xy))[0]
-                        nb = shapely.Point(near.x, near.y).buffer(3).intersection(b.area).centroid
-                        if nb.is_empty:
-                            continue
-                        # Keep the pair only if b's own inverse lands on the same car-space point, from the
-                        # middle of where b was measured too: a map can fold back near its island far from
-                        # where it was measured, and a folded map has a second car point that lands here.
-                        back, _ = carspace.invert(b, (nb.x, nb.y), car)
-                        mid = b.car_area.centroid if b.car_area is not None else None
-                        neutral, _ = carspace.invert(b, (nb.x, nb.y), (mid.x, mid.y) if mid else start)
-                        if max(np.abs(back - car).max(), np.abs(neutral - car).max()) <= trip:
-                            pairs.add((round(inside.x), round(inside.y), round(nb.x), round(nb.y)))
+                    # Keep the pair only if b's own inverse lands on the same car-space point, from the
+                    # middle of where b was measured too: a map can fold back near its island far from
+                    # where it was measured, and a folded map has a second car point that lands here.
+                    back, _ = carspace.invert_many(b, nb, there)
+                    mid = b.car_area.centroid if b.car_area is not None else None
+                    neutral, _ = carspace.invert_many(b, nb, (mid.x, mid.y) if mid else start)
+                    miss = np.maximum(np.abs(back - there).max(1), np.abs(neutral - there).max(1))
+                    for (ix, iy), (bx, by) in zip(inside[m][miss <= trip], nb[miss <= trip], strict=True):
+                        pairs.add((round(float(ix)), round(float(iy)), round(float(bx)), round(float(by))))
     return sorted([list(p) for p in pairs])
+
+
+def _inside(points: np.ndarray, area) -> np.ndarray:
+    """The middle of `area` within 3 px of each point (shapely points), as (n, 2); NaN where none of it is."""
+    mids = shapely.centroid(shapely.intersection(shapely.buffer(points, 3, quad_segs=16), area))
+    out = np.full((len(points), 2), np.nan)
+    full = ~shapely.is_empty(mids)
+    out[full] = shapely.get_coordinates(mids[full])
+    return out
 
 
 # Against the kit's current maps.

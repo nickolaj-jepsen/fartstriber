@@ -7,10 +7,7 @@ folders, the preview replay) are not; `livery.example.toml` documents every key.
 """
 
 import hashlib
-import json
 import re
-import subprocess
-import sys
 import tomllib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -143,7 +140,7 @@ def _owner(raw: dict) -> str:
 
 def owner() -> str:
     """The owner's name, for what the tool says and records: the `owner` setting, else 'the owner'. Reads
-    the settings as they are, without the first run's migration and whether or not the rest is there."""
+    the settings as they are, whether or not the rest is there."""
     try:
         return _owner(_read(user_file()))
     except (OSError, ConfigError):
@@ -158,10 +155,12 @@ def person(name: str | None = None) -> str:
 
 
 def load(path: Path | None = None) -> Config:
-    """The user's settings. The first run writes them from a checkout's old livery.toml, if there is one."""
+    """The user's settings."""
     path = path or user_file()
     if not path.exists():
-        migrate(path, REPO)
+        raise ConfigError(
+            f"no settings at {path}: copy {REPO / EXAMPLE} there and fill it in; `livery config show` then prints it"
+        )
     raw = _read(path)
     archive = raw.get("archive_dir")
     return Config(
@@ -180,69 +179,6 @@ def load(path: Path | None = None) -> Config:
             track=str(_get(raw, "replay.track", path)),
         ),
     )
-
-
-# The first run: the user's settings came from the checkout's livery.toml until it was split.
-
-
-def _git(root: Path, *args: str) -> str:
-    try:
-        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30)
-    except OSError:
-        return ""
-    return r.stdout if r.returncode == 0 else ""
-
-
-def _legacy(root: Path) -> str | None:
-    """The old livery.toml: in the checkout, or the last version git has of it."""
-    old = root / "livery.toml"
-    if old.exists():
-        return old.read_text(encoding="utf-8")
-    deleted = _git(root, "log", "-1", "--format=%H", "--diff-filter=D", "--", "livery.toml").strip()
-    return _git(root, "show", f"{deleted}^:livery.toml" if deleted else "HEAD:livery.toml") or None
-
-
-def _toml(value) -> str:
-    return json.dumps(value) if isinstance(value, str) else str(value)
-
-
-def migrate(path: Path, root: Path) -> None:
-    """Write the user's settings from the old livery.toml, or say where they go."""
-    text = _legacy(root)
-    if text is None:
-        raise ConfigError(f"no settings at {path}: copy {root / EXAMPLE} there and fill it in")
-    old = tomllib.loads(text)
-    sim = old.get("sim", {})
-    documents = _path(old.get("paint_root", "~/Documents/iRacing/paint")).parent
-    replay = documents / "replay" / sim.get("replay", "")
-    name = _git(root, "config", "user.name").split()
-    values = {
-        "owner": name[0] if name else None,
-        "customer_id": old.get("customer_id"),
-        "team_id": old.get("team_id"),
-        "archive_dir": old.get("archive_dir"),
-        "iracing": {
-            "documents": str(documents),
-            "install": r"C:\Program Files (x86)\iRacing",
-            "process": sim.get("process"),
-        },
-        "replay": {
-            "file": sim.get("replay"),
-            "sha256": sha256(replay) if replay.is_file() else None,
-            "subsession": sim.get("subsession"),
-            "track_name": sim.get("track_name"),
-            "track": sim.get("track"),
-        },
-    }
-    lines = [f"# Written from the old livery.toml; {EXAMPLE} in the repo describes every key."]
-    for k, v in values.items():
-        if isinstance(v, dict):
-            lines += ["", f"[{k}]", *(f"{kk} = {_toml(vv)}" for kk, vv in v.items() if vv is not None)]
-        elif v is not None:
-            lines.append(f"{k} = {_toml(v)}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    print(f"wrote your settings to {path} from the old livery.toml", file=sys.stderr)
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 car-space point must land on the texel the sim shows there."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pytest
@@ -15,6 +15,8 @@ from tests import kitcar
 from tests.conftest import REPLAY, write_kit
 
 BANK = 0.6  # the bank hides the left side's view below this share of the frame's height
+# One worker renders the synthetic car and fits it once for the whole module, under --dist loadgroup.
+pytestmark = pytest.mark.xdist_group("kitfit-synth")
 
 
 @dataclass
@@ -32,13 +34,13 @@ def _kit(root) -> Workspace:
 
 
 @pytest.fixture(scope="module")
-def views():
-    return kitcar.render_all(hide_left_below=BANK)
+def unbanked():
+    return kitcar.render_all()
 
 
 @pytest.fixture(scope="module")
-def unbanked():
-    return kitcar.render("side_l")
+def views(unbanked):
+    return {**unbanked, "side_l": kitcar.hide(unbanked["side_l"], BANK)}
 
 
 @pytest.fixture(scope="module")
@@ -67,7 +69,7 @@ def _side_samples(s: Synth, view: str, vm) -> kit_fit.Shot:
 
 def test_every_side_pixel_maps_back_to_the_texel_it_shows(synth, views, unbanked):
     frames = synth.fitted.maps["side_frames"]
-    for view, vm in (("side_r", views["side_r"]), ("side_l", unbanked)):
+    for view, vm in (("side_r", views["side_r"]), ("side_l", unbanked["side_l"])):
         shot = _side_samples(synth, view, vm)
         u, v = kit_fit._uv(frames[view], shot)
         ids = kitcar.LEFT if view == "side_l" else kitcar.RIGHT
@@ -79,7 +81,7 @@ def test_every_side_pixel_maps_back_to_the_texel_it_shows(synth, views, unbanked
 
 
 def test_what_a_bank_hides_of_one_side_is_mapped_from_the_other(synth, unbanked):
-    shot = _side_samples(synth, "side_l", unbanked)
+    shot = _side_samples(synth, "side_l", unbanked["side_l"])
     hidden = shot.sy >= BANK * kitcar.H
     u, v = kit_fit._uv(synth.fitted.maps["side_frames"]["side_l"], shot)
     door = hidden & (shot.ids == kitcar.LEFT["door"])
@@ -127,10 +129,14 @@ def test_seams_pair_texels_on_the_same_spot_of_the_car(synth):
         (top["door"], right["shoulder"]),
     ):
         assert tuple(sorted((a, b))) in found, (a, b)
+    on_car = np.zeros((len(pairs), 2, 3))  # each pair's two points on the car
+    for end in (0, 1):
+        for rid in set(ids[:, end]):
+            m = ids[:, end] == rid
+            on_car[m, end] = kitcar.where(rid, pairs[m, 2 * end : 2 * end + 2] + 0.5)
     apart = {}
-    for (a, b), p in zip(ids.tolist(), pairs, strict=True):
-        pa, pb = kitcar.where(a, p[None, :2] + 0.5), kitcar.where(b, p[None, 2:] + 0.5)
-        apart.setdefault(tuple(sorted((a, b))), []).append(float(np.linalg.norm(pa - pb)) * kitcar.PX_PER_M)
+    for (a, b), d in zip(ids.tolist(), np.linalg.norm(on_car[:, 0] - on_car[:, 1], axis=1), strict=True):
+        apart.setdefault(tuple(sorted((a, b))), []).append(float(d) * kitcar.PX_PER_M)
     # Each point sits up to 3 px inside its island (more at a corner), and the round trip allows a few px more
     # along the car, so a pair is under about a dozen px apart on it; a wrong pairing (a folded map's second
     # solution, another island) would be tens.
@@ -189,19 +195,20 @@ def test_a_fit_refuses_a_capture_shot_before_the_frame_moved(tmp_path, views):
     ws = _kit(tmp_path)
     kit = kits.load(ws, "synth")
     _captured(ws, kit, views)
-    prof = kits.profile(kit)
-    kits.write_profile(kit.dir, Profile(prof.replay, 200, prof.preview, {}))
+    kits.write_profile(kit.dir, replace(kits.profile(kit), frame=200))
     with pytest.raises(kit_fit.FitError):
         kit_fit.fit(config.load(), ws, kit, dry_run=True)
 
 
-def test_keeping_an_island_puts_back_its_current_map(synth):
-    old = kits.read_maps(synth.kit.dir)
+def test_keeping_an_island_puts_back_its_current_map():
     rid = kitcar.RIGHT["door"]
-    mine = json.loads(json.dumps(old))
-    mine["side_transforms"][rid]["coef"][0][0] += 50
-    again = kit_fit.Fitted(
-        json.loads(json.dumps(synth.fitted.maps)), synth.fitted.report, synth.fitted.evidence
-    )
+
+    def maps(x0: float) -> dict:
+        side = {"view": "side_r", "coef": [[x0, 900, 0, 0, 0, 0], [500, 0, -300, 0, 0, 0]]}
+        top = {"sides": {kitcar.TOP["door"]: {"view": "top"}}, "islands": {}}
+        return {"side_transforms": {rid: side}, "top_transform": top}
+
+    mine = maps(90)
+    again = kit_fit.Fitted(maps(40), {}, {})
     assert kit_fit.keep_old(again, mine, {rid}) == [rid]
     assert again.maps["side_transforms"][rid] == mine["side_transforms"][rid]

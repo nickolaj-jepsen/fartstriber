@@ -3,59 +3,32 @@
 import numpy as np
 import pytest
 import shapely
-from PIL import Image
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 
 from livery import carspace, geom
 from livery.compile import compile_svg
-from livery.config import REPO, Workspace
+from livery.config import Workspace
 from livery.kit import load
 from livery.lint.output import MEET_PX, lint_output
 from livery.lint.run import thresholds
 from livery.model import Livery
 from livery.primitives import clip_out, clip_to, svg
 from livery.raster import render
-from tests.conftest import read_kit, write_kit
+from tests.conftest import TWO, read_kit, two_islands, write_kit
 
-C = 256  # canvas px
-SPEC = {"gloss": [0, 30, 255], "satin": [0, 110, 255], "matte": [0, 220, 0], "metallic": [255, 60, 255]}
+C = TWO  # canvas px
 
 
 @pytest.fixture
 def ws(tmp_path) -> Workspace:
-    """A kit of two side islands, i001 left of x = C/2 and i002 right of it, both mapped on side_l by
-    x = C u, y = C (1 - v), and a top view laid out at a quarter of that across the car."""
-    d = tmp_path / "kits" / "two"
-    (d / "overlays").mkdir(parents=True)
-    Image.fromarray(np.full((C, C), 255, np.uint8)).save(d / "overlays" / "mask.png")
-    ids = np.ones((C, C), np.uint8)
-    ids[:, C // 2 :] = 2
-    Image.fromarray(ids).save(d / "overlays" / "islands.png")
-    h = C // 2
-    (d / "regions.svg").write_text(
-        '<svg xmlns="http://www.w3.org/2000/svg">'
-        f'<path data-id="i001" d="M0,0 L{h},0 L{h},{C} L0,{C} Z"/>'
-        f'<path data-id="i002" d="M{h},0 L{C},0 L{C},{C} L{h},{C} Z"/></svg>'
-    )
-    side = {
-        "coef": [[0, C, 0, 0, 0, 0], [C, 0, -C, 0, 0, 0]],
-        "car_domain": [[-1, -1], [2, -1], [2, 2], [-1, 2]],
-    }
-    raw = {
-        "canvas": C,
-        "paint_folder": "two",
-        "bleed_px": 0,
-        "spec_presets": SPEC,
-        "regions": [{"id": "i001", "view": "side_l"}, {"id": "i002", "view": "side_l"}],
-        "side_frames": {"side_l": {"sill_sy": 300, "top_sy": 100, "nose_sx": 0, "tail_sx": 400}},
-        "side_transforms": {
-            "i001": {**side, "view": "side_l", "domain": [[0, 0], [h, 0], [h, C], [0, C]]},
-            "i002": {**side, "view": "side_l", "domain": [[h, 0], [C, 0], [C, C], [h, C]]},
-        },
-        "top_transform": {"x0": 0, "x_per_u": C, "axis_y": h, "y_per_w": -C / 4, "islands": {}},
-    }
+    """The two-island kit (`conftest.two_islands`), i001 left of x = C/2 and i002 right of it, both mapped
+    on side_l by x = C u, y = C (1 - v), and a top view laid out at a quarter of that across the car."""
+    ws = two_islands(tmp_path)
+    d = ws.kits / "two"
+    raw = read_kit(d)
+    raw["top_transform"] = {"x0": 0, "x_per_u": C, "axis_y": C // 2, "y_per_w": -C / 4, "islands": {}}
     write_kit(d, raw)
-    return Workspace(root=tmp_path, assets=REPO / "assets")
+    return ws
 
 
 @pytest.fixture

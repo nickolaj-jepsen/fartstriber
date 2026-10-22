@@ -10,7 +10,6 @@ import textwrap
 import numpy as np
 import pytest
 import shapely
-import yaml
 from PIL import Image, ImageDraw
 from shapely.geometry import Polygon
 
@@ -21,7 +20,7 @@ from livery.lint.output import MEET_PX, lint_output
 from livery.lint.run import lint_design, thresholds
 from livery.model import Livery
 from livery.primitives import shape, stripe
-from tests.conftest import TWO, drawn, two_islands
+from tests.conftest import TWO, drawn, read_kit, two_islands, write_kit
 
 H = TWO // 2
 INK = "#000000"
@@ -83,9 +82,9 @@ def test_shut_lines_and_the_number_zone_stay_lines_where_the_outlines_are_paired
     pair_seam(ws, range(4, TWO, 8))
     shut_line(ws, lambda d: d.rectangle([180, 20, 182, TWO - 20], fill=255))
     assert near_tangent(ws, shapely.box(189, 40, 230, 200)) == ["p0"]
-    raw = yaml.safe_load((ws.kits / "two" / "kit.yaml").read_text())
+    raw = read_kit(ws.kits / "two")
     raw["keep_clear"] = [{"kind": k, "box": [150, 60, 170, 200]} for k in thresholds().keep_clear_strict]
-    (ws.kits / "two" / "kit.yaml").write_text(yaml.safe_dump(raw))
+    write_kit(ws.kits / "two", raw)
     (ws.kits / "two" / "overlays" / "shutlines.png").unlink()
     assert near_tangent(ws, shapely.box(H + 2, 50, 143, 210)) == ["p0"]
 

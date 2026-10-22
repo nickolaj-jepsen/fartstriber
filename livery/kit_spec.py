@@ -7,7 +7,8 @@ preview views, matches what gloss shows for that grey. Above what the finish can
 matches gloss only up to a grey well short of white), the lookup gives white, and the output lint warns.
 
 `--preset m=R,G,B` sets a preset first and shoots that finish's ladder again into the current capture, so the
-bake and the lookup see the finish as it is now.
+bake and the lookup see the finish as it is now. `--bleed N` sets the kit's bleed, which the capture doesn't
+depend on.
 """
 
 import numpy as np
@@ -89,6 +90,19 @@ def spec(
     keys = {str(m): calibrate.ladder_key(manifest, m, s) for m, s in kit.spec.items() if m != Material.gloss}
     finishes = {m: rows.get(k, {}).get("vs_gloss", {}) for m, k in keys.items() if k}
     return {"kit": kit.name, "capture": run.name, "compensation": comp, "vs_gloss": finishes}
+
+
+def write_bleed(kit: Kit, px: int) -> dict:
+    """Set the kit's `bleed_px`, how far the build grows paint past each island's edge. A change clears the
+    kit's approval: the owner reviews the kit again."""
+    if px < 0:
+        raise kits.KitError(f"bleed is a width in pixels, not {px}")
+    meta = kits.read_meta(kit.dir)
+    changed = meta.get("bleed_px") != px
+    if changed:
+        kits.write(kit.dir, meta=meta | {"bleed_px": px})
+        (kit.dir / kits.APPROVAL).unlink(missing_ok=True)  # a new bleed needs the owner's review again
+    return {"kit": kit.name, "bleed_px": px, "approval": "cleared" if changed else "unchanged"}
 
 
 def lines(result: dict) -> list[str]:

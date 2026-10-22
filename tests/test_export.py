@@ -1,16 +1,12 @@
-import sys
 import time
 from dataclasses import replace
 
 import pytest
 
-from livery import approvals, cli, config, preview_flat
-from livery.check import run_build
+from livery import approvals, config
 from livery.export import export
 from livery.review import apply as review_apply
-from tests.conftest import write_design
-
-BLUE = 'def build(kit, p):\n    return Livery(base="#3060c0")\n'
+from tests.conftest import checked, run_cli
 
 
 @pytest.fixture
@@ -25,8 +21,7 @@ def _archive(cfg, name: str, stamp: str, mip: str, data: bytes) -> None:
 
 
 def test_export_refuses_a_build_he_has_not_approved(ws, cfg, tmp_path):
-    write_design(ws, "d", BLUE)
-    run_build(ws, "d")
+    checked(ws, "d")
     with pytest.raises(approvals.NotApproved):
         export(cfg, ws, "d", out=tmp_path / "out")
     assert not (tmp_path / "out").exists()
@@ -39,12 +34,8 @@ def test_export_refuses_a_build_he_has_not_approved(ws, cfg, tmp_path):
     assert str(out) in steps
 
 
-def test_export_takes_the_mip_archived_since_the_approval_under_the_upload_name(
-    ws, cfg, tmp_path, cheap_flat
-):
-    write_design(ws, "d", BLUE)
-    run_build(ws, "d")
-    preview_flat.flat(ws, "d")  # a final is approved with a flat preview of its build
+def test_export_takes_the_mip_archived_since_the_approval_under_the_upload_name(ws, cfg, tmp_path):
+    checked(ws, "d")  # with a flat preview of its build, which a final is approved with
     _archive(cfg, "d", "20000101-000000", "car_spec_111.mip", b"from an earlier build")
     item = {"id": "final:d", "kind": "final", "title": "d", "pin": approvals.pin_of(ws, "d")}
     review_apply.apply(ws, [item], {"final:d": {"decision": "accept"}})
@@ -61,10 +52,5 @@ def test_export_takes_the_mip_archived_since_the_approval_under_the_upload_name(
 
 
 def test_the_export_command_refuses_without_approval(monkeypatch, ws, tmp_path):
-    write_design(ws, "d", BLUE)
-    run_build(ws, "d")
-    monkeypatch.setattr(cli, "Workspace", lambda: ws)
-    monkeypatch.setattr(sys, "argv", ["livery", "export", "d", "--out", str(tmp_path / "out")])
-    with pytest.raises(SystemExit) as e:
-        cli.main()
-    assert e.value.code == 1
+    checked(ws, "d")
+    assert run_cli(monkeypatch, ws, "export", "d", "--out", str(tmp_path / "out")) == 1

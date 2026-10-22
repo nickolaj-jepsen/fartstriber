@@ -10,7 +10,7 @@ Each step is skipped once it is done:
    for the sim to close first (`cameras.armed`), so one close and reopen loads them.
 4. frame: `pick-frame`, which waits until the reopened replay lists the cameras. If they don't fit the car
    it sizes them for it, and the step goes back to the cameras once.
-5. capture: `kit capture`, the calibration capture at the preview views (about 15 minutes), unless the
+5. capture: `kit capture`, the calibration capture at the preview views, unless the
    current one was shot of the kit as it is, on its frame and cameras; then `kit spec`, the finishes'
    compensation from its ladders.
 6. fit: `kit fit`, from the capture.
@@ -157,9 +157,11 @@ def add(cfg: Config, ws: Workspace, psd: Path, car: str, paint_folder: str, log=
                 break
             report = pick_frame.pick(cfg, ws, kit, log)
             if "resized" not in report:
-                steps["frame"] = f"frame {report['frame']}"
+                steps["frame"] = f"frame {report['frame']} (run folder {report['out']})"
                 break
-            steps["frame"] = f"cameras sized for a {report['resized']['length']:.2f} m car"
+            steps["frame"] = (
+                f"cameras sized for a {report['resized']['length']:.2f} m car (run folder {report['out']})"
+            )
             if attempt == RESIZES:
                 return stop(f"{report['next']}; then {again}")
     except (SimNotReady, cameras.CameraSetError, pick_frame.NoClearFrame) as e:

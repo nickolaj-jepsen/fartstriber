@@ -36,17 +36,24 @@ def fit_curve(white: np.ndarray, black: np.ndarray, steps: dict[int, np.ndarray]
     """(g, k) for which out^g = black^g + (white^g - black^g) (grey/255)^k fits the inner ladder steps best,
     all (n, 3) in 0..1: a coarse grid, then a fine one around its best."""
 
+    # The prediction depends only on each element's (white, black), and the ladder's bytes take few of
+    # those: raise each once, and spread it back over the elements for the error.
+    pairs, at = np.unique(np.stack([white.ravel(), black.ravel()], 1), axis=0, return_inverse=True)
+    at = at.reshape(white.shape)
+    wide = {lv: s.astype(float) for lv, s in steps.items()}
+
     def best(gs: np.ndarray, ks: np.ndarray) -> tuple[float, float]:
+        err = np.zeros((len(gs), len(ks)))
+        for i, g in enumerate(gs):
+            wg, bg = np.power(pairs[:, 0], g), np.power(pairs[:, 1], g)
+            for lv, s in wide.items():
+                rise = np.array([(lv / 255) ** k for k in ks])[:, None]
+                pred = np.power(np.clip(bg + (wg - bg) * rise, 0, 1), 1 / g)
+                err[i] += [float(np.abs(p[at] - s).mean()) for p in pred]
         found = (np.inf, 1.0, 1.0)
-        for g in gs:
-            wg, bg = np.power(white, g), np.power(black, g)
-            for k in ks:
-                e = 0.0
-                for lv, s in steps.items():
-                    pred = np.power(np.clip(bg + (wg - bg) * (lv / 255) ** k, 0, 1), 1 / g)
-                    e += float(np.abs(pred - s).mean())
-                if e < found[0]:
-                    found = (e, float(g), float(k))
+        for i, j in np.ndindex(err.shape):
+            if err[i, j] < found[0]:
+                found = (err[i, j], float(gs[i]), float(ks[j]))
         return found[1], found[2]
 
     g, k = best(np.arange(0.3, 3.01, 0.1), np.arange(0.3, 3.01, 0.1))

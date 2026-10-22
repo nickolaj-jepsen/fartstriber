@@ -191,16 +191,22 @@ def _normals(s: Surface, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.where(((n * out).sum(1) < 0)[:, None], -n, n)
 
 
-def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
-    """A view as the capture keeps it: per car pixel, the texel the sim draws there. Pixels lower on the
-    screen than `hide_below` (a share of the frame's height) are hidden, as a bank in front of the car hides
-    them."""
-    cam = CAMERAS[view]
-    keys, depths, txs, tys, ids = [], [], [], [], []
+Sampled = list[tuple[Surface, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]
+
+
+def _sampled() -> Sampled:
+    """Every surface's grid, its points and their outward normals: the same from every camera."""
+    out = []
     for s in SURFACES:
         a, b = _grid(s)
-        p = s.point(a, b)
-        facing = (_normals(s, a, b) * (np.asarray(cam.at) - p)).sum(1) > 0
+        out.append((s, a, b, s.point(a, b), _normals(s, a, b)))
+    return out
+
+
+def _render(cam: Camera, sampled: Sampled) -> graycode.ViewMap:
+    keys, depths, txs, tys, ids = [], [], [], [], []
+    for s, a, b, p, normals in sampled:
+        facing = (normals * (np.asarray(cam.at) - p)).sum(1) > 0
         a, b, p = a[facing], b[facing], p[facing]
         sx, sy, depth = cam.project(p)
         ix, iy = np.floor(sx).astype(int), np.floor(sy).astype(int)
@@ -226,8 +232,6 @@ def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
     car = np.zeros(H * W, bool)
     car[k] = True
     car = car.reshape(H, W)
-    if hide_below is not None:
-        car[int(hide_below * H) :] = False
     uv = np.full((H * W, 2), np.nan, np.float32)
     uv[k] = np.stack([u, v], 1)
     uv = uv.reshape(H, W, 2)
@@ -244,8 +248,27 @@ def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
     )
 
 
-def render_all(hide_left_below: float | None = None) -> dict[str, graycode.ViewMap]:
-    return {v: render(v, hide_left_below if v == "side_l" else None) for v in CAMERAS}
+def render_all() -> dict[str, graycode.ViewMap]:
+    """Every view as the capture keeps it: per car pixel, the texel the sim draws there."""
+    sampled = _sampled()
+    return {v: _render(cam, sampled) for v, cam in CAMERAS.items()}
+
+
+def hide(vm: graycode.ViewMap, below: float) -> graycode.ViewMap:
+    """A view with its pixels lower on the screen than `below` (a share of the frame's height) hidden, as a
+    bank in front of the car hides them."""
+    car = vm.car.copy()
+    car[int(below * H) :] = False
+    kept = car[vm.pix]  # per listed pixel, in the ViewMap's row-major order
+    return graycode.ViewMap(
+        car=car,
+        pix=vm.pix & car,
+        uv=vm.uv[kept],
+        jac=vm.jac[kept],
+        level=vm.level[kept],
+        conf=vm.conf[kept],
+        agree=vm.agree[kept],
+    )
 
 
 # The texture: islands, as kit extract writes them.

@@ -70,7 +70,8 @@ def test_fetch_keeps_each_yes_rows_pictures_and_reports_what_failed(ws, tmp_path
     assert "error" in report["rows"][26]
     assert set(report["rows"]) == {25, 26}  # a no row and a row without a paint are left alone
     assert not any("789" in u or "999" in u or "thumbs" in u for u in showroom.asked)
-    assert len(said) >= 3
+    assert any(f"{PICS}/123_3.jpg" in m for m in said)  # the log names the picture that failed
+    assert any("Bar" in m and "456" in m for m in said)  # and the paint whose page did
 
 
 def test_a_second_fetch_skips_what_it_has(ws, tmp_path):
@@ -92,7 +93,7 @@ def test_the_boring_anchors_come_from_each_designs_latest_sim_run(ws):
 
     copied = references.copy_boring(ws, log=lambda m: None)
 
-    assert copied == {"fireproof-sweep": 1, "fireproof-blocks": 0}
+    assert copied == dict.fromkeys(references.BORING, 0) | {"fireproof-sweep": 1}
     [shot] = references.boring(ws)["fireproof-sweep"]
     assert Image.open(shot).getpixel((0, 0)) == (0, 0, 255)
 

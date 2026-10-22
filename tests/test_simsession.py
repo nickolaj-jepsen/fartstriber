@@ -9,19 +9,17 @@ import sys
 import threading
 from dataclasses import replace
 
-import irsdk
 import numpy as np
 import pytest
 from PIL import Image
 
 from livery import capture, config, install, paintfolder, presence, simhost, simlock, simrule, simsession
 from livery.capture import SimInFront
-from livery.check import run_build
 from livery.config import Shot
 from livery.iracing import SimNotReady
 from livery.preview_sim import preview_sim
 from livery.raster import tga_bytes
-from tests.conftest import SIM_WINDOW, write_design
+from tests.conftest import SIM_WINDOW, checked
 
 ALLOWED = {
     "cam_set_state",
@@ -210,18 +208,10 @@ class FakeCapture:
 
 @pytest.fixture
 def world(tmp_path, monkeypatch) -> World:
+    from tests import fakesim  # it imports this module's fakes
+
     cfg = replace(config.load(), documents=tmp_path / "docs", archive_dir=tmp_path / "archive")
-    w = World(cfg)
-    w.folder.mkdir(parents=True)
-    monkeypatch.setattr(irsdk, "IRSDK", lambda: FakeIR(w))
-    monkeypatch.setattr(capture.Window, "find", staticmethod(lambda process: FakeWindow(w)))
-    monkeypatch.setattr(capture, "Capture", FakeCapture)
-    monkeypatch.setattr(capture, "processes", lambda: ["explorer.exe"])
-    quick = {"POLL_S": 0.01, "SETTLE_S": 0.0, "GREY_S": 0.2, "PAINT_S": 0.2, "LOAD_S": 0.0, "STEADY_S": 0.5}
-    quick["UI_RETRY_S"] = quick["CLOSING_POLL_S"] = 0.0
-    for name, value in quick.items():
-        monkeypatch.setattr(simsession, name, value)
-    return w
+    return fakesim.install(monkeypatch, World(cfg))
 
 
 def session(w: World, **kw) -> simsession.SimSession:
@@ -287,35 +277,49 @@ def test_a_killed_runs_paint_is_put_back_by_the_next_session(world):
     assert list(paintfolder.journals().glob("*/")) == []
 
 
+# A run in its own process: it says when it queues and when it holds the lock, and holds it until told
+# to let go (a line on its stdin).
 HOLD = """
 import json, sys, time
 from livery.simlock import sim_lock
-with sim_lock(sys.argv[2], name=sys.argv[1]) as held:
+queued = lambda _message: print(json.dumps({"queued": time.time()}), flush=True)
+with sim_lock(sys.argv[2], name=sys.argv[1], log=queued) as held:
     start = time.time()
     print("held", flush=True)
-    time.sleep(float(sys.argv[3]))
+    sys.stdin.readline()
     print(json.dumps({"start": start, "end": time.time(), "waited": held.waited}), flush=True)
 """
 
 
-def _hold(what: str, seconds: float) -> subprocess.Popen:
-    args = [sys.executable, "-c", HOLD, simlock.MUTEX, what, str(seconds)]
-    return subprocess.Popen(args, stdout=subprocess.PIPE, text=True)
+def _hold(what: str) -> subprocess.Popen:
+    args = [sys.executable, "-c", HOLD, simlock.MUTEX, what]
+    return subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+
+def _said(p: subprocess.Popen) -> str:
+    assert p.stdout is not None
+    return p.stdout.readline().strip()
+
+
+def _let_go(p: subprocess.Popen) -> dict:
+    return json.loads(p.communicate("\n", timeout=60)[0].splitlines()[-1])
 
 
 def test_two_runs_at_once_queue_on_the_lock():
-    procs = [_hold(name, 1.0) for name in ("a", "b")]
-    runs = sorted(
-        (json.loads(p.communicate(timeout=60)[0].splitlines()[-1]) for p in procs), key=lambda r: r["start"]
-    )
-    assert runs[1]["start"] >= runs[0]["end"]  # no overlap
-    assert runs[1]["waited"] > 0.5
+    a = _hold("a")
+    assert _said(a) == "held"
+    b = _hold("b")
+    queued = json.loads(_said(b))["queued"]  # b waits for a, whatever the machine's load
+    first = _let_go(a)
+    assert _said(b) == "held"
+    second = _let_go(b)
+    assert second["start"] >= first["end"]  # no overlap
+    assert second["waited"] >= first["end"] - queued  # b waited from before it queued until a let go
 
 
 def test_the_lock_is_freed_when_its_holder_dies():
-    p = _hold("a run that gets killed", 60)
-    assert p.stdout is not None
-    assert p.stdout.readline().strip() == "held"
+    p = _hold("a run that gets killed")
+    assert _said(p) == "held"
     holder = simlock.holder()
     assert holder is not None
     assert holder["what"] == "a run that gets killed"
@@ -487,10 +491,8 @@ def test_a_window_resized_during_a_run_stops_it_and_keeps_the_new_size(world):
     assert world.resizes == [(W, H)]
 
 
-def test_a_preview_never_shoots_at_another_window_size(world, ws, monkeypatch):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    run_build(ws, "d")
-    monkeypatch.setattr(simsession, "READY_WAIT_S", 0.0)
+def test_a_preview_never_shoots_at_another_window_size(world, ws):
+    built(ws)
     world.size, world.unsizable = OTHER, "it is fullscreen"
 
     with pytest.raises(SimNotReady):
@@ -561,24 +563,27 @@ def test_without_a_reference_a_shot_is_refused_while_the_cursor_is_over_the_sim(
         run(world, lambda s: s.shoot("side", SIDE, check_ui=True))
 
 
+def built(ws) -> dict:
+    """Design d with a passed check, without running the build."""
+    return checked(ws, "d", outputs={"car.tga": tga((18, 52, 86)), "car_spec.tga": tga((0, 30, 255))})
+
+
 def test_preview_shoots_every_preset_and_records_the_build(world, ws):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    built = run_build(ws, "d")
+    check = built(ws)
     before = dict(world.vars)
 
     out = preview_sim(world.cfg, ws, "d", log=world.logs.append)
 
     assert sorted(p.name for p in out.glob("*.png")) == sorted(f"{n}.png" for n in ws.policy.preview)
     manifest = json.loads((out / "manifest.json").read_text())
-    assert manifest["digests"]["car.tga"] == built["digests"]["car.tga"]
+    assert manifest["digests"]["car.tga"] == check["digests"]["car.tga"]
     assert manifest["failure"] is None
     assert list(world.folder.iterdir()) == []
     assert world.vars == before
 
 
 def test_a_preview_that_stops_leaves_no_run_where_the_critic_looks(world, ws):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    run_build(ws, "d")
+    built(ws)
     world.on_grab = lambda n: setattr(world, "front", n > 12)
 
     with pytest.raises(SimInFront):
@@ -590,8 +595,7 @@ def test_a_preview_that_stops_leaves_no_run_where_the_critic_looks(world, ws):
 
 
 def test_install_and_restore_write_the_folder_only_under_the_lock(world, ws, monkeypatch):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    run_build(ws, "d")
+    built(ws)
     held = []
     for fn in ("install", "restore"):
         real = getattr(paintfolder, fn)

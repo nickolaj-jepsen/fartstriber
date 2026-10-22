@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from livery import approvals, config, hashing, prefs, preview_flat
-from livery.check import run_build
+from livery import approvals, config, hashing, prefs
 from livery.config import Workspace
+from livery.errors import LiveryError
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 from tests.conftest import OWNER, checked, sim_run, write_design
@@ -71,8 +71,7 @@ def test_a_change_is_kept_before_its_note_but_sent_only_with_one(ws):
 
 @pytest.mark.parametrize("answer", ["park", "stop"])
 def test_a_parked_or_stopped_final_is_neither_approved_nor_installable(ws, private_metrics, answer):
-    write_design(ws, "d", BLUE)
-    built = run_build(ws, "d")
+    built = checked(ws, "d", BLUE)
 
     written = review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": answer}})
 
@@ -89,9 +88,8 @@ def _verdicts(ws: Workspace, name: str, rounds: list[dict]) -> None:
 
 
 def test_the_ledger_keeps_old_lines_the_note_verbatim_and_the_critic_on_the_same_design(ws):
-    write_design(ws, "d", BLUE)
+    checked(ws, "d", BLUE)
     write_design(ws, "e", BLUE.replace("3060c0", "c03030"))
-    run_build(ws, "d")
     h = hashing.design_hash(ws, "d")
     _verdicts(
         ws,
@@ -192,9 +190,8 @@ def repo(ws):
     return ws.root
 
 
-def test_apply_commits_what_it_wrote_and_the_design_folder_and_nothing_else(ws, repo, cheap_flat):
-    run_build(ws, "d")
-    preview_flat.flat(ws, "d")
+def test_apply_commits_what_it_wrote_and_the_design_folder_and_nothing_else(ws, repo):
+    checked(ws, "d", BLUE)
     (ws.design_dir("d") / "notes.md").write_text("round 3\n")
     (repo / "other.txt").write_text("someone else's\n")
     _git(repo, "add", "other.txt")
@@ -231,6 +228,20 @@ def test_apply_does_not_commit_a_file_that_had_other_changes(ws, repo):
 
     assert any(w.startswith("not committed") and "kits/tiny/approved.json" in w for w in written)
     assert _git(repo, "rev-parse", "HEAD") == start
+
+
+def test_a_decision_on_a_kind_apply_does_not_know_fails_before_anything_is_written(ws):
+    approval = ws.kits / "tiny" / "approved.json"
+    approval.write_text("{}\n")
+    decisions = {"kit:tiny": {"decision": "accept"}, "poster:x": {"decision": "accept"}}
+    with pytest.raises(LiveryError, match="poster:x"):
+        review_apply.apply(ws, [_item("kit:tiny"), _item("poster:x")], decisions)
+    assert not _ledger(ws)
+    assert approval.read_text() == "{}\n"
+
+
+def test_every_kind_the_page_takes_answers_for_is_one_apply_writes():
+    assert set(review_items.ANSWERS) <= set(review_apply.KINDS)
 
 
 def test_proposals_are_reviewed_and_the_accepted_ones_come_back(ws, tmp_path):

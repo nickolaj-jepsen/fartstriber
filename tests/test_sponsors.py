@@ -5,14 +5,12 @@ import shutil
 import pytest
 
 from livery import carspace, sponsors
-from livery.config import REPO, Workspace
-from livery.kit import load
+from livery.config import Workspace
 from livery.lint.run import thresholds
 from livery.primitives import mirror_sides, sponsor, sponsor_group
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 
-KIT = "mclaren-720s-gt3-evo"
 DOOR = ((0.40, 0.5), (0.70, 0.5))  # across the doors: mapped on both sides, whatever the fit
 
 
@@ -32,11 +30,9 @@ def brand(root, name: str, approved: bool = True, **variants: str) -> None:
         sponsors.approve(root / name)
 
 
-@pytest.fixture(scope="module")
-def kit(tmp_path_factory):
-    root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, root / "kits" / KIT)
-    return load(Workspace(root=root, assets=REPO / "assets"), KIT)
+@pytest.fixture
+def kit(real_kit):
+    return real_kit
 
 
 @pytest.fixture
@@ -65,8 +61,9 @@ def test_thinner_strokes_and_tighter_counters_need_more_height():
         m = sponsors.measure(bars(stroke, gap))
         return sponsors.Variant(None, m["aspect"], m["stroke"], m["counter"], m["ink"], None).min_height_px(3)
 
-    assert need(10, 30) > need(30, 30)
-    assert need(30, 8) > need(30, 30)
+    plain = need(30, 30)
+    assert need(10, 30) > plain
+    assert need(30, 8) > plain
 
 
 def test_a_roster_variant_not_yet_approved_is_placed_and_listed_for_the_final_review(kit, roster):
@@ -128,8 +125,9 @@ def test_a_large_only_brand_is_refused_below_headline_size_where_another_fits(ki
 
 
 def test_a_group_keeps_its_order_along_the_line_on_both_sides(kit, roster):
-    for name in ("a", "b", "c"):
-        brand(roster, name)
+    brand(roster, "a")
+    for name in ("b", "c"):
+        shutil.copytree(roster / "a", roster / name)  # the same brand under other names, measured once
 
     els = mirror_sides(sponsor_group, kit, "door", ["a", "b", "c"], *DOOR, height=0.03, color="#ffffff")
 
@@ -141,8 +139,9 @@ def test_a_group_keeps_its_order_along_the_line_on_both_sides(kit, roster):
 
 def test_a_group_that_cannot_fit_fails_instead_of_squashing(kit, roster):
     names = [f"b{i}" for i in range(12)]
-    for name in names:
-        brand(roster, name, wordmark=bars(20, 20, n=8))
+    brand(roster, names[0], wordmark=bars(20, 20, n=8))
+    for name in names[1:]:
+        shutil.copytree(roster / names[0], roster / name)  # the same brand under other names, measured once
     with pytest.raises(sponsors.SponsorError, match="don't fit"):
         sponsor_group(kit, "door", "side_l", names, *DOOR, height=0.02, color="#ffffff")
 

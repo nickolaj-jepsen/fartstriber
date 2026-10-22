@@ -98,7 +98,7 @@ def test_a_warning_names_the_views(ws):
 
 
 def test_a_camera_check_can_be_waived(ws):
-    waived = waive(ELEMENTS[2], "unseen", "a test")
+    waived = waive(next(e for e in ELEMENTS if e.id == "hidden"), "unseen", "a test")
     (f,) = [f for f in lint(ws, [waived]) if f.check == "unseen"]
     assert f.level == "waived"
 

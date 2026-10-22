@@ -4,6 +4,8 @@ Shared by designers and the livery-critic, with the taste table (`livery taste s
 
 ## Items, each scored 1–5
 
+A round's `scores` name every key of this table; `livery critic` reads the keys from it.
+
 | Key | What it asks |
 |---|---|
 | `reads_at_distance` | In the distance images and the squint thumbnail, does the car still read as one strong idea, and does a lead sponsor, if the brief has one, still read as a word? |
@@ -22,8 +24,15 @@ Shared by designers and the livery-critic, with the taste table (`livery taste s
 
 The scores and the overall are logged to follow a design over time; they decide nothing. 8 or more reads instantly at distance, rewards a closer look and has only polish left; 6–7 is a good or competent concept with fixes left; 5 or less fails as a concept.
 
-`livery critic status` computes, never chooses, both bars. **Ready**, where a refinement goes back to the owner: their note, each of its pins and every critic suggestion they endorsed judged resolved, every row of the taste table passing, nothing blocked. **Ship**, the critic's whole bar on top: no open fix that isn't optional, the round not worse than the last one in the pairwise compare, and an adversary critic whose top finding is optional. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
+Ship is computed by `livery critic status`, never chosen; the conditions your verdict sets:
+
+- the owner's note, when the pack has one, each of its pins and every critic suggestion they endorsed `resolved`
+- nothing under `blocked`
+- every row of the taste table passing
+- no fix that isn't optional is open: none of yours, and every one of the last round's marked `resolved`
+
+The first three also decide whether the car goes back to the owner; your own fixes never hold it back. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
 
 ## Fixes
 
-At most three, the most important first, each describing what is visible and where, never how to code it: "the orange band dies at the C-pillar", "FIREPROOF sits 2 cm above the door shut line", "the right side's stripe is a step lower than the left's". Each is marked optional or not: optional is polish the owner wouldn't send the car back for.
+Every suggestion worth making, the most important first; the owner sees them after they answer and may tick any for their next change. Each describes what is visible and where, never how to code it: a `title` of about eight words that names the problem ("the orange band dies at the C-pillar", "FIREPROOF sits 2 cm above the door shut line"), `detail` (what is visible and why it matters, a sentence or two), `where` (view and spot, `front34: the left bonnet half`; `""` for the whole car) and `optional` (polish the owner wouldn't send the car back for).

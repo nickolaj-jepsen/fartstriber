@@ -31,13 +31,13 @@ from PIL import Image
 from livery import config, notify, prefs, state
 from livery.config import Workspace
 from livery.errors import LiveryError
-from livery.review import history, library, pins, queue
-from livery.review.apply import SHOTS, apply, proposals
-from livery.review.items import ANSWERS, HIDDEN, STILL, STRATEGIES, layout
-from livery.review.queue import ReviewOpen
+from livery.review import queue
+from livery.review.queue import PORT, ReviewOpen
+
+# The rest of livery.review (apply, items, history, library, pins) is imported where used: it brings in
+# sponsors, typesetting and the critic (seconds), which `import livery.review.server` never needs.
 
 PAGE = Path(__file__).with_name("page.html")
-PORT = 8765
 POLL = 0.25  # seconds between a waiting review's looks at its group, and its tries for the port
 PICTURES = (".png", ".jpg", ".svg")
 
@@ -81,6 +81,9 @@ def _merged(old: dict, body: dict) -> dict:
 def _refusal(item: dict | None, d: dict) -> str | None:
     """Why a decision can't be stored, or None. Each kind takes its own answers. A change may be stored
     before its note (so the critic shows as soon as the owner picks it); Send needs one (`_unsaid`)."""
+    from livery.review import pins
+    from livery.review.items import ANSWERS, STILL, STRATEGIES
+
     if item is None:
         return "unknown item"
     choice, note = d["decision"], d["note"]
@@ -131,6 +134,8 @@ def _unsaid(group: dict) -> list[str]:
 
 def _shown(group: dict) -> dict:
     """A group as the page gets it: its layout, and each item without what it may show only once answered."""
+    from livery.review.items import HIDDEN, layout
+
     decided = group["decisions"]
     items = [
         {k: v for k, v in i.items() if k not in HIDDEN or i["id"] in decided}
@@ -141,6 +146,8 @@ def _shown(group: dict) -> dict:
 
 
 def _point(p: dict, answered: bool) -> dict:
+    from livery.review.items import HIDDEN
+
     return p if answered else {k: v for k, v in p.items() if k not in HIDDEN}
 
 
@@ -163,6 +170,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _picture(self, root: Path, rel: str, width: str = "") -> None:
         """A picture from inside `root`, or one a decision kept in the state dir (`state:`); with a width, a
         JPEG no wider, for thumbnails (sim shots are megabytes each)."""
+        from livery.review.apply import SHOTS
+
         if rel.startswith("state:"):
             root, rel = (state.root() / SHOTS).resolve(), rel[len("state:") :].removeprefix(f"{SHOTS}/")
         root = root.resolve()
@@ -182,9 +191,13 @@ class _Handler(BaseHTTPRequestHandler):
         return Workspace(root=root, assets=root / "assets", policy_file=root / "policy.toml")
 
     def _main(self) -> Workspace:
+        from livery.review import history
+
         return self._ws(history.main_root(cast(_Server, self.server).ws.root))
 
     def do_GET(self):
+        from livery.review import history, library
+
         url = urlparse(self.path)
         query = parse_qs(url.query)
         arg = lambda k: query.get(k, [""])[0]  # noqa: E731
@@ -225,6 +238,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(404, b"not found", "text/plain")
 
     def do_POST(self):
+        from livery.review.items import layout
+
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         if self.path.startswith("/api/history/"):
             return self._history(body)
@@ -276,6 +291,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, 404)
 
     def _history(self, body: dict) -> None:
+        from livery.review import history
+
         ws = self._main()
         with self.lock:
             try:
@@ -300,6 +317,8 @@ class _Handler(BaseHTTPRequestHandler):
             _apply(ws, group, commit=cast(_Server, self.server).commit)
 
     def _library(self, body: dict) -> None:
+        from livery.review import library
+
         ws = self._main()
         action = self.path.removeprefix("/api/library/")
         item_id, why = str(body.get("id", "")), str(body.get("why", ""))
@@ -419,6 +438,10 @@ def _checkout_lock(root: Path) -> Iterator[None]:
 
 
 def _apply(ws: Workspace, group: dict, commit: bool) -> dict:
+    from livery.review import pins
+    from livery.review.apply import apply, proposals
+    from livery.review.items import layout
+
     review = time.strftime("%Y%m%d-%H%M%S")
     items, decisions = group["items"], dict(group["decisions"])
     if layout(items) == "compare":  # a concept not picked, or a sketch not revived, is a no
@@ -464,14 +487,15 @@ def _what(items: list[dict]) -> str:
 def serve(
     ws: Workspace,
     items: list[dict],
-    port: int = PORT,
+    port: int | None = None,
     on_ready=print,
     commit: bool = False,
     notify_owner: bool | None = None,
 ) -> dict:
     """Queues the review and blocks until the owner sends it. `commit` lets Apply commit what it wrote: the
-    CLI's review, never a test's; it also sends a Windows notification unless `notify_owner` is False. Port 0
-    serves a page of its own on a free port."""
+    CLI's review, never a test's; it also sends a Windows notification unless `notify_owner` is False. The
+    port is the shared page's unless given; 0 serves a page of its own on a free port."""
+    port = PORT if port is None else port
     server = _claim(port, ws, commit)
     try:
         gid = queue.enqueue(ws.root, items)
@@ -506,9 +530,12 @@ def serve(
             _stop(server, applied)
 
 
-def serve_page(ws: Workspace, port: int = PORT, on_ready=print, commit: bool = False, stop=None) -> None:
+def serve_page(
+    ws: Workspace, port: int | None = None, on_ready=print, commit: bool = False, stop=None
+) -> None:
     """Keeps the page up, open on the Library, until `stop()` is true or Ctrl+C: it serves the page while no
     waiting review does. Page screens it applies are committed only with `commit` (the CLI's)."""
+    port = PORT if port is None else port
     server = _claim(port, ws, commit)
     on_ready(f"library: http://127.0.0.1:{port if server is None else server.server_address[1]}/#library")
     try:

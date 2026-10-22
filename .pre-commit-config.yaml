@@ -16,7 +16,7 @@ repos:
         require_serial: true
       - id: pyrefly
         name: pyrefly check
-        entry: uv run --no-sync pyrefly check --summary=none
+        entry: uv run --no-sync pyrefly check --error-stale-baseline --summary=none
         language: system
         types_or: [python, pyi]
         pass_filenames: false

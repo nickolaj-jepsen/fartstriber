@@ -14,7 +14,7 @@ from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 from livery.review import queue, server
-from tests.reviewpage import Review, free_port, get, item, post
+from tests.reviewpage import Review, announced, free_port, get, item, post
 
 REFS = [
     "| # | Livery | Car | Why | Yes/no |",
@@ -116,7 +116,7 @@ def test_a_review_whose_session_died_is_taken_over_by_the_next_from_its_checkout
     )
     assert proc.stdout is not None
     try:
-        base, gid = proc.stdout.readline().split()[1].split("#")
+        base, gid = announced(proc.stdout.readline()).split("#")
         decide = {"group": gid, "id": "concept:x", "decision": "accept", "note": "the band lower"}
         assert post(base + "api/decide", decide) == 200
         with pytest.raises(queue.ReviewOpen):  # the same items twice from one checkout

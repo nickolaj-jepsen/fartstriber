@@ -1,14 +1,15 @@
-"""Machine state, shared by every worktree of every checkout: the sim lock's holder, the paint journal, the
-install backups and the shot references. It lives in %LOCALAPPDATA%\\fartstriber, or wherever
-FARTSTRIBER_STATE points (the tests point it at a temp dir)."""
+"""Machine-wide state, shared by every checkout and worktree. It lives in %LOCALAPPDATA%\\fartstriber, or
+wherever FARTSTRIBER_STATE points (the tests point it at a temp dir)."""
 
 import ctypes
 import ctypes.wintypes as wt
 import json
 import os
 from pathlib import Path
+from typing import IO
 
 ENV = "FARTSTRIBER_STATE"
+NO_FSYNC = "FARTSTRIBER_NO_FSYNC"  # set: writes stay atomic but skip fsync (the tests)
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _kernel32.OpenProcess.restype = wt.HANDLE
@@ -56,14 +57,20 @@ def alive(owner: dict) -> bool:
     return now is not None and now == owner.get("started", now)
 
 
+def sync(f: IO) -> None:
+    """Puts an open file on disk before it is closed, unless NO_FSYNC is set."""
+    f.flush()
+    if not os.environ.get(NO_FSYNC):
+        os.fsync(f.fileno())
+
+
 def write_json(path: Path, data: object) -> None:
     """Written whole or not at all, and on disk before it returns: these files outlive a killed run."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=1)
-        f.flush()
-        os.fsync(f.fileno())
+        sync(f)
     os.replace(tmp, path)
 
 

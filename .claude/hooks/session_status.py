@@ -1,14 +1,14 @@
 """SessionStart: the shared state a session would otherwise find by accident, in a few lines.
 
 The branch and uncommitted paths, who holds the sim lock and this checkout's reviews on the shared review page
-(both machine-wide, in the state dir), and approved designs the last `livery build --all` found changed.
+(both machine-wide, in the state dir, read through livery), and approved designs the last `livery build --all`
+found changed.
 
 It also puts the session's id and transcript in the environment of the session's commands, so what an agent
 records through livery says which session wrote it (livery.prefs).
 """
 
 import contextlib
-import ctypes
 import json
 import os
 import subprocess
@@ -18,8 +18,10 @@ from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
-REVIEW_PORT = 8765
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # this checkout's livery
+
 SHOW_PATHS = 4
+TAKEN_OVER = "the next `livery review` here takes the decisions over, `livery review --cancel` drops them"
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -28,71 +30,51 @@ def _git(cwd: Path, *args: str) -> str:
     ).stdout
 
 
-def _alive(pid: int) -> bool:
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-    if not handle:
-        return False
-    code = ctypes.c_ulong()
-    kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    kernel32.CloseHandle(handle)
-    return code.value == 259  # STILL_ACTIVE
-
-
 def _ago(t: float) -> str:
     minutes = int((time.time() - t) / 60)
     return f"{minutes} min ago" if minutes < 120 else f"{minutes // 60} h ago"
 
 
-def _state() -> Path:
-    local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return Path(os.environ.get("FARTSTRIBER_STATE") or Path(local) / "fartstriber")
+def _lock() -> list[str]:
+    from livery import simlock
 
-
-def _lock() -> str | None:
-    """livery.simlock's holder file; a dead holder's is stale, since the kernel freed its mutex."""
-    path = _state() / "fartstriber-sim.json"
-    if not path.exists():
-        return None
-    holder = json.loads(path.read_text(encoding="utf-8"))
-    pid = int(holder["pid"])
-    if not _alive(pid):
-        return None
+    holder = simlock.holder()
+    if holder is None:
+        return []
     where = f" in {holder['checkout']}" if holder.get("checkout") else ""
-    return f"sim lock: held by pid {pid}{where} for {holder.get('what')}, taken {_ago(holder['since'])}"
+    taken = f", taken {_ago(holder['since'])}" if holder.get("since") else ""
+    return [f"sim lock: held by pid {holder['pid']}{where} for {holder.get('what')}{taken}"]
 
 
 def _reviews(root: Path) -> list[str]:
-    """livery.review.queue's groups from this checkout not yet applied, and how many other sessions' wait."""
-    here = os.path.normcase(str(root.resolve()))
-    lines, others = [], 0
-    queue = _state() / "review"
-    for d in sorted(queue.iterdir()) if queue.exists() else []:
-        if not (d / "group.json").exists() or (d / "result.json").exists():
-            continue
-        group = json.loads((d / "group.json").read_text(encoding="utf-8"))
-        if os.path.normcase(group["root"]) != here:
-            others += 1
-            continue
-        decided = json.loads((d / "decisions.json").read_text(encoding="utf-8")).get("decisions", {})
-        counts = f"{len(decided)} of {len(group['items'])} decided"
-        if _alive(int(group["owner"]["pid"])):
-            lines.append(f"review {group['id']}: waiting at http://127.0.0.1:{REVIEW_PORT}/, {counts}")
-        else:
+    """This checkout's reviews not yet applied, and how many from other sessions wait on the page."""
+    from livery.review import queue
+
+    page = f"http://127.0.0.1:{queue.PORT}/"
+    mine = queue.mine(root)
+    lines = []
+    for g in mine:
+        counts = f"{len(g['decisions'])} of {len(g['items'])} decided"
+        if g["status"] == "stale":
+            lines.append(f"review {g['id']}: its process died, {counts}; {TAKEN_OVER}")
+        elif g["status"] == "failed":
             lines.append(
-                f"review {group['id']}: its process died, {counts}; the next `livery review` here takes the "
-                "decisions over, `livery review --cancel` drops them"
+                f"review {g['id']}: its Apply failed ({g['result']['error']}), {counts}; {TAKEN_OVER}"
             )
+        else:
+            lines.append(f"review {g['id']}: {g['status']} at {page}, {counts}")
+    own = {g["id"] for g in mine}
+    others = sum(g["id"] not in own and g["status"] in ("waiting", "applying") for g in queue.groups())
     if others:
         many = f"{others} reviews from other checkouts" if others > 1 else "1 review from another checkout"
-        lines.append(f"{many} waiting at http://127.0.0.1:{REVIEW_PORT}/")
+        lines.append(f"{many} waiting at {page}")
     return lines
 
 
-def _changed(root: Path) -> str | None:
+def _changed(root: Path) -> list[str]:
     path = root / ".cache" / "build-all.json"
     if not path.exists():
-        return None
+        return []
     report = json.loads(path.read_text(encoding="utf-8"))
     changed = [
         f"{design} (by {', '.join(row.get('changed_by', [])) or '?'})"
@@ -100,34 +82,35 @@ def _changed(root: Path) -> str | None:
         if row.get("status") == "changed"
     ]
     if not changed:
-        return None
-    return f"approved but changed in the build --all of {_ago(path.stat().st_mtime)}: {', '.join(changed)}"
+        return []
+    return [f"approved but changed in the build --all of {_ago(path.stat().st_mtime)}: {', '.join(changed)}"]
 
 
 def _remember_session(event: dict) -> None:
     """Exports the session for the commands that follow, through the file Claude Code reads them from."""
+    from livery import prefs
+
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file or not event.get("session_id"):
         return
-    lines = [f"export FARTSTRIBER_SESSION={event['session_id']}"]
+    lines = [f"export {prefs.SESSION_ENV}={event['session_id']}"]
     if event.get("transcript_path"):
-        lines.append(f"export FARTSTRIBER_TRANSCRIPT='{event['transcript_path']}'")
+        lines.append(f"export {prefs.TRANSCRIPT_ENV}='{event['transcript_path']}'")
     with open(env_file, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
-def _safe(label: str, part: Callable[[], str | None]) -> list[str]:
-    """One unreadable file costs its own line, not the whole status."""
+def _safe(label: str, part: Callable[[], list[str]]) -> list[str]:
+    """One unreadable file, or a livery that doesn't import, costs its own line, not the whole status."""
     try:
-        line = part()
+        return part()
     except Exception:
-        line = f"{label}: unreadable"
-    return [line] if line else []
+        return [f"{label}: unreadable"]
 
 
 def main() -> None:
     event = json.load(sys.stdin)
-    with contextlib.suppress(OSError):
+    with contextlib.suppress(OSError, ImportError):  # the status still prints
         _remember_session(event)
     cwd = Path(event.get("cwd") or ".")
     top, common = _git(
@@ -143,10 +126,7 @@ def main() -> None:
         f"{len(paths)} uncommitted: {', '.join(paths[:SHOW_PATHS])}{more}" if paths else "clean tree"
     )
     lines += _safe("sim lock", _lock)
-    try:
-        lines += _reviews(root)
-    except Exception:
-        lines.append("review queue: unreadable")
+    lines += _safe("review queue", partial(_reviews, root))
     lines += _safe("build-all.json", partial(_changed, root))
     print("\n".join(lines))
 

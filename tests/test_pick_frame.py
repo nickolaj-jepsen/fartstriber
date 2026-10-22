@@ -12,12 +12,14 @@ from livery import cameras, config, pick_frame
 from livery import kit as kits
 from livery.kit import load
 from tests import fakesim
-from tests.test_simsession import ALLOWED, FakeIR, H, W, World
+from tests.conftest import frame_kit
+from tests.test_simsession import ALLOWED, STOCK, FakeIR, H, W, World
 
 TOTAL = 3000  # frames in the replay: one lap
 PITS = range(0, 300)
 STRAIGHTS = (range(600, 900), range(1800, 2100))
-SHARE = 1507 / 1782  # of the frame the McLaren-sized car spans in a side view at its default pose
+# Of the frame the McLaren-sized car spans in a side view at its default pose.
+SHARE = cameras.REF.length / (2 * cameras.D * math.tan(cameras.FOV / 2))
 ORIGIN = (0.0, 0.0, 0.0)
 
 
@@ -65,7 +67,8 @@ class Lap(World):
         img = np.zeros((H, W, 3), np.uint8)
         img[:] = (self.vars["CamGroupNumber"] * 20 % 256, 120, 200)
         img[:, ::7] = 30
-        length, height = round(W * self.share), round(W * self.share * 360 / 1507)
+        length = round(W * self.share)
+        height = round(W * self.share * cameras.REF.height / cameras.REF.length)
         x0, y0 = (W - length) // 2, (H - height) // 2
         if self.order_matters and self.group() == "Top" and self.from_group != self.vars["CamGroupNumber"]:
             x0 += 3
@@ -119,9 +122,7 @@ def lap(tmp_path, monkeypatch) -> Lap:
 def tiny(ws):
     """The tiny kit with a group per preview view, framed on no frame yet."""
     kit = load(ws, "tiny")
-    prof = kits.profile(kit)
-    views = {v: kits.View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
-    kits.write_profile(kit.dir, replace(prof, frame=None, preview=views))
+    frame_kit(ws, kit.dir, frame=None)
     return kit
 
 
@@ -138,12 +139,12 @@ def test_the_straightest_frame_every_camera_sees_clearly_is_written_with_the_rep
     assert abs(prof.frame - middle) < len(STRAIGHTS[0]) / 4  # away from the turns at either end
     assert prof.replay == lap.cfg.replay.subsession
     assert prof.track_name is None  # the user's preview replay
-    assert set(prof.crops) == {"beltline", "nose"}
+    assert set(prof.crops) == set(pick_frame.CROPS)
     assert report["frame"] == prof.frame
     assert not list(lap.folder.iterdir())  # the paint folder as it was
     assert lap.vars == before  # the replay and camera put back
     assert {name for name, _ in lap.sent} <= ALLOWED
-    assert lap.shown == (60, 60, 60)  # and the sim shows the car's own paint again
+    assert lap.shown == STOCK  # and the sim shows the car's own paint again
 
 
 def test_without_a_turn_rate_the_frame_checks_still_pick_a_clear_frame(lap, ws, tiny):

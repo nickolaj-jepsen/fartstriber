@@ -27,9 +27,14 @@ class Piece:
     to_px: Callable[[np.ndarray], np.ndarray]  # car-space points (n, 2) -> texture pixels (n, 2)
     area: BaseGeometry  # where in the texture this map holds
     car_area: BaseGeometry | None = None  # where in car space it was measured; None: everywhere
+    each: Callable[[np.ndarray], np.ndarray] | None = None  # to_px rounded as for one point at a time
 
     def covers_car(self, p) -> bool:
         return self.car_area is None or self.car_area.contains(Point(p[0], p[1]))
+
+    def to_px_each(self, p: np.ndarray) -> np.ndarray:
+        """`to_px`, each point to the bit as on its own: a batched matrix product rounds differently."""
+        return (self.each or self.to_px)(p)
 
 
 @lru_cache(maxsize=4)
@@ -95,9 +100,10 @@ def densify(points, step: float = 0.01) -> np.ndarray:
     return np.asarray(out)
 
 
-def _quad(coef: np.ndarray, p: np.ndarray) -> np.ndarray:
+def _quad(coef: np.ndarray, p: np.ndarray, each: bool = False) -> np.ndarray:
     u, v = p[:, 0], p[:, 1]
-    return np.stack([np.ones_like(u), u, v, u * u, u * v, v * v], axis=1) @ coef.T
+    x = np.stack([np.ones_like(u), u, v, u * u, u * v, v * v], axis=1)
+    return (x[:, None] @ coef.T)[:, 0] if each else x @ coef.T
 
 
 def grid_offset(grid: dict, p: np.ndarray) -> np.ndarray:
@@ -122,12 +128,16 @@ def _array_grid(grid: dict) -> dict:
     return grid | {"d": np.asarray(grid["d"], float)}
 
 
-def _side_map(t: dict) -> Callable[[np.ndarray], np.ndarray]:
+def _side_map(t: dict, each: bool = False) -> Callable[[np.ndarray], np.ndarray]:
     coef, grid = np.asarray(t["coef"]), t.get("grid")
     if grid is None:
-        return lambda p: _quad(coef, p)
+        return lambda p: _quad(coef, p, each)
     grid = _array_grid(grid)
-    return lambda p: _quad(coef, p) + grid_offset(grid, p)
+    return lambda p: _quad(coef, p, each) + grid_offset(grid, p)
+
+
+def _side_piece(rid: str, t: dict, area: BaseGeometry) -> Piece:
+    return Piece(rid, _side_map(t), area, region(t["car_domain"]), _side_map(t, each=True))
 
 
 def region(d: list) -> BaseGeometry:
@@ -144,7 +154,7 @@ def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple
         for rid, t in sorted(raw.get("side_transforms", {}).items()):
             if t["view"] == view:
                 area = shapes[rid].intersection(region(t["domain"]))
-                out.append(Piece(rid, _side_map(t), area, region(t["car_domain"])))
+                out.append(_side_piece(rid, t, area))
         return tuple(out)
     if "top_transform" not in raw:  # a kit not yet fitted maps nothing
         return ()
@@ -159,8 +169,8 @@ def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple
         coef, grid = np.asarray([own[rid]["coef"]]), own[rid].get("grid")
         grid = _array_grid(grid) if grid else grid
 
-        def x_of(p: np.ndarray, c=coef, g=grid) -> np.ndarray:
-            return _quad(c, p)[:, 0] + (grid_offset(g, p)[:, 0] if g else 0)
+        def x_of(p: np.ndarray, c=coef, g=grid, each: bool = False) -> np.ndarray:
+            return _quad(c, p, each)[:, 0] + (grid_offset(g, p)[:, 0] if g else 0)
 
         out.append(
             Piece(
@@ -168,6 +178,7 @@ def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple
                 lambda p, x=x_of: np.stack([x(p), y_of(p)], 1),
                 shapes[rid],
                 shapely.box(own[rid]["u"][0], -10, own[rid]["u"][1], 10),
+                lambda p, x=x_of: np.stack([x(p, each=True), y_of(p)], 1),
             )
         )
     # Top islands with a map of their own, and side islands that turn over into the top, for the part the
@@ -178,7 +189,7 @@ def build_pieces(raw: dict, shapes: dict[str, BaseGeometry], view: str) -> tuple
         if rid in sides:
             area = area.difference(region(sides[rid]["domain"]))
         if not area.is_empty:
-            out.append(Piece(rid, _side_map(st), area, region(st["car_domain"])))
+            out.append(_side_piece(rid, st, area))
     mapped = own.keys() | t.get("sides", {}).keys() | sides.keys()
     rest = shapely.union_all(
         [shapes[r["id"]] for r in raw["regions"] if r["view"] == "top" and r["id"] not in mapped]
@@ -303,18 +314,34 @@ def _slope(pc: Piece, p: np.ndarray) -> np.ndarray:
 
 def invert(pc: Piece, xy, start=(0.5, 0.5)) -> tuple[np.ndarray, np.ndarray]:
     """The car-space point a piece maps to texture pixel `xy`, and the slope there (Newton's method)."""
-    car, target, h = np.asarray(start, float), np.asarray(xy, float), 1e-4
+    car, jac = invert_many(pc, np.asarray([xy], float), start)
+    return car[0], jac[0]
+
+
+def invert_many(pc: Piece, xy: np.ndarray, start) -> tuple[np.ndarray, np.ndarray]:
+    """`invert` for texture pixels (n, 2), from one start or one per point (n, 2): each point to the bit as
+    on its own."""
+    target = np.asarray(xy, float)
+    car = np.array(np.broadcast_to(np.asarray(start, float), target.shape))
+    jac = np.full((len(car), 2, 2), np.nan)
+    todo, h = np.arange(len(car)), 1e-4
     for _ in range(30):
-        f = pc.to_px(car[None])[0]
-        jac = np.stack(
-            [(pc.to_px((car + [h, 0])[None])[0] - f) / h, (pc.to_px((car + [0, h])[None])[0] - f) / h],  # noqa: RUF005 - numpy
-            1,
-        )
-        step = np.linalg.solve(jac, target - f)
-        car = car + step
-        if np.abs(step).max() < 1e-6:
+        if not len(todo):
             break
+        c = car[todo]
+        f = pc.to_px_each(c)
+        jac[todo] = np.stack([(pc.to_px_each(c + [h, 0]) - f) / h, (pc.to_px_each(c + [0, h]) - f) / h], 2)  # noqa: RUF005 - numpy
+        step = np.linalg.solve(jac[todo], (target[todo] - f)[..., None])[..., 0]
+        car[todo] = c + step
+        todo = todo[~(np.abs(step).max(1) < 1e-6)]  # a NaN step goes on
     return car, jac
+
+
+def covers_car(pc: Piece, car: np.ndarray) -> np.ndarray:
+    """`Piece.covers_car` for many car-space points (n, 2)."""
+    if pc.car_area is None:
+        return np.ones(len(car), bool)
+    return shapely.contains_xy(pc.car_area, car[:, 0], car[:, 1])
 
 
 def to_car(kit: Kit, xy: tuple[float, float]) -> tuple[str, np.ndarray, np.ndarray] | None:

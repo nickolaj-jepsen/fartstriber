@@ -6,12 +6,10 @@ import shutil
 import pytest
 
 from livery import approvals, marks, sponsors
-from livery.config import REPO, Workspace
-from livery.kit import load
+from livery.config import Workspace
 from livery.lint.run import thresholds
 from livery.primitives import marks as place
 
-KIT = "mclaren-720s-gt3-evo"
 DOOR = 0.6, 0.6  # on the door skin, both sides
 
 
@@ -21,20 +19,26 @@ def arrow(point_right: bool) -> str:
     return sponsors.path_svg(d, (0, 0, 120, 100))
 
 
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    r = tmp_path / "marks"
-    monkeypatch.setattr(marks, "MARKS", r)
+@pytest.fixture(scope="module")
+def drawn(tmp_path_factory):
+    """The stand-in markings, drawn and measured once; each test gets its own unapproved copy."""
+    r = tmp_path_factory.mktemp("marks")
     marks.save(r / "tow", {"right": arrow(True), "left": arrow(False)})
     marks.save(r / "e", {"mark": sponsors.path_svg("M0,0 h100 v100 h-100 Z", (0, 0, 100, 100))})
     return r
 
 
-@pytest.fixture(scope="module")
-def kit(tmp_path_factory):
-    ws_root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, ws_root / "kits" / KIT)
-    return load(Workspace(root=ws_root, assets=REPO / "assets"), KIT)
+@pytest.fixture
+def root(drawn, tmp_path, monkeypatch):
+    r = tmp_path / "marks"
+    shutil.copytree(drawn, r)
+    monkeypatch.setattr(marks, "MARKS", r)
+    return r
+
+
+@pytest.fixture
+def kit(real_kit):
+    return real_kit
 
 
 def test_every_drawn_marking_is_one_colour_and_measured():
@@ -89,15 +93,11 @@ def test_a_pointing_marking_points_at_the_end_asked_for_on_each_side(kit, root):
         place(kit, "t", "tow", ("side_l", *DOOR), "#000000", 0.001, toward="nose")  # below its minimum
 
 
-def test_review_lists_unapproved_markings_and_applies_his_decisions(root, tmp_path):
+def test_review_lists_unapproved_markings_until_approved(root, tmp_path):
     items = marks.review_items(root, out=tmp_path / "sheets")
     assert {i["id"] for i in items} == {"mark:tow", "mark:e"}
     assert all((tmp_path / "sheets" / i["id"].split(":")[1] / "sheet.png").exists() for i in items)
-    written = marks.apply_review(
-        [{"id": "mark:tow", "decision": "accept"}, {"id": "mark:e", "decision": "reject"}, {"id": "x:y"}],
-        root,
-    )
-    assert len(written) == 2
+    marks.approve("tow", root)
     assert all(v.approved for v in marks.load("tow").variants.values())
     assert not any(v.approved for v in marks.load("e").variants.values())
     assert [i["id"] for i in marks.review_items(root, out=tmp_path / "sheets")] == ["mark:e"]

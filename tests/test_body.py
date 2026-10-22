@@ -2,15 +2,14 @@
 features, and the lints and the kit review use it. On a synthetic kit of two islands, and the real kit."""
 
 import json
-import shutil
 import textwrap
 
 import numpy as np
 import pytest
 
-from livery import body, carspace, cli, geom, patterns
+from livery import body, carspace, geom, patterns
 from livery import kit as kits
-from livery.config import REPO, Workspace
+from livery.config import Workspace
 from livery.hashing import kit_hash
 from livery.kit import KitError, load
 from livery.lint.output import lint_output
@@ -19,7 +18,7 @@ from livery.lint.source import findings
 from livery.model import Livery
 from livery.primitives import clip_out, clip_to, panel, shape, text
 from livery.review.items import kit_items
-from tests.conftest import TWO, drawn, two_islands
+from tests.conftest import TWO, drawn, run_cli, two_islands
 
 # The two-island kit: i001 is the front half of side_l (u < 0.5), i002 the rear half, both mapped by
 # x = TWO u, y = TWO (1 - v).
@@ -219,13 +218,11 @@ def test_the_kit_review_lists_the_unsure_names_the_questions_and_the_map_problem
 
 
 def test_kit_label_is_a_command_that_prints_its_report(ws, tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "Workspace", lambda: ws)
     parts, features = labels()
     (tmp_path / "parts.json").write_text(json.dumps(parts), encoding="utf-8")
     (tmp_path / "features.json").write_text(json.dumps(features), encoding="utf-8")
-    with pytest.raises(SystemExit) as done:
-        cli.app(["kit", "label", "two", str(tmp_path / "parts.json"), str(tmp_path / "features.json")])
-    assert done.value.code == 0
+    args = ("kit", "label", "two", str(tmp_path / "parts.json"), str(tmp_path / "features.json"))
+    assert run_cli(monkeypatch, ws, *args) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["parts"] == 3
     assert report["unsure"]
@@ -234,33 +231,24 @@ def test_kit_label_is_a_command_that_prints_its_report(ws, tmp_path, monkeypatch
 
 # --- the real kit --------------------------------------------------------------------------------------
 
-KIT = "mclaren-720s-gt3-evo"
 
-
-@pytest.fixture(scope="module")
-def mclaren(tmp_path_factory):
-    root = tmp_path_factory.mktemp("ws")
-    shutil.copytree(REPO / "kits" / KIT, root / "kits" / KIT)
-    return load(Workspace(root=root, assets=REPO / "assets"), KIT)
-
-
-def test_every_part_of_the_real_kit_paints_something_and_its_cuts_lint_clean(mclaren):
-    for name, p in mclaren.parts().items():
-        area = body.area(mclaren, name)
+def test_every_part_of_the_real_kit_paints_something_and_its_cuts_lint_clean(real_kit):
+    for name, p in real_kit.parts().items():
+        area = body.area(real_kit, name)
         assert area.area > 1, name
         if p.cut is not None or p.rest:  # a split part's edge in open paint follows a body line
-            assert not geom.failing(mclaren, area), name
+            assert not geom.failing(real_kit, area), name
 
 
-def test_the_real_kit_has_its_sim_overlays_on_both_sides(mclaren):
-    for side in mclaren.side_views:
-        zones = [(f, foot) for f, foot in body.zones(mclaren, "keep_clear") if f.view == side]
+def test_the_real_kit_has_its_sim_overlays_on_both_sides(real_kit):
+    for side in real_kit.side_views:
+        zones = [(f, foot) for f, foot in body.zones(real_kit, "keep_clear") if f.view == side]
         assert zones
         for f, foot in zones:
-            carspace.anchor(mclaren, side, f.at)  # its middle is on mapped paint, or this raises
+            carspace.anchor(real_kit, side, f.at)  # its middle is on mapped paint, or this raises
             painted = [
                 n
-                for n, p in mclaren.parts().items()
-                if not p.group and body.area(mclaren, n).intersects(foot)
+                for n, p in real_kit.parts().items()
+                if not p.group and body.area(real_kit, n).intersects(foot)
             ]
             assert painted, f.name

@@ -167,7 +167,7 @@ def test_every_review_starts_without_pins_and_shows_the_last_ones_where_they_wer
 def _pinned_round(ws: Workspace) -> Path:
     item = _final(ws)
     _sent(ws, item, {"decision": "edit", "note": "", "pins": [_pin("side_l", LEFT, "darker")]})
-    return critic.pack(ws, ["d"])
+    return critic.pack(ws, "d")
 
 
 def test_a_round_pack_shows_each_pin_then_and_now(ws):

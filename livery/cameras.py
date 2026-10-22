@@ -25,8 +25,8 @@ REC = 184
 NAME = 48
 NAME_LEN = 31  # the name block's byte 31 is the camera's type
 
-# The poses, sized for a car as big as the McLaren 720S GT3, whose paint seen from 25 m at 0.2 rad spans
-# 1507 by 360 px of the 1782 px window (docs/sim.md): 4.24 by 1.01 m by `size_seen`.
+# The poses, sized for a car as big as the McLaren 720S GT3: its size by `size_seen` from its paint's span on
+# screen at D and FOV (docs/sim.md, Camera sets).
 REF = CarSize(4.24, 1.01)
 D = 25.0  # metres out: far enough that perspective is mild, near enough for the car's full model
 Z = 0.5  # metres above the car's origin: about the middle of its side

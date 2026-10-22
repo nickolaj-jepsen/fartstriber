@@ -1,6 +1,7 @@
 import io
 import os
 import struct
+from dataclasses import replace
 
 import numpy as np
 from PIL import Image
@@ -96,9 +97,10 @@ def test_body_pixels_the_uv_map_misses_take_their_neighbours_paint(tmp_path):
     ws = _ws(tmp_path)
     _write_dat(ws.ui_cars / "car" / "car.dat")
     layers = ui_preview.load(ws, "car")
+    assert layers is not None
     uv = layers.uv.copy()
     uv[:, 2 * (BODY.start + 2) : 2 * (BODY.start + 3)] = 0  # as at real panel edges
-    layers = ui_preview.Layers(**{**layers.__dict__, "uv": uv})
+    layers = replace(layers, uv=uv)
     paint = _paint(lambda r, c: (255, 0, 0) if (r, c) == (0, 0) else (0, 0, 255))
     img = np.asarray(ui_preview.render(paint, layers)).astype(int)
     blue = img[:, BODY.start + 1 : BODY.stop]

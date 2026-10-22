@@ -9,7 +9,6 @@ pointing along the line it reads on and against it; its letters read the same in
 """
 
 import ast
-from collections.abc import Sequence
 from pathlib import Path
 
 from livery import sponsors, typeset
@@ -88,22 +87,11 @@ def _rel(p: Path) -> str:
     return p.relative_to(REPO).as_posix() if p.is_relative_to(REPO) else p.as_posix()
 
 
-def apply_review(decisions: Sequence[dict], root: Path | None = None) -> list[str]:
-    """Writes the markings' part of a review: an accepted marking's variants are approved; a rejected one
-    stays unapproved for its draw.py to be reworked."""
+def approve(name: str, root: Path | None = None) -> str:
+    """The owner's yes to a marking in review: its variants approved. Says what it did. A no unapproves it
+    (livery.review.library.drop_brand)."""
     root = root or MARKS
-    written = []
-    for d in decisions:
-        kind, _, name = d.get("id", "").partition(":")
-        if kind != "mark":
-            continue
-        if d.get("decision") == "accept":
-            written.append(
-                f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
-            )
-        elif d.get("decision") == "reject":
-            written.append(f"marks/{name}: rejected, left unapproved; rework assets/marks/{name}/draw.py")
-    return written
+    return f"marks/{name}: approved {', '.join(sponsors.approve(root / name)) or 'nothing new'}"
 
 
 # --- the driver's name ---------------------------------------------------------------------------------

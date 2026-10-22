@@ -2,6 +2,7 @@
 sim run (its gate, the finishes it covers, the renderer it held), the drift check after a sim run, and baked
 views standing in for sim shots in the critic's rounds and the review."""
 
+import dataclasses
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,7 +16,6 @@ from livery import bake, calibrate, config, critic, graycode, state
 from livery import bake_render as render
 from livery import kit as kits
 from livery.config import Workspace
-from livery.kit import Profile
 from livery.raster import tga_bytes
 from tests.conftest import CANVAS, SPEC, checked
 from tests.test_review_critic import verdict
@@ -130,14 +130,17 @@ def test_each_pixel_shows_the_texel_its_uv_names_under_that_texels_material(ws):
     assert (shown[~left] == light[~left]).all()
 
 
-def test_a_footprint_long_along_u_is_averaged_along_u_and_keeps_its_detail_across(ws):
+def test_a_footprint_long_along_u_is_averaged_along_u_and_keeps_its_detail_across(tmp_path):
     rows = np.zeros((CANVAS, CANVAS, 1), np.float32)
     rows[1::2] = 1  # alternate texture rows dark and light
     uv = np.array([[20.5, 10.5], [20.5, 11.5]], np.float32)  # one pixel on a dark row, one on a light
     jac = np.tile(np.array([[4, 0], [0, 1]], np.float32), (2, 1, 1))  # 4 texels along u per pixel, 1 along v
     car = np.ones((1, 2), bool)
-    frame, levels = np.zeros((1, 2, 3), np.uint8), np.array(calibrate.LEVELS, np.float32)
-    view = render.View("v", car, car, uv, *render.footprint(jac), frame, levels, {}, render.fill(car, car))
+    level, conf = np.zeros((2, 2), np.int8), np.ones(2, np.float16)
+    graycode.ViewMap(car, car, uv, jac, level, conf, np.ones(2, bool)).save(tmp_path / "v" / "geometry.npz")
+    np.savez_compressed(tmp_path / "v" / "ladder.npz", levels=np.array(calibrate.LEVELS))
+    Image.new("RGB", (2, 1)).save(tmp_path / "v" / "background.png")
+    view = render.View.load(tmp_path, "v", {})
     pyr = render.Pyramid(rows)
 
     assert render.filtered(view, pyr, aniso=True)[:, 0].tolist() == [0, 1]
@@ -176,7 +179,7 @@ def _moved_frame(ws: Workspace) -> None:
     kit = kits.load(ws, "tiny")
     p = kits.profile(kit)
     assert p.frame is not None
-    kits.write_profile(kit.dir, Profile(p.replay, p.frame + 1, p.preview, p.crops))
+    kits.write_profile(kit.dir, dataclasses.replace(p, frame=p.frame + 1))
 
 
 def _new_spec(ws: Workspace) -> None:
@@ -505,15 +508,15 @@ def test_a_sim_run_of_a_build_with_a_finish_the_check_didnt_cover_leaves_the_bak
 # The critic's rounds and the review.
 
 
-def _baked_design(ws: Workspace, check: dict) -> None:
+def _baked_design(ws: Workspace, check: dict) -> dict:
     capture(ws, check)
-    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
+    return _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
 
 
 def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
     _baked_design(ws, PASSED)
 
-    folder = critic.pack(ws, ["d"], baked=True)
+    folder = critic.pack(ws, "d", baked=True)
 
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     entry = manifest["designs"]["d"]
@@ -522,30 +525,29 @@ def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
     assert sorted(Path(p).stem for p in entry["shots"]) == sorted(ws.policy.preview)
     recorded = critic.record(ws, "d", verdict())
     assert recorded["baked"] is True
-    assert "baked-runs" in recorded["shots"]
+    assert ws.root / recorded["shots"] in bake.runs(ws, "d")
 
 
 def test_baked_renders_are_refused_before_the_capture_passed_bake_check(ws):
     _baked_design(ws, failed("gloss"))
     with pytest.raises(bake.Unchecked, match="failed bake check"):
-        critic.pack(ws, ["d"], baked=True)
+        critic.pack(ws, "d", baked=True)
 
 
-def _round_two(ws: Workspace, baked: bool) -> None:
+def _round_two(ws: Workspace, digests: dict, baked: bool) -> None:
     """Round one on sim shots, answered; round two, everything passing, judged on sim shots or baked."""
     from tests.conftest import sim_run
 
-    digests = json.loads((ws.out("d") / "check.json").read_text(encoding="utf-8"))["digests"]
     sim_run(ws, "d", "20260101-000000", digests)
     critic.record(ws, "d", verdict())
     critic.answer(ws, "d", [{"status": "done", "note": "done"}])
     sim_run(ws, "d", "20260102-000000", digests)
-    critic.pack(ws, ["d"], baked=baked)
+    critic.pack(ws, "d", baked=baked)
     resolved = [{"status": "resolved", "evidence": "front34.png"}]
     critic.record(ws, "d", verdict(previous=resolved, fixes=[]))
     critic.pack_compare(ws, "d", baked=baked)
     critic.record_compare(ws, "d", {"better": "A"}, {"better": "B"})
-    critic.pack(ws, ["d"], mode="adversary", baked=baked)
+    critic.pack(ws, "d", mode="adversary", baked=baked)
     finding = {"text": "the mirrors are plain", "view": "front34", "optional": True}
     critic.record_adversary(ws, "d", {"closest": None, "findings": [finding]})
 
@@ -561,9 +563,9 @@ def _round_two(ws: Workspace, baked: bool) -> None:
 def test_a_round_judged_on_baked_renders_ships_only_where_they_stand_in_for_sim_shots(
     ws, baked, covered, ships
 ):
-    _baked_design(ws, passed(*covered))
+    digests = _baked_design(ws, passed(*covered))["digests"]
 
-    _round_two(ws, baked)
+    _round_two(ws, digests, baked)
 
     got = critic.status(ws, "d")
     assert got["ship"] is ships
@@ -573,8 +575,8 @@ def test_a_round_judged_on_baked_renders_ships_only_where_they_stand_in_for_sim_
 
 def test_a_baked_round_stops_shipping_once_the_capture_goes_stale(ws):
     _install(ws)
-    _baked_design(ws, passed("gloss", "matte"))
-    _round_two(ws, baked=True)
+    digests = _baked_design(ws, passed("gloss", "matte"))["digests"]
+    _round_two(ws, digests, baked=True)
     assert critic.status(ws, "d")["ship"]
 
     _sim_update(ws)
@@ -591,9 +593,8 @@ def test_a_final_review_shows_sim_shots_first_and_baked_views_only_where_they_st
     from livery.review.items import design_items
     from tests.conftest import sim_run
 
-    _baked_design(ws, passed(*covered))
+    digests = _baked_design(ws, passed(*covered))["digests"]
     if sim_shots:
-        digests = json.loads((ws.out("d") / "check.json").read_text(encoding="utf-8"))["digests"]
         sim_run(ws, "d", "20260101-000000", digests)
 
     (item,) = design_items(ws, ["d"])

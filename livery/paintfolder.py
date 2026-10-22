@@ -51,8 +51,7 @@ def _unlink(path: Path) -> None:
 def _durable(path: Path, data: bytes) -> None:
     with open(path, "wb") as f:
         f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
+        state.sync(f)
 
 
 def paint_dir(cfg: Config, paint_folder: str) -> Path:

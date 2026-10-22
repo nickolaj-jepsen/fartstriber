@@ -57,9 +57,8 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# One worker per physical core (psutil counts them; more is slower); an idle worker takes queued tests
-# from a busy one, so the few long tests don't hold the rest up.
-addopts = ["-n", "auto", "--dist", "worksteal"]
+# A worker per physical core; loadgroup runs an xdist_group on one worker, so its module fixtures build once.
+addopts = ["-n", "auto", "--dist", "loadgroup"]
 
 [tool.pyrefly]
 project-includes = ["livery", "tests"]

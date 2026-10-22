@@ -30,8 +30,8 @@ from livery.iracing import Car, Sim, SimNotReady, sim_running, trading_paints_ru
 READY_WAIT_S = 1800.0  # how long a run waits for the sim to be ready and behind other windows
 POLL_S = 1.0
 SETTLE_S = 0.6  # after a camera switch, before the scene is steady enough to compare frames
-GREY_S = 8.0  # a reload turns the car grey within 0.6-0.8 s (docs/sim.md); slower while the sim is busy
-PAINT_S = 5.0  # and shows the new paint 0.6-1.8 s later, about 3 s with a new spec map
+GREY_S = 8.0  # until a reload turns the car grey (docs/sim.md, SDK and replay), with room for a busy sim
+PAINT_S = 5.0  # and then shows the new paint, which takes longer with a new spec map
 LOAD_S = 3.0  # waited out when no grey shows
 STEADY_S = 5.0
 CHANGED = 0.5  # percent of pixels that changed clearly: a reload's step
