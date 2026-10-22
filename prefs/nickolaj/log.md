@@ -131,3 +131,9 @@ Edit: concept:fireproof-v3b, rated 2 — "I like the concept, but not the execut
 Edit: concept:fireproof-v3a, rated 2 — "I'm not sure i like the side-pod \"info-box\" but otherwise it's quite cool"
 Rejected: concept:fireproof-v3e — "I don't like this at all" (saved as an edit)
 Context: v3b is terracotta 8-bit linework panels over all of a warm-black car (SPIRIT's system), cyan mirrors, lip, endplates and number frames. v3a is a black nose turning into a paper tail through a terracotta block collage (Paul Miller's system); the "info-box" is the FP-03 / GT3 EVO / T-2048 label plate on the haunch. v3e is one raked black slash repeated at falling resolution on a paper car. The critics ranked v3b > v3a > v3e; v3f (lava cracks), v3d (fire salamander) and v3c (tonal grey facets) ranked lower and weren't shown.
+
+
+## 2026-10-22: Fireproof v3, v3a over v3b
+Picked: fireproof-v3a — no note. Critic 8/10 and ready after four refine rounds (6, 7, 8, 8): his info-box note resolved, every taste row passing. The haunch label plate is gone; the terracotta core carries dark-brown and paper blocks and pixel dust; 25 marks.
+Not picked: fireproof-v3b — no note. Critic 7/10 after four rounds: yellow #D0A215 replaced the cyan (the builder compared yellow, bright paper, purple and magenta), his note on the execution judged partly resolved (the side panels still read as solid maze strokes).
+Context: both went on one page meant as two finals, and the page showed them as a pick between the two; v3a goes to its final review alone.
