@@ -94,9 +94,10 @@ NEAR = {
     "rear_chase": ((-12.0, 0.0, 0.737, 0.0, 0.0613, 0.2157), 0.344),
     "front": ((12.0, 0.0, 0.587, -math.pi, 0.0489, 0.2114), 0.179),
     "door_close": ((2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367), 0.0),
-    # Ahead and above, tilted below the car's origin onto the bonnet (at -2.49 it centred the splitter);
-    # straight ahead it framed the nose face as `front` does.
-    "nose_close": ((5.37, 0.0, 1.63, -math.pi, 0.436, 0.64), -1.4),
+    # Ahead and above the bonnet. A negative aim tilts the view about 11° below the car's origin whatever its
+    # value (-1.4 and -2.49 framed alike), so the camera's place centres the bonnet; straight ahead it framed
+    # the nose face as `front` does.
+    "nose_close": ((4.0, 0.0, 1.9, -math.pi, 0.444, 0.75), -1.4),
 }
 
 

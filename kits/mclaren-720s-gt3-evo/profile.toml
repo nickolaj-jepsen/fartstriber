@@ -51,8 +51,8 @@ pose = [2.2627, 4.9381, 0.5972, -2.0005, 0.1095, 0.4367]
 aim = 0.0
 
 [preview.nose_close]
-group = "mclaren-720 Nose Close 3577"
-pose = [5.37, 0.0, 1.63, -3.141592653589793, 0.436, 0.64]
+group = "mclaren-720 Nose Close b704"
+pose = [4.0, 0.0, 1.9, -3.141592653589793, 0.444, 0.75]
 aim = -1.4
 
 [preview.side_r_lit]
