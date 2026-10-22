@@ -256,9 +256,9 @@ What reaches the owner, and what doesn't:
 | a kit | approve, change |
 | a grid tile | fine, change, no (a reference: yes or no) |
 
-- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note with the critic's judgement of it. Hovering a view, Then or a checkpoint previews it.
+- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note and pins with the critic's judgement of each. Hovering a view, Then or a checkpoint previews it.
 - The critic's call and its open suggestions reach the page only once the owner has answered the item (`items.HIDDEN`), so they can't anchor them. A ticked suggestion goes with a Change as `endorsed`: it counts for that round, never as the owner's taste.
-- A Change may be stored before its note; Send needs a note or a ticked suggestion. A grid sends only once every tile has an answer.
+- A Change may be stored before its note; Send needs a note, a pin with one or a ticked suggestion. A grid sends only once every tile has an answer.
 - Pictures are fetched at the size they are shown; a click opens them whole.
 
 Send runs Apply in the checkout that queued the screen:
@@ -268,6 +268,20 @@ Send runs Apply in the checkout that queued the screen:
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
 It prints the decisions as JSON, and the agent writes the owner's `log.md` from them in their words (lines starting `Context:` are the agent's).
+
+### Pins
+
+A pin is a box the owner drags on a Focus picture (a click makes a small one), with a note of its own: `{view, box, note}`, the box as fractions of the picture. Pins go with a Change, which pins alone may say; a final takes several, beside its note.
+
+| Pinned on | Resolves through (`livery.review.pins`) |
+|---|---|
+| a sim or baked shot | the kit's calibration capture: the texel the sim draws at each pixel of that view |
+| `flat/views.png`, `flat/squint.png` | the kit's maps, as the flat views draw them |
+| `flat/car.png` | the UI car's own UV map |
+
+- On Send each pin keeps its view, box and note, the template-pixel box under it (`template`), the elements of the build shown that cover at least 3% of it, the most first (`elements`, from `layers.svg`), and a crop with the box outlined (`crop`, `pin-<n>.png` beside the kept shots). A pin over no paint, or on a picture without a capture, keeps only view, box and crop.
+- The review JSON gives each pin a `line` for the builder, `on <view>, over <element ids>: <note>`, and its crop's `path`.
+- Every review starts with no pins. The owner's last decision's pins show dashed in place on the same views, and each earlier checkpoint shows its own.
 
 ### History
 
@@ -317,7 +331,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Pack | Holds |
 |---|---|
-| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed. It refuses a stale check, sim runs of another build and unanswered fixes |
+| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed and its pins, each as their crop (`pin-<n>-then.png`) and the same box on this round's picture (`pin-<n>-now.png`). It refuses a stale check, sim runs of another build and unanswered fixes |
 | `--baked` | the same, from baked renders, for rounds judged without the sim |
 | `--compare` | this round and the last, as A/B and as B/A, unlabelled |
 | `--adversary` | a round without history or note, for a critic hunting the most boring part |
@@ -325,7 +339,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Command | Records in `verdicts.jsonl` |
 |---|---|
-| `critic record` | a round: each of the last round's fixes, the owner's note and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
+| `critic record` | a round: each of the last round's fixes, the owner's note, each of its pins and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
 | `critic compare` | better or worse where both orders agree, else same |
 | `critic adversary` | up to three findings, the most boring first |
 | `critic rank --pairs <dir>` | a Bradley-Terry ranking of concepts |
@@ -335,7 +349,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Bar | Holds when | Means |
 |---|---|---|
-| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
+| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note, each of its pins and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
 | `ship` (what fails: `why`) | ready, and no fix that isn't optional is open, the compare with the round before isn't worse, and the adversary's top finding is optional | the critic's whole bar, reported beside the decision |
 
 Two compares in a row that come out the same are a plateau.
@@ -361,7 +375,7 @@ flowchart TD
 
   | Strategy | Runs | Stops |
   |---|---|---|
-  | quick | one builder round on exactly the owner's note and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
+  | quick | one builder round on exactly the owner's note, its pins and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
   | full | rounds of a fresh builder (the note first, then the critic's fixes), the sim and fresh critics, a compare from round 2 | at the first of: `critic status` ready, a plateau the fork doesn't break, the budget (4 rounds), a block |
 
   - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.

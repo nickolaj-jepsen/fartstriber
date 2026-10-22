@@ -72,10 +72,23 @@
   .flick { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .flick button { border: 0; background: var(--panel); padding: 4px 10px; font-size: 13px; cursor: pointer; }
   .flick button.on { background: var(--ink); color: var(--bg); }
-  .stage { position: relative; background: var(--shot); border-radius: 10px; overflow: hidden; }
-  .stage img { width: 100%; display: block; }
+  .stage { position: relative; background: var(--shot); border-radius: 10px; overflow: hidden; user-select: none; }
+  .stage.pinnable { cursor: crosshair; touch-action: none; }
+  .stage img { width: 100%; display: block; pointer-events: none; }
   .stage.preview { box-shadow: 0 0 0 2px var(--accent); }
   .stage .tag { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+  .stage .full { position: absolute; right: 10px; top: 10px; z-index: 2; background: rgba(0,0,0,.6); color: #fff; border: 0; border-radius: 4px; font-size: 12px; padding: 2px 8px; cursor: zoom-in; }
+  .pin { position: absolute; border: 2px solid var(--accent); border-radius: 4px; background: rgba(244,98,0,.12); pointer-events: none; }
+  .pin .n { position: absolute; left: -2px; top: -22px; background: var(--accent); color: #fff; font: 600 12px/20px var(--sans); padding: 0 6px; border-radius: 4px 4px 4px 0; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .pin.low .n { top: auto; bottom: -22px; border-radius: 0 4px 4px 4px; }
+  .pin.old { border-style: dashed; border-color: rgba(255,255,255,.8); background: rgba(255,255,255,.06); }
+  .pin.old .n { background: rgba(0,0,0,.65); font-weight: 500; }
+  .pins { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .pins li { display: flex; gap: 6px; align-items: center; }
+  .pins .dot { flex: none; min-width: 20px; height: 20px; border-radius: 4px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; border: 0; cursor: pointer; padding: 0 4px; }
+  .pins input { padding: 5px 8px; font-size: 13px; }
+  .pins .x { border: 0; background: none; color: var(--muted); cursor: pointer; flex: none; }
+  .did ul { margin: 0 0 6px; padding-left: 18px; font-size: 13px; }
   .hintline { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .tl { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; margin-top: 6px; }
   .tl button { flex: none; width: 150px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px; text-align: left; cursor: pointer; }
@@ -257,7 +270,7 @@ async function poll() {
   $("count").textContent = w.filter((g) => g.status === "waiting").length || "";
   document.title = (w.length ? `(${w.length}) ` : "") + "Review";
   if (!screen || (!PAGES.includes(screen) && !S.groups.some((g) => g.id === screen))) screen = w[0]?.id || "library";
-  const now = JSON.stringify([screen, S.groups.map((g) => [g.id, g.status, Object.entries(g.decisions).map(([k, d]) => [k, d.decision, d.favourite, d.revived, (d.endorsed || []).length]), g.items.map((i) => !!i.critic)])]);
+  const now = JSON.stringify([screen, S.groups.map((g) => [g.id, g.status, Object.entries(g.decisions).map(([k, d]) => [k, d.decision, d.favourite, d.revived, (d.endorsed || []).length, (d.pins || []).length]), g.items.map((i) => !!i.critic)])]);
   renderTabs();
   if (now !== sig) { sig = now; render(); }
 }
@@ -350,14 +363,16 @@ const STILL_ANSWERS = [
   ["edit", "Change", "C", "another round on your note"],
   ["stop", "Stop", "S", "take its approval back"],
 ];
+const judgedLine = (s) => `<span class="${s === "resolved" ? "ok" : ""}">${esc({ resolved: "Resolved", partly: "Partly resolved", not: "Not resolved" }[s] || s)}</span>`;
 function answerOf(d) { if (!d) return null; if (d.decision === "accept") return d.favourite ? "fav" : "race"; return d.decision; }
 
 function focusPictures(it) {
-  // [{key, label, src, then}] : sim or baked shots by view, then the flat pictures (or a kit's images).
+  // [{key, label, src, then}] : sim or baked shots by view, then the flat pictures (or a kit's images). The
+  // key is what a pin names its picture by (livery.review.pins.views_of).
   const out = [];
   for (const [v, p] of Object.entries(it.views || {})) out.push({ key: v, label: v + (it.baked ? " · baked" : ""), src: p, then: (it.then || {})[v] });
   const flat = it.flat || [];
-  for (const p of flat) out.push({ key: p, label: p.split("/").pop().replace(".png", ""), src: p });
+  for (const p of flat) out.push({ key: "flat/" + p.split("/").pop(), label: p.split("/").pop().replace(".png", ""), src: p });
   if (!out.length) for (const p of it.images || []) out.push({ key: p, label: (it.captions || {})[p] || p.split("/").pop(), src: p });
   return out;
 }
@@ -372,6 +387,9 @@ function renderFocus(m, g, banner) {
   const hasThen = pics.some((p) => p.then);
   const crit = it.critic;
   const note = it.owner_note;
+  if (st.pins === undefined) st.pins = (d?.pins || []).map((p) => ({ ...p }));  // kept here while another answer is picked
+  const shown = () => (ans === "edit" ? st.pins : []);
+  const oldPins = (it.last_decision || {}).pins || [];
   m.innerHTML = `${banner}
   <div class="focus">
     <div>
@@ -382,8 +400,8 @@ function renderFocus(m, g, banner) {
         <span class="sp"></span>
         ${hasThen ? `<div class="flick" title="What you saw at your last decision (${esc(when(it.then_at))}) and now: T"><button data-f="then" class="${st.when === "then" ? "on" : ""}">Then</button><button data-f="now" class="${st.when === "now" ? "on" : ""}">Now</button></div>` : ""}
       </div>
-      <div class="stage" id="stage"><img id="shot" class="zoom" alt=""><span class="tag" id="tag"></span></div>
-      <div class="hintline">Hover a view, Then or a checkpoint to preview it; click to keep it. <kbd>1</kbd>–<kbd>9</kbd> views${hasThen ? " · <kbd>T</kbd> then/now" : ""} · ${answers.map((a) => `<kbd>${a[2]}</kbd>`).join(" ")} answer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> send</div>
+      <div class="stage" id="stage"><img id="shot" alt=""><span class="tag" id="tag"></span><button class="full" id="full" title="Full size">⤢ full size</button></div>
+      <div class="hintline">Hover a view, Then or a checkpoint to preview it; click to keep it.${g.status === "waiting" ? " Drag on the picture to pin a note there (a click makes a small box): pins go with a Change." : ""}${oldPins.length ? " Dashed boxes are your pins from last time." : ""} <kbd>1</kbd>–<kbd>9</kbd> views${hasThen ? " · <kbd>T</kbd> then/now" : ""} · ${answers.map((a) => `<kbd>${a[2]}</kbd>`).join(" ")} answer · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> send</div>
       ${(it.timeline || []).length ? `<div style="margin-top:16px"><div class="row"><div class="eyebrow">Earlier checkpoints</div><button class="ghost" id="tonow" ${st.point < 0 ? "hidden" : ""} style="padding:1px 8px;font-size:12px">Back to now</button></div>
       <div class="tl" id="tl">${it.timeline.map((p, i) => { const v = p.views[st.view] || p.views.front34 || Object.values(p.views)[0]; return `<button class="${p.who} ${i === st.point ? "on" : ""}" data-i="${i}">${v ? `<img src="${img(g, v, 320)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}<span class="w">${esc(p.label)}</span><span class="d">${esc(when(p.at))} · ${p.who === "you" ? "you" : "agents"}</span></button>`; }).join("")}</div>
       <div class="chk" id="tlinfo" hidden></div></div>` : ""}
@@ -398,6 +416,7 @@ function renderFocus(m, g, banner) {
             <select id="strategy"><option value="quick">Quick fix · one round on your note</option><option value="full">Full round · up to 4 rounds</option></select>
             <span class="why" id="why"></span></div>` : ""}
         </div>
+        <ul class="pins" id="pins"></ul>
         <div class="row" style="margin-top:10px"><button class="send" id="send">Send</button><span class="small muted" id="sendwhy"></span></div>
       </div>
       ${crit && ans ? `<div class="box critic"><h3>The critic would also change</h3>
@@ -406,30 +425,87 @@ function renderFocus(m, g, banner) {
         ${crit.blocked.map((b) => `<div class="sugg"><label><span class="blk">blocked</span><span>${esc(b)}</span></label></div>`).join("")}
       </div>` : ""}
       ${note ? `<div class="box did"><h3>Your last note</h3>
-        <p class="muted">${esc(when(note.at))}: <q>${esc(note.note)}</q></p>
-        ${note.judged ? `<p><span class="${note.judged.status === "resolved" ? "ok" : ""}">${esc({ resolved: "Resolved", partly: "Partly resolved", not: "Not resolved" }[note.judged.status] || note.judged.status)}</span> <span class="muted">· the critic, round ${esc(note.judged.round)}${note.judged.this_build ? "" : ", an earlier build"} · ${esc(note.judged.evidence)}</span></p>` : `<p class="muted">No critic round has judged it yet.</p>`}
+        <p class="muted">${esc(when(note.at))}${note.note ? `: <q>${esc(note.note)}</q>` : ""}</p>
+        ${note.judged?.status ? `<p>${judgedLine(note.judged.status)} <span class="muted">· the critic, round ${esc(note.judged.round)}${note.judged.this_build ? "" : ", an earlier build"} · ${esc(note.judged.evidence)}</span></p>` : note.judged ? "" : `<p class="muted">No critic round has judged it yet.</p>`}
+        ${(note.pins || []).length ? `<ul>${note.pins.map((p, i) => { const j = (note.judged?.pins || [])[i]; return `<li>Pin on ${esc(p.view)}: <q>${esc(p.note)}</q>${j ? ` · ${judgedLine(j.status)}` : ""}</li>`; }).join("")}</ul>` : ""}
       </div>` : ""}
       <div class="box"><h3>Context</h3><p class="ctx">${esc(it.body || "")}</p></div>
     </aside>
   </div>`;
 
   const shot = $("shot"), stage = $("stage");
-  function show(src, tag, preview) {
+  // Boxes on the stage: last time's pins dashed, this answer's solid; a checkpoint shows its own, dashed.
+  function box(p, cls, label) {
+    const [x0, y0, x1, y1] = p.box;
+    const el = document.createElement("div");
+    el.className = "pin " + cls + (y0 < 0.06 ? " low" : "");
+    Object.assign(el.style, { left: x0 * 100 + "%", top: y0 * 100 + "%", width: (x1 - x0) * 100 + "%", height: (y1 - y0) * 100 + "%" });
+    if (label) { const n = document.createElement("span"); n.className = "n"; n.textContent = label; el.appendChild(n); }
+    return el;
+  }
+  function drawPins(key, pinsOf) {
+    stage.querySelectorAll(".pin").forEach((e) => e.remove());
+    for (const [ps, cls, label] of pinsOf) ps.forEach((p, i) => { if (p.view === key) stage.appendChild(box(p, cls, label(p, i))); });
+  }
+  let drawable = false;
+  function show(src, tag, preview, key, pinsOf = []) {
     shot.src = img(g, src, 1800); shot.dataset.full = img(g, src); shot.alt = tag; $("tag").textContent = tag + (preview ? " · preview" : "");
     stage.classList.toggle("preview", !!preview);
+    drawPins(key, pinsOf);
   }
+  const lastTime = [oldPins, "old", (p) => "last time" + (p.note ? ": " + p.note : "")];
+  const mine = () => [shown(), "", (p, i) => `${i + 1}${p.note ? " · " + p.note : ""}`];
   function current() {
     const p = pic();
+    drawable = false;
+    stage.classList.remove("pinnable");
     if (!p) return;
     if (st.point >= 0) {
       const t = it.timeline[st.point];
       const v = t.views[p.key] || t.views.front34 || Object.values(t.views)[0];
-      return show(v || p.src, `${t.label} · ${when(t.at)}`);
+      return show(v || p.src, `${t.label} · ${when(t.at)}`, false, t.views[p.key] ? p.key : null, [[t.pins || [], "old", (q) => q.note]]);
     }
-    if (st.when === "then" && p.then) return show(p.then, `then · ${p.label} · ${when(it.then_at)}`);
-    show(p.src, `now · ${p.label}`);
+    if (st.when === "then" && p.then) return show(p.then, `then · ${p.label} · ${when(it.then_at)}`, false, p.key, [lastTime]);
+    show(p.src, `now · ${p.label}`, false, p.key, [lastTime, mine()]);
+    drawable = g.status === "waiting";
+    stage.classList.toggle("pinnable", drawable);
   }
   current();
+  $("full").onclick = (e) => { e.stopPropagation(); lightbox(shot.dataset.full, shot.alt); };
+  $("full").onpointerdown = (e) => e.stopPropagation();
+
+  // Drag a box on the picture to pin a note there; a click makes a small one.
+  let drag = null;
+  const at = (e) => { const r = shot.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))]; };
+  const spanOf = (a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+  stage.onpointerdown = (e) => {
+    if (!drawable || e.button !== 0) return;
+    const p0 = at(e);
+    drag = { p0, el: box({ box: [...p0, ...p0] }, "", "") };
+    stage.appendChild(drag.el); stage.setPointerCapture(e.pointerId);
+  };
+  stage.onpointermove = (e) => {
+    if (!drag) return;
+    const [x0, y0, x1, y1] = spanOf(drag.p0, at(e));
+    Object.assign(drag.el.style, { left: x0 * 100 + "%", top: y0 * 100 + "%", width: (x1 - x0) * 100 + "%", height: (y1 - y0) * 100 + "%" });
+  };
+  stage.onpointerup = (e) => {
+    if (!drag) return;
+    let b = spanOf(drag.p0, at(e));
+    drag.el.remove(); drag = null;
+    if (b[2] - b[0] < 0.015 && b[3] - b[1] < 0.015) {  // a click: a small box around it
+      const [cx, cy] = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+      b = [Math.max(0, cx - 0.03), Math.max(0, cy - 0.04), Math.min(1, cx + 0.03), Math.min(1, cy + 0.04)];
+    }
+    st.pins.push({ view: pic().key, box: b.map((v) => Math.round(v * 10000) / 10000), note: "" });
+    st.focusPin = st.pins.length - 1;
+    savePins();
+  };
+  function savePins() {
+    if (ans === "edit") return decide(g, it.id, { pins: st.pins });
+    if (ans) toast("Pins go with a Change.");
+    decide(g, it.id, payload("edit"));
+  }
   $("vtabs").querySelectorAll(".vt").forEach((b) => {
     b.onclick = () => { st.view = b.dataset.v; sig = ""; render(); };
     b.onmouseenter = () => { const p = pics.find((x) => x.key === b.dataset.v); show(st.when === "then" && p.then ? p.then : p.src, p.label, true); };
@@ -448,7 +524,7 @@ function renderFocus(m, g, banner) {
         st.point = +b.dataset.i; current();
         $("tl").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); $("tonow").hidden = false;
         const c = t.critic && d ? `<br><span class="muted">Critic: ${esc(t.critic.verdict || "")}${t.critic.overall ? ` ${t.critic.overall}/10` : ""}${t.critic.suggestions.length ? ` · ${esc(t.critic.suggestions.map((s) => s.title).join("; "))}` : ""}</span>` : "";
-        $("tlinfo").innerHTML = `<b>${esc(t.label)}</b> · ${esc(when(t.at))} · ${t.who === "you" ? "you" : "agents"}${t.note ? `<br><q>${esc(t.note)}</q>` : ""}${c}`;
+        $("tlinfo").innerHTML = `<b>${esc(t.label)}</b> · ${esc(when(t.at))} · ${t.who === "you" ? "you" : "agents"}${t.note ? `<br><q>${esc(t.note)}</q>` : ""}${(t.pins || []).map((p) => `<br>Pin on ${esc(p.view)}: <q>${esc(p.note)}</q>`).join("")}${c}`;
         $("tlinfo").hidden = false;
       };
       b.onmouseenter = () => { const p = pic(); const v = t.views[p?.key] || t.views.front34 || Object.values(t.views)[0]; if (v) show(v, `${t.label} · ${when(t.at)}`, true); };
@@ -462,13 +538,14 @@ function renderFocus(m, g, banner) {
   if (noteEl) noteEl.value = st.note ?? d?.note ?? "";  // a draft typed here outlives a re-render before it is saved
   function payload(a) {
     if (a === "race" || a === "fav") return { decision: "accept", favourite: a === "fav", endorsed: [], strategy: null };
-    if (a === "edit") return { decision: "edit", favourite: false, strategy: isKit ? null : (d?.strategy || suggested()) };
+    if (a === "edit") return { decision: "edit", favourite: false, strategy: isKit ? null : (d?.strategy || suggested()), pins: st.pins };
     return { decision: a, favourite: false, endorsed: [], strategy: null };
   }
   function suggested() {
     const text = (noteEl?.value || "").trim();
     const open = /boring|more |less |aggressive|different|whole|overall|vibe|direction/i.test(text);
-    return !open && (text.split(/\s+/).filter(Boolean).length <= 16 || (d?.endorsed || []).length) ? "quick" : "full";
+    const pinned = st.pins.some((p) => p.note.trim());
+    return !open && (text.split(/\s+/).filter(Boolean).length <= 16 || (d?.endorsed || []).length || pinned) ? "quick" : "full";
   }
   m.querySelectorAll(".ans").forEach((b) => b.onclick = () => pick(b.dataset.a));
   function pick(a) { decide(g, it.id, payload(a)); }
@@ -487,13 +564,31 @@ function renderFocus(m, g, banner) {
   });
   const sendBtn = $("send");
   function sendable() {
-    const unsaid = ans === "edit" && !(noteEl?.value || "").trim() && !(d?.endorsed || []).length;
+    const unsaid = ans === "edit" && !(noteEl?.value || "").trim() && !(d?.endorsed || []).length && !st.pins.some((p) => p.note.trim());
     sendBtn.disabled = g.status !== "waiting" || !ans || unsaid;
-    $("sendwhy").textContent = !ans ? "Pick an answer first" : unsaid ? "Say what to change, or tick a suggestion" : "";
+    $("sendwhy").textContent = !ans ? "Pick an answer first" : unsaid ? "Say what to change, on the note or a pin, or tick a suggestion" : "";
   }
+
+  // The pins of this Change, each with its own note; clicking its number shows its view.
+  const ul = $("pins");
+  shown().forEach((p, i) => {
+    const li = document.createElement("li");
+    const dot = document.createElement("button");
+    dot.className = "dot"; dot.textContent = i + 1; dot.title = `Show ${p.view}`;
+    dot.onclick = () => { st.view = p.view; st.when = "now"; st.point = -1; sig = ""; render(); };
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.value = p.note; inp.placeholder = `what to change here, on ${p.view}`;
+    inp.oninput = () => { p.note = inp.value; decideLater(g, it.id, { pins: st.pins }); if (p.view === pic()?.key) current(); sendable(); whyLine(); };
+    inp.onkeydown = (e) => { if (e.key === "Enter" && !e.ctrlKey) { e.preventDefault(); inp.blur(); } };
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕"; x.title = "Remove this pin";
+    x.onclick = () => { st.pins.splice(i, 1); decide(g, it.id, { pins: st.pins }); };
+    li.append(dot, inp, x); ul.appendChild(li);
+  });
+  if (st.focusPin != null) { ul.querySelectorAll("input")[st.focusPin]?.focus(); st.focusPin = null; }
   sendable();
   if (noteEl) noteEl.addEventListener("input", sendable);
-  sendBtn.onclick = () => send(g, async () => { if (noteEl) await post("/api/decide", { group: g.id, id: it.id, note: noteEl.value, ...(strat ? { strategy: strat.value } : {}) }); });
+  sendBtn.onclick = () => send(g, async () => { if (noteEl) await post("/api/decide", { group: g.id, id: it.id, note: noteEl.value, ...(strat ? { strategy: strat.value } : {}), ...(ans === "edit" ? { pins: st.pins } : {}) }); });
 
   document.onkeydown = (e) => {
     if (screen !== g.id || e.target.matches("input, textarea, select") || document.querySelector(".lb")) {
@@ -641,7 +736,7 @@ async function renderHistory(m) {
     const taste = (e.taste || []).map((t) => `<div class="tasterow">fed taste row <code>${esc(t.id)}</code><div class="lf">${esc(t.look_for)}</div></div>`).join("");
     const label = e.kind === "final" && e.decision === "accept" ? (e.favourite ? "★ raced, a favourite" : "raced") : e.kind === "concept" && e.decision === "accept" ? "picked" : e.kind === "concept" && e.decision === "reject" ? "not picked" : (DECIDED[e.decision] || e.decision);
     return `<li class="${e.undone ? "undone" : ""}" data-u="${esc(e.uid)}"><span class="when">${esc(when(e.at))}</span>${who(e)}${thumb(e.picture, e.kind === "sponsor" || e.kind === "mark")}
-      <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${trail}${taste}
+      <div class="what"><div class="main">${esc(e.kind)} <b>${esc(e.title || e.key)}</b>: ${esc(label)}${e.note ? ` · <q>${esc(e.note)}</q>` : ""}</div>${(e.pins || []).map((p) => `<div class="sub">pin on ${esc(p.view)}: <q>${esc(p.note)}</q></div>`).join("")}${trail}${taste}
       ${e.via ? `<div class="sub">from the ${esc(e.via[0].toUpperCase() + e.via.slice(1))}</div>` : ""}${e.still ? `<div class="sub">still OK?, after a library or kit change</div>` : ""}
       ${e.moved ? `<div class="sub">moved by ${esc((e.moved.changed_by || []).join(", "))}, no paint or spec pixel past tolerance${String(e.by).startsWith("agent:") ? ` · session ${esc(e.by.slice(6))}` : ""}</div>` : ""}
       ${e.held?.length ? `<div class="sub">held until a new final without it: ${esc(e.held.join(", "))}</div>` : ""}${e.undone ? `<div class="sub">undone</div>` : ""}<div data-ask="${esc(e.uid)}"></div></div>

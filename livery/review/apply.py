@@ -15,6 +15,7 @@ from livery import kit as kits
 from livery import marks as race_marks
 from livery.config import Workspace
 from livery.errors import LiveryError
+from livery.review import pins
 
 DESIGNS = ("concept", "final")
 SHOTS = (
@@ -69,6 +70,8 @@ def _log(ws: Workspace, items: list[dict], decisions: dict[str, dict], written: 
         for k in EXTRAS:
             if d.get(k):
                 extra[k] = d[k]
+        if d.get("pins"):
+            extra["pins"] = len(d["pins"])
         if kind in DESIGNS:
             rounds = critic.history(ws, key)
             if rounds:
@@ -97,12 +100,12 @@ def decisions_on(ws: Workspace, name: str) -> list[dict]:
 
 
 def latest_note(ws: Workspace, name: str) -> dict | None:
-    """The ledger line with the owner's latest note on a design, or critic suggestions they endorsed, which
-    every round after it answers to; None once they have accepted the final since."""
+    """The ledger line with the owner's latest note on a design, their pins, or critic suggestions they
+    endorsed, which every round after it answers to; None once they have accepted the final since."""
     for line in reversed(decisions_on(ws, name)):
         if line["id"].startswith("final:") and line.get("decision") == "accept":
             return None
-        if line.get("note", "").strip() or line.get("endorsed"):
+        if line.get("note", "").strip() or line.get("endorsed") or line.get("pins"):
             return line
     return None
 
@@ -162,6 +165,10 @@ def _record(
         line |= {k: True for k in ("still", "again") if by_id.get(item_id, {}).get(k)}
         if kind == "proposal":
             line["title"] = by_id.get(item_id, {}).get("title")
+        if d.get("pins"):
+            line["pins"] = pins.resolve(
+                ws, by_id.get(item_id, {}), d["pins"], state.root() / SHOTS / uid, f"{SHOTS}/{uid}"
+            )
         if kind in DESIGNS:
             item = by_id.get(item_id, {})
             line["runs"] = item.get("runs", [])
@@ -197,7 +204,9 @@ def _message(decisions: dict[str, dict], review: str) -> str:
             row += ", a favourite"
         if d.get("strategy"):
             row += f", as a {d['strategy']} round"
-        rows.append(row + "".join(f"\n    {n}" for n in d.get("note", "").strip().splitlines()))
+        said = [*d.get("note", "").strip().splitlines()]
+        said += [f"pin on {p['view']}: {p['note'].strip()}" for p in d.get("pins") or []]
+        rows.append(row + "".join(f"\n    {n}" for n in said))
     return subject + "\n\n" + "\n".join(rows) + "\n"
 
 

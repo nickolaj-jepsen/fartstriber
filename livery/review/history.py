@@ -79,6 +79,7 @@ def entries(ws: Workspace) -> list[dict]:
                 "title": d.get("title"),
                 "decision": d.get("decision"),
                 "note": d.get("note", ""),
+                "pins": [{"view": p["view"], "note": p["note"]} for p in d.get("pins") or []],
                 "first_note": d.get("first_note"),
                 "favourite": bool(d.get("favourite")),
                 "undone": bool(d.get("undone")),

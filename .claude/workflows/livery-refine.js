@@ -1,7 +1,7 @@
 export const meta = {
   name: 'livery-refine',
   description: 'Fartstriber refinement: a quick fix (one round on the owner\'s note) or a full round (rounds of a fresh livery-builder, the sim and fresh livery-critics until the owner\'s note and every taste row pass, it plateaus, the budget of 4 runs out or a fix is blocked)',
-  whenToUse: 'The refine step of livery-iterate, after the concept pick or a Change at the final review. Args: {design, strategy: quick or full, note, endorsed, adopt}. Stops before livery review.',
+  whenToUse: 'The refine step of livery-iterate, after the concept pick or a Change at the final review. Args: {design, strategy: quick or full, note, endorsed, pins, adopt}. Stops before livery review.',
   phases: [
     { title: 'Build', detail: 'a fresh livery-builder each round: the owner\'s note, the fixes, check, sim' },
     { title: 'Judge', detail: 'round, then in a full round compare in both orders: a fresh livery-critic each' },
@@ -11,13 +11,14 @@ export const meta = {
 
 // args: {design, strategy: 'quick' or 'full' (the default: a concept pick has none), note: the owner's
 // direction, verbatim, when the session has it, endorsed: the critic suggestions they ticked, in the critic's
-// words, adopt: a variant they picked at a plateau, for round 1 to adopt, judge_first: round 1 judges the
+// words, pins: their pins as the review JSON gives them ({line, path}: "on <view>, over <element ids>: <note>"
+// and its crop), adopt: a variant they picked at a plateau, for round 1 to adopt, judge_first: round 1 judges the
 // checked build as it stands, for a build whose last fixes are already answered}.
 //
-// quick: one builder round on exactly the note and the endorsed suggestions, one sim run, a round critic (the
-// note, the suggestions and every taste row), no compare or adversary, then back to the owner.
-// full: up to BUDGET rounds, stopping at the first of: livery critic status says ready (the note and each endorsed
-// suggestion judged resolved on sim shots, or baked renders that stand in for them, every taste row passing,
+// quick: one builder round on exactly the note, its pins and the endorsed suggestions, one sim run, a round critic
+// (the note, each pin, the suggestions and every taste row), no compare or adversary, then back to the owner.
+// full: up to BUDGET rounds, stopping at the first of: livery critic status says ready (the note, each pin and each
+// endorsed suggestion judged resolved on sim shots, or baked renders that stand in for them, every taste row passing,
 // nothing blocked); a plateau the fork doesn't break; the budget; a block (a blocked fix or kit fault goes to the
 // owner at once, and stops the loop once no fix they would send the car back for is left, or when the build
 // can't be judged). The critic's own fixes are worked in those rounds but never hold the car back. Ready is status's call, never the workflow's. The workflow ends where
@@ -37,12 +38,15 @@ const QUICK = STRATEGY === 'quick'
 const BUDGET = BUDGETS[STRATEGY]
 const NOTE = (args && args.note) || ''
 const ENDORSED = (args && args.endorsed) || []
+const PINS = (args && args.pins) || []
 const ADOPT = (args && args.adopt) || ''
 const JUDGE_FIRST = Boolean(args && args.judge_first) // round 1 judges the build as it stands, no builder first
 if (typeof DESIGN !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(DESIGN)) throw new Error('args.design: a design name')
 if (!BUDGET) throw new Error(`args.strategy: one of ${Object.keys(BUDGETS).join(', ')}`)
 if (!Array.isArray(ENDORSED) || ENDORSED.some(e => typeof e !== 'string' || !e.trim()))
   throw new Error('args.endorsed: the critic suggestions the owner ticked, as text')
+if (!Array.isArray(PINS) || PINS.some(p => !p || typeof p.line !== 'string' || !p.line.trim()))
+  throw new Error('args.pins: the owner\'s pins as the review JSON gives them, each with its line and the path of its crop')
 if (ADOPT && !/^[a-z0-9][a-z0-9-]*$/.test(ADOPT)) throw new Error('args.adopt: the variant to adopt first')
 
 // The critic's answers, in the formats livery.critic validates; ids, rubric keys and taste rows it checks.
@@ -52,7 +56,7 @@ const BOOL = { type: 'boolean' }
 const RESOLVED = { type: 'string', enum: ['resolved', 'partly', 'not'] }
 const ROUND = {
   type: 'object',
-  required: ['previous', 'owner_note', 'endorsed', 'taste', 'scores', 'overall', 'verdict', 'fixes', 'lint_missed', 'blocked'],
+  required: ['previous', 'owner_note', 'endorsed', 'pins', 'taste', 'scores', 'overall', 'verdict', 'fixes', 'lint_missed', 'blocked'],
   properties: {
     previous: {
       type: 'array',
@@ -70,6 +74,11 @@ const ROUND = {
     },
     // One per critic suggestion the owner's note endorsed, in order; [] when it endorsed none.
     endorsed: {
+      type: 'array',
+      items: { type: 'object', required: ['status', 'evidence'], properties: { status: RESOLVED, evidence: STR } },
+    },
+    // One per pin of the owner's note, in order; [] when it has none.
+    pins: {
       type: 'array',
       items: { type: 'object', required: ['status', 'evidence'], properties: { status: RESOLVED, evidence: STR } },
     },
@@ -287,19 +296,22 @@ async function forkVariants(why, st) {
 function buildPrompt(n, adopt, baked) {
   let task = `design: ${DESIGN}\n` + (QUICK
     ? 'Build mode: a quick fix, one round on exactly what the owner asked for, which they see next. Change ' +
-      'what their note and the suggestions they endorsed ask, and nothing else. Answer every other fix of ' +
+      'what their note, their pins and the suggestions they endorsed ask, and nothing else. Answer every other fix of ' +
       'the last verdict skipped ("a quick fix: only the owner\'s note this round").\n'
     : `Build mode: round ${n} of up to ${BUDGET} of an autonomous refinement, which goes back to the owner once ` +
-      'the critic judges their note and the suggestions they endorsed resolved and every taste row passes. ' +
+      'the critic judges their note, each pin and the suggestions they endorsed resolved and every taste row passes. ' +
       'Their direction outranks the critic\'s fixes.\n')
   // Every round answers to the same direction: the last verdict's owner_note and endorsed say how far it got.
   if (NOTE) task += `The owner's direction, verbatim:\n${indent(NOTE)}\n`
   if (ENDORSED.length)
     task += 'Critic suggestions the owner endorsed (the critic\'s words, not theirs):\n' +
       indent(ENDORSED.map(e => `- ${e}`).join('\n')) + '\n'
-  if (!NOTE && !ENDORSED.length)
+  if (PINS.length)
+    task += 'The owner\'s pins, each a spot they boxed on a picture with what to change there; look at each crop, ' +
+      'the box outlined:\n' + indent(PINS.map(p => `- ${p.line}${p.path ? ` (crop: ${p.path})` : ''}`).join('\n')) + '\n'
+  if (!NOTE && !ENDORSED.length && !PINS.length)
     task += `Start from the owner's latest decision on this design in their prefs/<person>/decisions.jsonl (concept:${DESIGN} or ` +
-      `final:${DESIGN}: their note, and any critic suggestions they endorsed) and its entry in their log.md.\n`
+      `final:${DESIGN}: their note, their pins and any critic suggestions they endorsed) and its entry in their log.md.\n`
   if (adopt)
     task += `First adopt designs/${adopt}/, the variant that won ${n === 1 ? 'the owner\'s pick' : 'the pairwise ranking'}: copy its ` +
       'design.py (and any sponsors/ folder) over this design\'s, keep brief.md\'s character, and write the move ' +
@@ -405,6 +417,7 @@ for (let n = 1; n <= BUDGET; n++) {
     overall: verdict.overall, call: verdict.verdict, fixes: verdict.fixes.map(f => f.title),
     owner_note: verdict.owner_note ? verdict.owner_note.status : null,
     endorsed: (verdict.endorsed || []).map(e => e.status),
+    pins: (verdict.pins || []).map(p => p.status),
   })
   for (const b of verdict.blocked) held.add(`blocked, as the critic sees it: ${b}`)
   if (verdict.blocked.length && !verdict.fixes.some(f => !f.optional)) return finish('blocked')

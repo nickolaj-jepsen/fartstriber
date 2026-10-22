@@ -37,6 +37,7 @@ VERDICT = {
     "previous": [],
     "owner_note": {"status": "partly", "evidence": "front34.png"},
     "endorsed": [],
+    "pins": [],
     "taste": [],
     "scores": {},
     "overall": 7,
@@ -106,6 +107,18 @@ def test_a_quick_fix_is_one_round_on_the_owners_note_then_back_to_them(ready):
     (build,) = [c for c in out["calls"] if c["agentType"] == "livery-builder"]
     assert NOTE in build["prompt"]
     assert ENDORSED in build["prompt"]
+
+
+def test_the_builder_gets_each_pin_with_its_crop():
+    pin = {
+        "line": "on side_l, over door-stripe.side_l: thicker here",
+        "path": "C:/state/review-shots/u1/pin-1.png",
+    }
+    out = _run({"strategy": "quick", "pins": [pin]}, [_status(1, True)])
+
+    (build,) = [c for c in out["calls"] if c["agentType"] == "livery-builder"]
+    assert pin["line"] in build["prompt"]
+    assert pin["path"] in build["prompt"]
 
 
 def test_a_full_round_goes_back_to_the_owner_once_their_asks_are_met_though_the_critic_has_more():
@@ -187,7 +200,13 @@ def test_a_baked_round_that_only_its_bake_held_back_is_judged_again_on_sim_shots
 
 
 @pytest.mark.parametrize(
-    "args", [{"strategy": "variants"}, {"endorsed": "one string"}, {"design": "Not A Name"}]
+    "args",
+    [
+        {"strategy": "variants"},
+        {"endorsed": "one string"},
+        {"design": "Not A Name"},
+        {"pins": [{"line": ""}]},
+    ],
 )
 def test_bad_arguments_are_refused_before_any_agent(args):
     out = _run(args, [])

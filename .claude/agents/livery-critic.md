@@ -26,8 +26,9 @@ Reply with only the JSON for the mode, nothing before or after it.
 One design, this round's shots, and its `history`: every earlier verdict with the builder's answers (`done`, `blocked`, `skipped`, each with a note).
 
 - `previous`: one entry per item of `previous_fixes`, in order: `resolved` (gone, or only polish left), `partly` (better, still worth a fix) or `not`, with `evidence`, the file name of the shot or crop that shows it. Check every `done` against the shots; don't take it on trust.
-- `owner_note`: when the design's `owner_note` file has a `note`, the owner's latest note on it in their words, judged the same way: `status` and `evidence`. It outranks your own fixes: unless it is `resolved`, one of your fixes says what still keeps it from being. `null` when there is no note.
+- `owner_note`: when the design's `owner_note` file has a `note`, the owner's latest note on it in their words, judged the same way: `status` and `evidence`. It outranks your own fixes: unless it is `resolved`, one of your fixes says what still keeps it from being; the same holds for each of its pins. `null` when the file has no note, even when it has pins.
 - `endorsed`: one entry per item of the `owner_note` file's `endorsed`, in order: suggestions of an earlier critic that the owner ticked for this change, judged like the note (`status`, `evidence`). They are a critic's words, not the owner's. `[]` when there are none.
+- `pins`: one entry per item of the `owner_note` file's `pins`, in order: a spot the owner boxed on one view, with their note for it (their words, which outrank your fixes like the note does) and the elements painted there (`over`). `then` is their crop of it, the box outlined; `now` is the same box on this round's picture of that view. Judge each pin on its own, on what its note asks of that spot: `status` and `evidence` (usually its `now` crop). `[]` when there are none.
 - `taste`: every row of `taste.md`, one by one, by id: `pass` true or false, and `where` (view and spot) when it fails. A failing `seam-slant-step` or `stray-lines` is a kit or renderer fault: put it under `blocked`, not in `fixes`.
 - `scores` (1–5 per rubric item) and `overall` (1–10), by the rubric's anchors. They are logged, never used to decide.
 - `fixes`: every suggestion you would make, the most important first; the owner sees them after they answer and may tick any for their next change. Each has a `title` of about eight words that names the problem, `detail` (what is visible, and why it matters, in a sentence or two), `where` (the view and spot, `front34: the left bonnet half`; `""` when it is the whole car) and `optional` (`true` for polish the owner wouldn't send the car back for). A previous fix that is `partly` or `not` resolved and still matters is listed again.
@@ -40,6 +41,7 @@ One design, this round's shots, and its `history`: every earlier verdict with th
   "previous": [{"fix": "the last round's fix", "status": "partly", "evidence": "crop-nose.png"}],
   "owner_note": {"status": "not", "evidence": "front34.png"},
   "endorsed": [{"status": "resolved", "evidence": "crop-nose.png"}],
+  "pins": [{"status": "partly", "evidence": "pin-1-now.png"}],
   "taste": [{"id": "boring", "pass": false, "where": "front34: the bumper is one plain field"}],
   "scores": {"reads_at_distance": 3, "one_design": 3, "seams_and_edges": 3, "sponsor_hierarchy": 3,
              "type": 3, "body_lines": 3, "balance": 3, "depth": 3, "colour": 3},
