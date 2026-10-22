@@ -33,7 +33,7 @@ flowchart LR
 | `kits/<kit>/` | a car's kit, written only by `livery kit` | yes |
 | `assets/` | fonts, roster brands (`sponsors/`), race markings (`marks/`) | yes |
 | `prefs/<person>/`, `references.md` | each reviewer's decisions, words and taste table; the favourite liveries | yes |
-| `policy.toml` | lint thresholds, the views a preview shoots and the sim window's size | yes |
+| `policy.toml` | lint thresholds, the views a preview and a calibration shoot, the sim window's size and the graphics settings sim runs need | yes |
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
 | `.cache/` | build output, previews, critic packs, reference pictures | no |
@@ -159,8 +159,8 @@ A kit (`kits/<kit>/`) is written only by the `livery kit` commands.
 |---|---|---|
 | Extract | `kit extract` | islands from the template's dashed green outlines (grown 3 px to close), keep-clear zones from its number and sponsor blocks, shut lines, the mirror axis |
 | Cameras | `preview cameras <kit> [--arm]` | car-locked preview groups in the track's camera set (The sim) |
-| Frame | `sim pick-frame <kit>` | the straightest on-track frame where every preview view sees the whole car, centred; `--check` proves the shots repeat |
-| Capture | `kit capture <kit> [--resume]` | Gray-code geometry and a grey ladder per spec preset, at the preview views |
+| Frame | `sim pick-frame <kit>` | the straightest, least rolled on-track frame where every view sees the whole car centred (a close-up: nothing covers it), and for a lit view (`side_r_lit`) the clear frame that lights it most; `--check` proves the shots repeat |
+| Capture | `kit capture <kit> [--resume]` | Gray-code geometry and a grey ladder per spec preset, at every camera view |
 | Finishes | `kit spec <kit> [--preset m=R,G,B]` | per-preset compensation for metal finishes, from the ladders |
 | Fit | `kit fit <kit> [--compare] [--keep <ids>]` | maps from car space to texture pixels |
 | Label | `kit label <kit> <parts.json> <features.json>` | the body model |
@@ -194,9 +194,11 @@ The body model:
 ## The sim
 
 - `livery.iracing` uses only SDK reads and broadcasts: seek, play speed, camera, the UI flag and texture reload. `livery.capture` grabs the window with Windows Graphics Capture.
-- The preview views (`policy.toml` `[preview]`) are car-locked camera groups. `livery preview cameras` adds them to the camera set of the track the kit's replay is at, beside the stock cameras.
+- The camera views are car-locked camera groups: `policy.toml` `[preview] views`, which previews shoot, and `calibrate`, which only the calibration capture shoots for the fit. `livery preview cameras` adds them to the camera set of the track the kit's replay is at, beside the stock cameras.
   - Each group sits in the car's frame, so a view frames the car the same way whichever view came before.
-  - Default poses, for a car the McLaren's size: each side square-on from 25 m, the top 5° off vertical, a low front three-quarter and a high rear three-quarter.
+  - Default poses, for a car the McLaren's size: each side square-on from 25 m, the top 5° off vertical, a low front three-quarter and a high rear three-quarter and their mirrors, ahead and behind at a driver's eye height and at bumper height, the left side raised 25°, close-ups of the left door and the bonnet. A view may carry a replay frame of its own (another light).
+  - `--reset <view>` poses a view at its default again, in a new group.
+  - The lint's camera checks count the preview views but the close-ups.
   - The replay is placed by frame, not session time.
 - The owner saves the track's camera set once, from the sim's camera tool. `preview cameras` keeps the stock set as `track.cam.stock` (`--restore` puts it back), and changes `camera.ini` only while the sim is closed (`--arm` waits for that).
 
@@ -206,7 +208,7 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 |---|---|
 | Lock | holds the named mutex `Local\fartstriber-sim`, so every worktree queues for the one sim; the kernel frees it if its holder dies |
 | Recover | replays the paint journal of any run that died |
-| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups and its window open, behind other windows. A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
+| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups, the graphics settings `policy.toml` `[renderer]` names, and its window open, behind other windows. A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
 | Run | notes the camera, UI, frame and speed, and uses one capture session. Before every broadcast and frame it checks that the sim is still behind other windows and not minimised, and stops if not, or if a frame isn't at the run's size |
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
 | Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
