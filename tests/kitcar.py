@@ -228,6 +228,12 @@ CAMERAS = {
     "front": Camera((14.0, 0.0, 1.4), (0.0, 0.0, 0.55), 0.24),
     "rear_chase": Camera((-14.0, 0.0, 1.4), (0.0, 0.0, 0.55), 0.24),
     "side_high": Camera((0.0, 22.66, 11.07), (0.0, 0.0, 0.5), 0.2),  # the left side, 25 degrees up
+    # The calibration views (`CALIBRATE`): the three-quarters mirrored, and close and low at each face, under
+    # the top's height.
+    "front34_r": Camera((18.96, -15.91, 3.98), (0.0, 0.0, 0.4), 0.24),
+    "rear34_l": Camera((-16.59, 13.92, 13.0), (0.0, 0.0, 0.4), 0.24),
+    "front_low": Camera((6.3, 0.0, 0.3), (0.0, 0.0, 0.55), 0.5),
+    "rear_low": Camera((-6.3, 0.0, 0.55), (0.0, 0.0, 0.55), 0.46),
     # Views a capture also has that the fit doesn't read: a close-up, and side_r at another light.
     "door_close": Camera((0.0, 6.0, 0.6), (0.0, 0.0, 0.5), 0.5),
     "side_r_lit": Camera((0.5, -25.0, 0.6), (0.5, 0.0, 0.6), 0.2),
@@ -306,11 +312,12 @@ def render(view: str, hide_below: float | None = None) -> graycode.ViewMap:
 
 
 IGNORED = ("door_close", "side_r_lit")  # what a capture has that the fit doesn't read
+CALIBRATE = ("front34_r", "rear34_l", "front_low", "rear_low")  # rendered only by the tests that need them
 
 
 def render_all(hide_left_below: float | None = None) -> dict[str, graycode.ViewMap]:
-    """Every view the fit reads."""
-    names = [v for v in CAMERAS if v not in IGNORED]
+    """Every view the fit reads, but the calibration views."""
+    names = [v for v in CAMERAS if v not in IGNORED + CALIBRATE]
     return {v: render(v, hide_left_below if v == "side_l" else None) for v in names}
 
 

@@ -6,8 +6,9 @@ import textwrap
 import numpy as np
 import pytest
 from PIL import Image
+from shapely.geometry import Point
 
-from livery import carspace
+from livery import carspace, kit_fit
 from livery.config import REPO, Workspace
 from livery.designs import render_outputs
 from livery.errors import LiveryError
@@ -48,6 +49,18 @@ def _door_shut_line(ws: Workspace) -> list[tuple[int, int]]:
     return pts
 
 
+def _seam_on(kit, island: str, view: str) -> float:
+    """u of a seam the island shares with another in the view, from the kit's seam pairs."""
+    shapes = carspace.island_shapes(kit)
+    for x1, y1, x2, y2 in kit_fit.seam_pairs(kit):
+        here = shapes[island].contains(Point(x1, y1))
+        if here and not shapes[island].contains(Point(x2, y2)):
+            found = carspace.to_car(kit, (x1, y1))
+            if found is not None and found[0] == view and 0.1 < found[1][0] < 0.9:
+                return float(found[1][0])
+    raise AssertionError(f"{island} shares no seam in {view}")
+
+
 @pytest.fixture(scope="module")
 def seeded_report(real_ws) -> dict:
     kit = load(real_ws, KIT)
@@ -56,6 +69,7 @@ def seeded_report(real_ws) -> dict:
     )
     view, at, _ = carspace.to_car(kit, ((number[0] + number[2]) / 2, (number[1] + number[3]) / 2))
     light = next(f for f in kit.features().values() if f.kind == "keep_clear" and f.view == "side_l")
+    cut_u = _seam_on(kit, "i128", "side_l")
     line = _door_shut_line(real_ws)
     beside = [(x + 8, y) for x, y in line] + [(x + 70, y) for x, y in reversed(line)]
     beside_d = "M" + " L".join(f"{x},{y}" for x, y in beside) + " Z"
@@ -70,7 +84,7 @@ def seeded_report(real_ws) -> dict:
             '<text transform="translate(1300,1720) scale(-1,1)" font-family="Barlow" font-size="60">'
             "MIRROR</text>"
         )
-        CUT = ((0.55, -0.1), (0.6, -0.1), (0.6, 1.1), (0.55, 1.1))
+        CUT = (({cut_u - 0.025:.4f}, -0.1), ({cut_u + 0.025:.4f}, -0.1), ({cut_u + 0.025:.4f}, 1.1), ({cut_u - 0.025:.4f}, 1.1))
         BLURRED = (
             '<filter id="f"><feGaussianBlur stdDeviation="3"/></filter>'
             '<rect x="1250" y="1600" width="120" height="60" filter="url(#f)"/>'

@@ -244,6 +244,116 @@ def test_side_high_maps_what_the_top_misses_of_the_shoulders(synth, views):
     assert full.report[kitcar.RIGHT["shoulder"]]["top"]["mirror_filled"] > 0
 
 
+@pytest.fixture(scope="module")
+def calibration():
+    """The calibration views: the mirrored three-quarters, and low at each face."""
+    return {v: kitcar.render(v) for v in kitcar.CALIBRATE}
+
+
+def test_calibration_views_that_see_nothing_change_no_map(synth, views, calibration):
+    empty = {v: kitcar.hidden(vm, np.ones_like(vm.pix)) for v, vm in calibration.items()}
+    again = kit_fit.fit_maps(synth.tpl, _shots({**views, **empty}, synth.tpl))
+    assert json.dumps(again.maps) == json.dumps(synth.fitted.maps)
+
+
+def test_a_second_three_quarter_view_carries_what_the_first_misses_to_where_the_side_shows_it(
+    synth, views, calibration
+):
+    tpl = synth.tpl
+    shots = _shots({**views, "rear34_l": calibration["rear34_l"]}, tpl)
+    frames, panels, _ = kit_fit.side_frames(tpl, shots)
+    side = kit_fit.sides(tpl, shots, frames, panels, {})["side_l"]
+    h = side.high
+    second = np.arange(len(h)) >= len(shots["front34"])  # the views' samples, in SIDES order
+    cells = tpl.cells(h.tx, h.ty, kit_fit.SEEN_PX)
+    new = second & side.hok & ~np.isin(cells, cells[~second & side.hok])
+    panel = new & np.isin(h.ids, [kitcar.LEFT[p] for p in ("front", "door", "rear")])
+    assert panel.sum() > 300  # the panel's rear end, where it turns in
+    # Where the side view would show each texel's point on the car (a pixel's index is its corner).
+    rids = sorted(set(h.ids[panel]))
+    order = np.concatenate([np.nonzero(panel & (h.ids == r))[0] for r in rids])
+    car = np.concatenate([kitcar.where(r, h.tex(panel & (h.ids == r))) for r in rids])
+    sx, sy, _ = kitcar.CAMERAS["side_l"].project(car)
+    f = frames["side_l"]
+    u = (sx - 0.5 - f["nose_sx"]) / (f["tail_sx"] - f["nose_sx"])
+    v = (f["sill_sy"] - (sy - 0.5)) / (f["sill_sy"] - f["top_sy"])
+    miss = np.hypot(side.huv[order, 0] - u, side.huv[order, 1] - v)
+    assert (
+        np.percentile(miss, 90) < 0.015
+    )  # 6 cm on the car: a view from 30 degrees up carries rear34's 0.011
+
+
+@pytest.fixture(scope="module")
+def low(synth, views, calibration) -> tuple[kit_fit.Fitted, kit_fit.Fitted]:
+    """Fits with something hiding the lip's lower half from the front view and the rear face's lower part from
+    rear_chase (texture x and y past `LOW_HIDDEN`), without the low views and with them."""
+    seen = dict(views)
+    for view, rid, (col, cut, below) in (
+        ("front", kitcar.LIP, LOW_HIDDEN["front"]),
+        ("rear_chase", kitcar.REAR_FACE, LOW_HIDDEN["rear"]),
+    ):
+        vm = views[view]
+        texel = vm.uv[:, col]
+        part = (synth.tpl.ids(*vm.uv.T) == rid) & ((texel < cut) if below else (texel > cut))
+        hide = np.zeros_like(vm.pix)
+        hide[vm.pix] = part
+        seen[view] = kitcar.hidden(vm, hide)
+    lows = {v: calibration[v] for v in ("front_low", "rear_low")}
+    return (
+        kit_fit.fit_maps(synth.tpl, _shots(seen, synth.tpl)),
+        kit_fit.fit_maps(synth.tpl, _shots({**seen, **lows}, synth.tpl)),
+    )
+
+
+LOW_HIDDEN = {"front": (0, 868.0, True), "rear": (1, 820.0, False)}  # texture axis, cut, hidden below it
+
+
+def test_a_low_view_maps_what_its_face_view_misses(synth, low):
+    without, with_low = low
+    for face, rid, first in (("front", kitcar.LIP, "front"), ("rear", kitcar.REAR_FACE, "rear_chase")):
+        col, cut, below = LOW_HIDDEN[face]
+        frames = with_low.report["frames"][face]
+        assert frames[next(v for v in frames if v != first)]["anchored_on"] == first
+        s = with_low.evidence[(face, rid)]
+        hid = (s.tex[:, col] < cut) if below else (s.tex[:, col] > cut)
+        assert hid.sum() > 500, face
+        t = with_low.maps["side_transforms"][rid]
+        assert carspace.shapely.contains_xy(carspace.region(t["domain"]), *s.tex[hid].T).mean() > 0.95
+        was = carspace.region(without.maps["side_transforms"][rid]["domain"])
+        assert carspace.shapely.contains_xy(was, *s.tex[hid].T).mean() < 0.5, face
+        assert np.percentile(np.linalg.norm(kit_fit._map_px(t, s.car[hid]) - s.tex[hid], axis=1), 90) < 1.0
+        # Its w there is as close to the car's as the face view's own when nothing hides that part from it.
+        ref = synth.fitted.evidence[(face, rid)]
+        ref_hid = (ref.tex[:, col] < cut) if below else (ref.tex[:, col] > cut)
+        low_w, face_w = (_w_miss(rid, x.car[m], x.tex[m]) for x, m in ((s, hid), (ref, ref_hid)))
+        assert np.percentile(low_w, 90) < np.percentile(face_w, 90) + 0.01, face
+
+
+def _w_miss(rid: str, car: np.ndarray, tex: np.ndarray) -> np.ndarray:
+    """How far a face's samples' w is from their texels' place on the car (w -1 left, 1 right of the top)."""
+    pick = slice(None, None, max(1, len(car) // 2000))
+    y = kitcar.where(rid, tex[pick])[:, 1]
+    return np.abs(car[pick, 0] + y / kitcar.TOP_HALF)
+
+
+def test_a_map_follows_a_rim_where_its_texture_runs_steeply():
+    """A face whose top rim turns away from its camera: the texture runs ever faster up the face there, and
+    the quadratic misses it by more than a decode error. Decode errors elsewhere stay out of the map."""
+    tpl = kit_fit.Template(2048, np.zeros((1, 1), np.uint8), np.array([""], object), {}, {}, {}, 1024.0)
+    w, v = (a.ravel() for a in np.meshgrid(np.arange(-0.5, 0.5, 0.003), np.arange(0.3, 0.77, 0.003)))
+    rim = np.clip((v - 0.6) / 0.17, 0, None)
+    tex = np.stack([1500 + 300 * w + 8 * w * w, 140 - 200 * (v - 0.3) - 45 * rim**3], 1)
+    rng = np.random.default_rng(0)
+    bad = rng.random(len(w)) < 0.02
+    off = rng.uniform(10, 25, (len(w), 2)) * rng.choice([-1, 1], (len(w), 2)) * bad[:, None]
+    t, _ = kit_fit._large_map(tpl, "rear", kit_fit.Samples(np.stack([w, v], 1), tex + off))
+    miss = np.linalg.norm(kit_fit._map_px(t, np.stack([w, v], 1)) - tex, axis=1)
+    assert np.percentile(miss[~bad], 90) < 1.0
+    assert np.percentile(miss[rim > 0.5], 90) < 3.5
+    top = rim > 0.8
+    assert carspace.shapely.contains_xy(carspace.region(t["domain"]), *tex[top].T).mean() > 0.9
+
+
 def test_a_band_reaching_an_end_covers_its_face(synth):
     tail = {e.id for e in primitives.band(synth.kit, "b", 0.8, 1.05, "#ff0000") if e.svg}
     assert tail == {"b.side_l", "b.side_r", "b.top", "b.rear"}

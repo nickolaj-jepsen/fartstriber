@@ -3,12 +3,14 @@
 The capture holds, per preview view, the texel the sim draws at each car pixel, to a fraction of one
 (`livery.graycode`). The fit needs five of them: each side square-on, whose screen axes are the car's; the
 three-quarter view that sees each side's up-facing strips (front34 the left, rear34 the right); and the top,
-5 degrees off vertical. It also reads, when the capture has them, the views straight ahead and behind (the
-faces) and the left side from above (side_high). It runs in stages, each a function below:
+5 degrees off vertical. It also reads, when the capture has them, the mirrored three-quarters (rear34_l the
+left, front34_r the right), the views straight ahead and behind (the faces), low ones under them, and the
+left side from above (side_high). It runs in stages, each a function below:
 
 1. Side frames: u nose 0 -> tail 1 along a side view's screen x, v sill 0 -> top of the side 1 up it.
 2. Side maps: a quadratic per large island with a residual grid, fitted to its side's samples.
-3. The three-quarter views carried into each side's (u, v), for the strips the sides see edge-on.
+3. The three-quarter views carried into each side's (u, v), each through its own cells, for the strips the
+   sides see edge-on.
 4. The top frame: u from the top view's screen, w (left -1 -> right 1) linear in texture y.
 5. Small side islands and top strips: affine maps from side and carried samples.
 6. Mirror: an island neither side mapped takes its partner's map reflected; of partners that disagree, the
@@ -17,8 +19,9 @@ faces) and the left side from above (side_high). It runs in stages, each a funct
    with side_high carried into (u, w) where the top shot missed a shoulder.
 8. The top-rest model for top islands too little seen for a map of their own.
 9. Faces: a homography from each face view's screen to (w, v), anchored on the cells it shares with the
-   side panels (v) and the top shot (w) near its end; a face map (w, v) -> (x, y) for each island no side
-   maps and the top maps badly or not at all.
+   side panels (v) and the top shot (w) near its end, a low view's on the cells it shares with the face's
+   first view; a face map (w, v) -> (x, y) from both views' samples for each island no side maps and the top
+   maps badly or not at all.
 
 The seams come last, over every view.
 
@@ -48,14 +51,21 @@ from livery.errors import LiveryError
 from livery.kit import Kit
 
 REF_CANVAS = 2048
-SIDES = {"side_l": ("lower", "front34"), "side_r": ("upper", "rear34")}  # view -> texture band, its 3/4 view
+# view -> texture band, the three-quarter views that see the side: the first needed, the second read when the
+# capture has it.
+SIDES = {"side_l": ("lower", ("front34", "rear34_l")), "side_r": ("upper", ("rear34", "front34_r"))}
 PLAN = "top"
-VIEWS = (*SIDES, *(h for _, h in SIDES.values()), PLAN)
-# Views a capture may also have, each read when it is there: the face views (car-space face -> the view
-# that sees it straight on) and the left side from above, for the door shoulders' up-facing parts.
-FACES = {"front": "front", "rear": "rear_chase"}
+VIEWS = (*SIDES, *(h[0] for _, h in SIDES.values()), PLAN)
+# Views a capture may also have, each read when it is there: the second three-quarters, the face views
+# (car-space face -> the views that see it straight on, the low one second) and the left side from above,
+# for the door shoulders' up-facing parts.
+FACES = {"front": ("front", "front_low"), "rear": ("rear_chase", "rear_low")}
 HIGH_SIDE = "side_high"
-OPTIONAL = (*FACES.values(), HIGH_SIDE)
+OPTIONAL = (
+    *(h for _, hs in SIDES.values() for h in hs[1:]),
+    *(v for vs in FACES.values() for v in vs),
+    HIGH_SIDE,
+)
 REPORT = kits.FIT_REPORT
 # What a fit depends on in the capture's identity: not the spec presets or the sim's graphics options.
 WATCHED = {
@@ -107,6 +117,10 @@ CAR_FLOOR = 0.004  # car-space units (u, v, w): about the 6 texture px below whi
 GRID_CELL = 0.025  # car-space units
 GRID_MIN_SAMPLES = 1000  # islands with fewer keep the plain quadratic
 GRID_MIN_CELL_SAMPLES = 8
+# Cells. At 1 the grid flattened the bends it is there for: the McLaren's door maps missed held-out samples by
+# a p90 of 1.5 px, at 0.5 by 0.8.
+GRID_SMOOTH = 0.5
+GRID_ROUNDS = 3
 EDGE_PX = 8  # a shot whose car comes this close to the screen edge has lost part of it
 # A face's frame is anchored on the side and top samples within this much u of its end: further from the
 # face, a part sits at another depth, and so at another scale, in the face view's perspective.
@@ -250,6 +264,14 @@ class Shot:
         return np.stack([self.tx[m], self.ty[m]], 1)
 
 
+def _joined(shots: list[Shot]) -> Shot:
+    """Several views' samples as one, once each is in car space: a side's three-quarter views, a face's."""
+    if len(shots) == 1:
+        return shots[0]
+    cat = {k: np.concatenate([getattr(s, k) for s in shots]) for k in ("sx", "sy", "tx", "ty", "ids", "key")}
+    return Shot("+".join(s.view for s in shots), shape=shots[0].shape, **cat)
+
+
 def shot(view: str, vm: graycode.ViewMap, tpl: Template) -> Shot:
     sy, sx = np.nonzero(vm.pix)  # row-major, as the ViewMap lists its pixels
     tx, ty = vm.uv[:, 0].astype(np.float64), vm.uv[:, 1].astype(np.float64)
@@ -337,7 +359,7 @@ def _residual_grid(u: np.ndarray, v: np.ndarray, resid: np.ndarray) -> dict:
             d[c // nv, c % nv] = np.median(resid[m], axis=0)
     _, (ia, ib) = ndimage.distance_transform_edt(np.isnan(d[..., 0]), return_indices=True)
     d = d[ia, ib]
-    d = np.stack([ndimage.gaussian_filter(d[..., k], 1.0, mode="nearest") for k in range(2)], -1)
+    d = np.stack([ndimage.gaussian_filter(d[..., k], GRID_SMOOTH, mode="nearest") for k in range(2)], -1)
     return {
         "u": [round(u0, 4), round(u1, 4)],
         "v": [round(v0, 4), round(v1, 4)],
@@ -471,8 +493,12 @@ def _large_map(tpl: Template, view: str, s: Samples) -> tuple[dict, dict]:
         rep["affine"] = "folded"
     resid = s.tex - _design(u, v) @ coef
     if len(u) >= GRID_MIN_SAMPLES:
+        # Where the texture runs steeply (a face's rim turning away from its camera) the quadratic misses by
+        # more than a decode error does, but smoothly: each round takes in what the last grid brought in reach.
         ok = np.linalg.norm(resid, axis=1) <= tpl.px(GRID_MAX_RESIDUAL_PX)
-        t["grid"] = _residual_grid(u[ok], v[ok], resid[ok])
+        for _ in range(GRID_ROUNDS):
+            t["grid"] = _residual_grid(u[ok], v[ok], resid[ok])
+            ok = np.linalg.norm(resid - grid_offset(t["grid"], s.car), axis=1) <= tpl.px(GRID_MAX_RESIDUAL_PX)
         resid = resid - grid_offset(t["grid"], s.car)
     miss = np.linalg.norm(resid, axis=1)
     # The rms counts only the samples the robust fit kept; a map that can't follow its island to the edge
@@ -665,7 +691,8 @@ def _carry(points: np.ndarray, cxy: np.ndarray, cuv: np.ndarray) -> tuple[np.nda
 
 @dataclass
 class Side:
-    """One side's shot in its own car space, and its three-quarter view carried into it."""
+    """One side's shot in its own car space, and its three-quarter views carried into it (`high`: their
+    samples as one, each view carried through its own cells)."""
 
     view: str
     band: str
@@ -687,15 +714,25 @@ class Side:
 
 def sides(tpl: Template, shots: dict[str, Shot], frames: dict, panels: dict, report: dict) -> dict[str, Side]:
     out = {}
-    for view, (band, high_view) in SIDES.items():
-        s, h = shots[view], shots[high_view]
+    for view, (band, highs) in SIDES.items():
+        s = shots[view]
         u, v = _uv(frames[view], s)
-        _in_frame(h)
         side = panels[view]
-        cuv, cxy = _common_cells(s.key[side], np.stack([u[side], v[side]], 1), h.key, h.screen())
-        report[high_view] = {"cells": len(cuv)}
-        huv, hok = _carry(h.screen(), cxy, cuv)
-        out[view] = Side(view, band, s, u, v, side, h, huv, hok)
+        carried: list[tuple[Shot, np.ndarray, np.ndarray]] = []
+        for high_view in highs:
+            h = shots.get(high_view)
+            if h is None:
+                continue
+            # A second view's samples are carried all the same if it cuts the car off.
+            if high_view == highs[0]:
+                _in_frame(h)
+            cuv, cxy = _common_cells(s.key[side], np.stack([u[side], v[side]], 1), h.key, h.screen())
+            huv, hok = _carry(h.screen(), cxy, cuv)
+            report[high_view] = {"cells": len(cuv), "carried": int(hok.sum())}
+            carried.append((h, huv, hok))
+        huv = np.concatenate([c[1] for c in carried])
+        hok = np.concatenate([c[2] for c in carried])
+        out[view] = Side(view, band, s, u, v, side, _joined([c[0] for c in carried]), huv, hok)
     return out
 
 
@@ -828,7 +865,7 @@ def small_maps(
     tpl: Template, sd: dict[str, Side], strips: set[str], transforms: dict, fitted: dict, report: dict
 ):
     """Small islands on each side, and the strips: samples from the side shot and from its three-quarter
-    view, carried into (u, v) through the cells both saw around the island."""
+    views, carried into (u, v) through the cells each saw with the side shot around the island."""
     small: dict[str, list] = {}
     for view, side in sd.items():
         s, h = side.shot, side.high
@@ -1097,7 +1134,7 @@ def rest_domain(tpl: Template, shots: dict[str, Shot], rest: set[str]) -> list:
 
 @dataclass
 class Face:
-    """A face view's shot in the face's car space (w, v)."""
+    """A face's views in the face's car space (w, v), their samples as one."""
 
     shot: Shot
     w: np.ndarray
@@ -1131,46 +1168,60 @@ def _project(h: np.ndarray, xy: np.ndarray) -> np.ndarray:
     )
 
 
+def _near_end(u: np.ndarray, face: str) -> np.ndarray:
+    return u > 1 - FACE_END if face == "rear" else u < FACE_END
+
+
 def face_frames(tpl: Template, shots: dict[str, Shot], sd: dict[str, Side], top: Top, report: dict) -> dict:
     """Each face view's frame: v from the texture cells it shares with the side panels near its end, w from
-    those it shares with the top shot near its end (w where the large top islands put them). A face whose
-    view has too few of either is left out, with the reason in the report."""
+    those it shares with the top shot near its end (w where the large top islands put them). A face's second
+    (low) view is anchored on the cells it shares with the first, whose (w, v) they have, when there are
+    enough: the face pools both views' samples, so their frames must agree, and a close view sees the side
+    and top anchors at other depths than the face, where one homography can't hold them all. A view without
+    enough anchors is left out, with the reason in the report."""
     out = {}
-    for face, view in FACES.items():
-        f = shots.get(view)
-        if f is None:
-            continue
-        rep: dict = {"from": view}
-        report.setdefault("frames", {})[face] = rep
-
-        def near(u: np.ndarray, end: str = face) -> np.ndarray:
-            return u > 1 - FACE_END if end == "rear" else u < FACE_END
-
-        keys = np.concatenate([s.shot.key[s.panels & near(s.u)] for s in sd.values()])
-        vs = np.concatenate([s.v[s.panels & near(s.u)] for s in sd.values()])
-        centre = f.screen().mean(axis=0)
-        xy = f.screen() - centre
-        cv, xy_v = _common_cells(keys, vs[:, None], f.key, xy)
-        m = near(top.u)
-        cw, xy_w = _common_cells(top.shot.key[m], top.w_seen[m, None], f.key, xy)
-        rep |= {"w_cells": len(cw), "v_cells": len(cv)}
-        if min(len(cw), len(cv)) < MIN_FACE_CELLS:
-            rep["skipped"] = (
-                f"too few cells shared with the {'top' if len(cw) < MIN_FACE_CELLS else 'side'} shots"
+    for face, views in FACES.items():
+        keys = np.concatenate([s.shot.key[s.panels & _near_end(s.u, face)] for s in sd.values()])
+        vs = np.concatenate([s.v[s.panels & _near_end(s.u, face)] for s in sd.values()])
+        m = _near_end(top.u, face)
+        framed: list[tuple[Shot, np.ndarray]] = []
+        for view in views:
+            f = shots.get(view)
+            if f is None or not len(f):
+                continue
+            rep: dict = {}
+            report.setdefault("frames", {}).setdefault(face, {})[view] = rep
+            xy = f.screen() - f.screen().mean(axis=0)
+            cv, xy_v = _common_cells(keys, vs[:, None], f.key, xy)
+            cw, xy_w = _common_cells(top.shot.key[m], top.w_seen[m, None], f.key, xy)
+            rep |= {"w_cells": len(cw), "v_cells": len(cv)}
+            if framed:
+                first, fwv = framed[0]
+                cwv, xy_f = _common_cells(first.key, fwv, f.key, xy)
+                rep[f"{first.view}_cells"] = len(cwv)
+                if len(cwv) >= MIN_FACE_CELLS:
+                    rep["anchored_on"] = first.view
+                    cw, xy_w, cv, xy_v = cwv[:, :1], xy_f, cwv[:, 1:], xy_f
+            if min(len(cw), len(cv)) < MIN_FACE_CELLS:
+                rep["skipped"] = (
+                    f"too few cells shared with the {'top' if len(cw) < MIN_FACE_CELLS else 'side'} shots"
+                )
+                continue
+            h, miss_w, miss_v = _homography(xy_w, cw[:, 0], xy_v, cv[:, 0])
+            wv = _project(h, xy)
+            rep |= {
+                "w_p90": round(float(np.percentile(miss_w, 90)), 4),
+                "v_p90": round(float(np.percentile(miss_v, 90)), 4),
+            }
+            # On a symmetric car a texel and its mirror image sit at -w of each other.
+            a, b = _common_cells(f.key, wv[:, :1], tpl.cells(f.tx, 2 * tpl.axis - f.ty), wv[:, :1])
+            rep["mirror_w_p90"] = (
+                round(float(np.percentile(np.abs(a + b), 90)), 4) if len(a) >= MIN_FACE_CELLS else None
             )
-            continue
-        h, miss_w, miss_v = _homography(xy_w, cw[:, 0], xy_v, cv[:, 0])
-        wv = _project(h, xy)
-        rep |= {
-            "w_p90": round(float(np.percentile(miss_w, 90)), 4),
-            "v_p90": round(float(np.percentile(miss_v, 90)), 4),
-        }
-        # On a symmetric car a texel and its mirror image sit at -w of each other.
-        a, b = _common_cells(f.key, wv[:, :1], tpl.cells(f.tx, 2 * tpl.axis - f.ty), wv[:, :1])
-        rep["mirror_w_p90"] = (
-            round(float(np.percentile(np.abs(a + b), 90)), 4) if len(a) >= MIN_FACE_CELLS else None
-        )
-        out[face] = Face(f, wv[:, 0], wv[:, 1])
+            framed.append((f, wv))
+        if framed:
+            wv = np.concatenate([x for _, x in framed])
+            out[face] = Face(_joined([f for f, _ in framed]), wv[:, 0], wv[:, 1])
     return out
 
 
@@ -1548,8 +1599,10 @@ def lines(result: dict) -> list[str]:
     ]
     frames = result.get("fit", {}).get("frames", {})
     for face in kits.FACE_VIEWS:
-        if face in frames:
-            out.append(f"{face} face frame: " + ", ".join(f"{k} {_num(v)}" for k, v in frames[face].items()))
+        for view, rep in frames.get(face, {}).items():
+            out.append(
+                f"{face} face frame from {view}: " + ", ".join(f"{k} {_num(v)}" for k, v in rep.items())
+            )
     if s.get("faces"):
         out.append(
             "face maps: "

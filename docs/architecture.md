@@ -179,9 +179,9 @@ Capture:
 
 Fit:
 
-- It needs five views: each side square-on, the two three-quarters (for up-facing strips) and the top. It also reads `front` and `rear_chase` (the faces) and `side_high` (door shoulders) when the capture has them, and no other view. A map holds only where it was measured.
-- Each well-seen side panel gets a quadratic from (u, v) to (x, y) plus a residual grid, and small islands get affine maps. An island neither side saw takes its partner's map, reflected. Top islands are mapped from the top shot (`docs/sim.md`, Fitting from the preview views); `side_high`, carried into the top's (u, w), fills what the top shot missed of a shoulder.
-- A face view's frame is a homography to (w, v), anchored on the cells it shares with the side panels (v) and the top shot (w) near its end. An island no side maps gets a face map when it has no top map or its top map fails (p90 or dropped samples); the order is side, top, face. `kit.yaml` lists the faces that got maps.
+- It needs five views: each side square-on, `front34` and `rear34` (for up-facing strips) and the top. It also reads, when the capture has them, the mirrored three-quarters `rear34_l` and `front34_r`, the faces' views (`front` and `front_low`, `rear_chase` and `rear_low`) and `side_high` (door shoulders), and no other view. A map holds only where it was measured.
+- Each well-seen side panel gets a quadratic from (u, v) to (x, y) plus a residual grid, and small islands get affine maps from the side shot and the three-quarters that see that side, each carried into (u, v) through the cells it shares with the side shot. An island neither side saw takes its partner's map, reflected. Top islands are mapped from the top shot (`docs/sim.md`, Fitting from the preview views); `side_high`, carried into the top's (u, w), fills what the top shot missed of a shoulder.
+- A face view's frame is a homography to (w, v), anchored on the cells it shares with the side panels (v) and the top shot (w) near its end; the low view is anchored on the cells it shares with the face's first view, and the face map pools both. An island no side maps gets a face map when it has no top map or its top map fails (p90 or dropped samples); the order is side, top, face. `kit.yaml` lists the faces that got maps.
 - `seams.json` pairs texture points that are the same spot on the car.
 - `--compare` writes nothing: per island and view, it reports the old and new error, how far paint moves, the islands that change view, and each approved design's share of moved pixels.
 
