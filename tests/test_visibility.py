@@ -66,11 +66,16 @@ def test_a_mask_is_drawn_as_the_view_shows_it(vis):
     assert vis.widths(hidden, 8) == {}
 
 
+def cached(ws) -> list[str]:
+    """The captures of the tables kept in the state dir."""
+    files = [p for p in state.root().rglob("*.npz") if calibrate.root(ws, "two") not in p.parents]
+    return [visibility.Visibility.load(p).capture for p in files]
+
+
 def test_tables_are_cached_per_capture_and_built_again_for_a_new_one(ws, vis):
     kit = load(ws, "two")
-    cache = state.root() / "visibility" / "two"
     assert visibility.capture_dir("two") == calibrate.current(ws, "two")
-    assert [p.name.startswith(vis.capture) for p in cache.glob("*.npz")] == [True]
+    assert cached(ws) == [vis.capture]
     again = visibility.table(kit, SCALE)
     assert again is not None
     assert np.array_equal(again.major, vis.major)
@@ -78,7 +83,7 @@ def test_tables_are_cached_per_capture_and_built_again_for_a_new_one(ws, vis):
     fresh = visibility.table(kit, SCALE)
     assert fresh is not None
     assert (fresh.capture, fresh.views) == ("run-2", ("head-on",))
-    assert [p.name.startswith("run-2") for p in cache.glob("*.npz")] == [True]
+    assert cached(ws) == ["run-2"]
 
 
 def test_a_kit_without_a_capture_has_no_tables(ws):

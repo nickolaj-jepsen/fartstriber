@@ -14,7 +14,7 @@ The retro proposes; the owner decides in `livery review`; only what they accept 
 - **This session's transcript**: `~/.claude/projects/<project>/<session id>.jsonl`. `<project>` is the session's starting folder with every character other than a letter or digit replaced by `-` (`C--Users-you-Development-fartstriber`); the id is `${CLAUDE_SESSION_ID}` (also `CLAUDE_CODE_SESSION_ID` in the environment), else the newest `.jsonl` there. Subagents' transcripts are in `<session id>/subagents/`. Transcripts are large: search them for the owner's messages and for errors, don't read them whole.
 - `prefs/decisions.jsonl`: the owner's decisions, ratings and notes, with the critic's verdict on the same design hash.
 - `designs/*/verdicts.jsonl`: each round's fixes, the builder's answers, `lint_missed`.
-- `livery stats` (with `--json` for the rows): sim runs and failed attempts, the critic beside the owner's decisions, `lint_missed` by kind, time per stage.
+- `livery stats` (with `--json` for the rows): the loop's numbers, the critic's calls beside the owner's decisions among them.
 - What the session promised ("next round I'll…", "I'll propose…") and whether it happened.
 
 ## 2. Find the lessons

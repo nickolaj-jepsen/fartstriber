@@ -37,26 +37,25 @@ Other builders work on this design before and after you, and you share no memory
 
 1. Your prompt: which job this is (a sketch, a build, a round, a variant, adopting a variant) and anything the owner said.
 2. `brief.md`, `notes.md` and `verdicts.jsonl` if they exist; for a new concept, the concept brief in your prompt.
-3. `taste.md` and `rubric.md` in `.claude/skills/livery-design/`, the yes rows of `references.md`, and all of `prefs/log.md`.
-4. Your kit's body model, `kits/<kit>/body.yaml`: its parts and features by name, which your design uses instead of island ids and measured numbers, and what the sim draws over the car (`keep_clear`) or hides (`occluder`).
-5. The pictures of the reference rows the brief names (`References: 25, 32`) in `.cache/references/<row>/`. They are the bar this car is held to. If they are missing, say so in your report.
-6. Before drawing a themed brand into `designs/<name>/sponsors/`: `.claude/skills/sponsor-draw/SKILL.md`.
+3. What livery-design says to read before designing (its files are in `.claude/skills/livery-design/`). The pictures of the reference rows the brief names are the bar this car is held to: if they are missing, say so in your report.
+4. Your kit's body model, `kits/<kit>/body.yaml`, used as livery-design says.
+5. Before drawing a themed brand into `designs/<name>/sponsors/`: `.claude/skills/sponsor-draw/SKILL.md`.
 
 ## Sketch mode
 
 A sketch is judged against other sketches on its flat views and the UI's car view alone. A strong idea counts; lint polish doesn't.
 
-- Write `brief.md` from the concept brief (the template is in livery-design): the owner's brief, then the source, the 'expected' version it must not be, the one move, a `References:` line and what reads at 50 m, 10 m and 1 m. Keep the source; drifting back to the expected version is the failure.
-- Write `design.py`, run `livery preview flat <name>` and look at `views.png`, `car.png` and `squint.png` in `.cache/designs/<name>/flat/`; choose values with `livery sheet <name> --wedge k=a..b..step`. Go on until the move reads in `car.png` and the squint.
+- Write `brief.md` from the concept brief, in livery-design's template. Keep the source; drifting back to the expected version is the failure.
+- Write `design.py`, run `livery preview flat <name>` and look at `views.png`, `car.png` and `squint.png` in the folder it prints; choose values with `livery sheet <name> --wedge`. Go on until the move reads in `car.png` and the squint.
 - No `livery check`, no sim, and no lint fixes unless one stops the render.
 - Finish with a `livery preview flat` of the design as it stands.
 
 ## Build mode
 
-- Baked views are the preview views in sim light, rendered from the kit's calibration capture in seconds, without the sim. `livery bake status --design <name>` says whether they are usable (`baked views usable: yes`: the capture passed `livery bake check`). When they are, every `livery preview flat` and `livery sheet --wedge` or `--seeds` in your loop runs with `--baked`, and you look at `.cache/designs/<name>/baked/sheet.png` (or the sheet's `-baked` tiles) beside the flat views: light, shade, metallic and chrome are judged there, never on the flat views. When they aren't, the flat views alone, and the sim at the end.
-- The flat loop until `livery check <name>` passes: `livery lint`, `livery preview flat`, `livery sheet --wedge`. Choose values with `--set` and wedge sheets, never by guessing in the sim. Check every taste row in the flat views (and baked views) first.
+- Baked views are the preview views in sim light, rendered from the kit's calibration capture in seconds, without the sim. `livery bake status --design <name>` says whether they are usable. When they are, every `livery preview flat` and `livery sheet --wedge` or `--seeds` in your loop runs with `--baked`, and you look at the baked renders beside the flat views: light, shade, metallic and chrome are judged there, never on the flat views. When they aren't, the flat views alone, and the sim at the end.
+- The flat loop until `livery check <name>` passes: `livery lint`, `livery preview flat`, `livery sheet --wedge`. Check every taste row in the flat views (and baked views) first.
 - `livery build <name>`. Then, unless your prompt says this round's critic judges baked renders, `livery preview sim <name>` in the foreground with the longest timeout (600000 ms). It queues on the sim lock behind other runs and waits until the sim is ready, saying once what it needs; if the tool times out, run it again. When it fails or has waited 30 minutes, stop and report its last line under `sim`: the owner has to do something. In a round judged on baked renders, run no sim: finish with `livery preview flat <name> --baked` of the checked build, which the critic's pack renders again.
-- Look at every shot of the new run (`.cache/designs/<name>/sim/<time>/`), or in a baked round every view in `baked/`, and check the taste rows against them.
+- Look at every shot of the new run (the folder `livery preview sim` prints), or in a baked round every baked view, and check the taste rows against them.
 
 ## Fixes
 
@@ -69,8 +68,8 @@ When the last verdict in `verdicts.jsonl` has fixes and no `answers`, they are t
 ## Never
 
 - Change the brief's character: its base colour, a brand colour, light car to dark car, its theme. If no layout satisfies the critic and the lint without that, stop and report the conflict under `character`.
-- Work around a kit fault. A line that is straight in car space but steps, slants or doubles at a seam in the sim, or two islands that disagree about where a line goes, goes under `kit` (islands, where, by how much), not into the design.
-- Run `livery review`, `install`, `export`, a `kit` command or the critic's record steps, or commit: those are the session's. What you need outside your folder is a blocked fix or a line in your report.
+- Work around a kit fault (livery-design says what one looks like). It goes under `kit` (islands, where, by how much), not into the design.
+- Commit, or run the session's steps or the critic's record steps: the scope hook refuses those livery steps. What you need outside your folder is a blocked fix or a line in your report.
 
 ## brief.md and notes.md
 

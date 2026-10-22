@@ -9,19 +9,17 @@ import sys
 import threading
 from dataclasses import replace
 
-import irsdk
 import numpy as np
 import pytest
 from PIL import Image
 
 from livery import capture, config, install, paintfolder, simlock, simsession
 from livery.capture import SimInFront
-from livery.check import run_build
 from livery.config import Shot
 from livery.iracing import SimNotReady
 from livery.preview_sim import preview_sim
 from livery.raster import tga_bytes
-from tests.conftest import write_design
+from tests.conftest import checked
 
 ALLOWED = {
     "cam_set_state",
@@ -193,18 +191,10 @@ class FakeCapture:
 
 @pytest.fixture
 def world(tmp_path, monkeypatch) -> World:
+    from tests import fakesim  # it imports this module's fakes
+
     cfg = replace(config.load(), documents=tmp_path / "docs", archive_dir=tmp_path / "archive")
-    w = World(cfg)
-    w.folder.mkdir(parents=True)
-    monkeypatch.setattr(irsdk, "IRSDK", lambda: FakeIR(w))
-    monkeypatch.setattr(capture.Window, "find", staticmethod(lambda process: FakeWindow(w)))
-    monkeypatch.setattr(capture, "Capture", FakeCapture)
-    monkeypatch.setattr(capture, "processes", lambda: ["explorer.exe"])
-    quick = {"POLL_S": 0.01, "SETTLE_S": 0.0, "GREY_S": 0.2, "PAINT_S": 0.2, "LOAD_S": 0.0, "STEADY_S": 0.5}
-    quick["UI_RETRY_S"] = 0.0
-    for name, value in quick.items():
-        monkeypatch.setattr(simsession, name, value)
-    return w
+    return fakesim.install(monkeypatch, World(cfg))
 
 
 def session(w: World, **kw) -> simsession.SimSession:
@@ -456,24 +446,27 @@ def test_without_a_reference_a_shot_is_refused_while_the_cursor_is_over_the_sim(
         run(world, lambda s: s.shoot("side", SIDE, check_ui=True))
 
 
+def built(ws) -> dict:
+    """Design d with a passed check, without running the build."""
+    return checked(ws, "d", outputs={"car.tga": tga((18, 52, 86)), "car_spec.tga": tga((0, 30, 255))})
+
+
 def test_preview_shoots_every_preset_and_records_the_build(world, ws):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    built = run_build(ws, "d")
+    check = built(ws)
     before = dict(world.vars)
 
     out = preview_sim(world.cfg, ws, "d", log=world.logs.append)
 
     assert sorted(p.name for p in out.glob("*.png")) == sorted(f"{n}.png" for n in ws.policy.preview)
     manifest = json.loads((out / "manifest.json").read_text())
-    assert manifest["digests"]["car.tga"] == built["digests"]["car.tga"]
+    assert manifest["digests"]["car.tga"] == check["digests"]["car.tga"]
     assert manifest["failure"] is None
     assert list(world.folder.iterdir()) == []
     assert world.vars == before
 
 
 def test_a_preview_that_stops_leaves_no_run_where_the_critic_looks(world, ws):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    run_build(ws, "d")
+    built(ws)
     world.on_grab = lambda n: setattr(world, "front", n > 12)
 
     with pytest.raises(SimInFront):
@@ -485,8 +478,7 @@ def test_a_preview_that_stops_leaves_no_run_where_the_critic_looks(world, ws):
 
 
 def test_install_and_restore_write_the_folder_only_under_the_lock(world, ws, monkeypatch):
-    write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#123456")\n')
-    run_build(ws, "d")
+    built(ws)
     held = []
     for fn in ("install", "restore"):
         real = getattr(paintfolder, fn)

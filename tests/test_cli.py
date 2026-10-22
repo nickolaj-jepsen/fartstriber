@@ -7,9 +7,11 @@ import pytest
 from typer.testing import CliRunner
 
 from livery import cli
-from tests.conftest import OWNER, write_design
+from livery.designs import render_outputs
+from tests.conftest import OWNER, checked, write_design
 
 STEADY = 'def build(kit, p):\n    print("building")\n    return Livery(base="#3060c0")\n'
+PRINTS = 'print("loading")\n\n\n' + STEADY
 SYNTAX_ERROR = "def build(kit, p)\n    return None\n"
 
 
@@ -53,7 +55,7 @@ def test_bad_params_are_usage_errors(monkeypatch, ws):
 
 
 def test_check_prints_only_its_report_on_stdout_when_the_design_prints(monkeypatch, ws, capsys):
-    write_design(ws, "d", STEADY)
+    write_design(ws, "d", PRINTS)
     assert run(monkeypatch, ws, "check", "d") == 0
     assert json.loads(capsys.readouterr().out)["passed"]
 
@@ -68,6 +70,7 @@ def test_a_verdict_that_is_not_json_is_refused(monkeypatch, ws, tmp_path):
 
 def test_build_all_fails_on_a_broken_fixture_but_not_on_an_unapproved_livery(monkeypatch, ws):
     write_design(ws, "new", STEADY)
+    checked(ws, "new", STEADY, outputs=render_outputs(ws, "new"))
     assert run(monkeypatch, ws, "build", "--all") == 0
     write_design(ws, "broken", 'ROLE = "fixture"\n' + SYNTAX_ERROR)
     assert run(monkeypatch, ws, "build", "--all") == 1

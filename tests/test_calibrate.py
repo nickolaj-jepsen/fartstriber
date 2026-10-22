@@ -3,28 +3,30 @@ fixed uv field."""
 
 import hashlib
 import io
+import itertools
 import json
 import threading
 from dataclasses import replace
 
-import irsdk
 import numpy as np
 import pytest
 from PIL import Image
 
-from livery import calibrate, capture, config, graycode, simlock, simsession
+from livery import calibrate, config, graycode, simlock, simsession
 from livery import kit as kits
 from livery.capture import SimInFront
 from livery.config import Workspace
 from livery.errors import LiveryError
-from livery.kit import Profile, View
+from livery.kit import View
 from livery.model import Material
 from livery.raster import tga_bytes
-from tests.conftest import REPLAY
-from tests.test_simsession import FakeCapture, FakeIR, FakeWindow, H, W, World
+from tests import fakesim
+from tests.test_simsession import H, W, World
 
 Y0, Y1, X0, X1 = 30, 60, 40, 120  # the car, in the window
 VIEWS = {"side": View("Side", ()), "top": View("Top", ())}
+# Gloss is what the other finishes are told apart from and matte the background: one finish more is enough.
+FINISHES = (Material.gloss, Material.matte, Material.satin)
 
 
 def field() -> tuple[np.ndarray, np.ndarray]:
@@ -41,6 +43,8 @@ class Mapped(World):
         super().__init__(cfg)
         self.texture = self.read_texture()
         self.wider = 0  # px the owner widened the window by
+        # Once a test sets it to a list: each paint the sim is shown with a spec map, and that spec.
+        self.painted: list[tuple[bytes, tuple[int, int, int]]] | None = None
 
     def read_texture(self) -> np.ndarray:
         f = self.folder / f"car_{self.stem}.tga"
@@ -52,6 +56,10 @@ class Mapped(World):
         super().reload()
         if self.reload_shows:
             self.texture = self.read_texture()
+            spec = self.folder / f"car_spec_{self.stem}.tga"
+            if self.painted is not None and spec.exists():
+                r, g, b = np.asarray(Image.open(io.BytesIO(spec.read_bytes())).convert("RGB"))[0, 0]
+                self.painted.append((self.texture.tobytes(), (int(r), int(g), int(b))))
 
     def render(self) -> np.ndarray:
         grey = self.grey_left  # frames of the reload's grey step still to show
@@ -65,7 +73,10 @@ class Mapped(World):
 @pytest.fixture
 def world(tmp_path, monkeypatch, ws: Workspace) -> Mapped:
     kit = kits.load(ws, "tiny")
-    kits.write_profile(kit.dir, Profile(REPLAY, 100, VIEWS, {}))
+    kits.write_profile(kit.dir, replace(kits.profile(kit), preview=VIEWS))
+    meta = kits.read_meta(kit.dir)
+    meta["spec_presets"] = {str(m): meta["spec_presets"][str(m)] for m in FINISHES}
+    kits.write(kit.dir, meta=meta)
     cfg = replace(config.load(), documents=tmp_path / "docs")
     folder = cfg.paint_root / "tiny"
     folder.mkdir(parents=True)
@@ -73,18 +84,20 @@ def world(tmp_path, monkeypatch, ws: Workspace) -> Mapped:
         tga_bytes(np.full((kit.canvas, kit.canvas, 3), (200, 0, 0), np.uint8))
     )
     w = Mapped(cfg, kit.canvas)
-    monkeypatch.setattr(irsdk, "IRSDK", lambda: FakeIR(w))
-    monkeypatch.setattr(capture.Window, "find", staticmethod(lambda process: FakeWindow(w)))
-    monkeypatch.setattr(capture, "Capture", FakeCapture)
-    monkeypatch.setattr(capture, "processes", lambda: ["explorer.exe"])
-    quick = {"POLL_S": 0.01, "SETTLE_S": 0.0, "GREY_S": 0.2, "PAINT_S": 0.05, "LOAD_S": 0.0, "STEADY_S": 0.5}
-    for name, value in quick.items():
-        monkeypatch.setattr(simsession, name, value)
+    fakesim.install(monkeypatch, w)
+    # A grey near the reload's own shows no step, so its wait runs out.
+    monkeypatch.setattr(simsession, "PAINT_S", 0.05)
     return w
 
 
 def folder(w: World) -> dict[str, str]:
     return {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in w.folder.iterdir()}
+
+
+def shown(w: Mapped, kit: kits.Kit) -> list[str]:
+    """The capture's paints the sim was shown, by job name."""
+    jobs = {(calibrate.paint(j, kit.canvas).tobytes(), j.spec): j.name for j in calibrate.jobs(kit)}
+    return [jobs[p] for p in w.painted or []]
 
 
 def click_in(w: World, job: int) -> None:
@@ -128,6 +141,7 @@ def test_a_finish_shot_again_under_a_new_preset_brings_the_capture_up_to_date(wo
     from livery import bake
 
     run = capture_run(world, ws)
+    shot = kits.load(ws, "tiny").spec[Material.satin]
     meta = kits.read_meta(ws.kits / "tiny")
     meta["spec_presets"]["satin"] = [0, 110, 64]
     kits.write(ws.kits / "tiny", meta=meta)
@@ -142,7 +156,7 @@ def test_a_finish_shot_again_under_a_new_preset_brings_the_capture_up_to_date(wo
     assert list(run.glob("jobs/*/*.png")) == []
     manifest = json.loads((run / "manifest.json").read_text())
     new = calibrate.ladder_key(manifest, Material.satin, (0, 110, 64))
-    old = calibrate.ladder_key(manifest, Material.satin, (0, 110, 255))
+    old = calibrate.ladder_key(manifest, Material.satin, shot)
     assert new is not None
     assert old is not None
     assert new != old  # a checkout still on the old preset keeps reading its own ladder
@@ -164,40 +178,37 @@ def test_other_sim_runs_get_the_sim_between_paints(world, ws):
     assert 3 < got["at"] < world.grabs
 
 
-def test_a_stopped_capture_carries_on_after_its_last_finished_paint(world, ws, monkeypatch):
-    shot: list[str] = []
-    real = calibrate.SimSession
-    monkeypatch.setattr(
-        calibrate, "SimSession", lambda cfg, what, **kw: shot.append(what) or real(cfg, what, **kw)
-    )
-    names = [j.name for j in calibrate.jobs(kits.load(ws, "tiny"))]
-    jobs = lambda: [n for n in names if any(x.endswith(f": {n}") for x in shot)]  # noqa: E731
+def test_a_stopped_capture_carries_on_after_its_last_finished_paint(world, ws):
+    kit = kits.load(ws, "tiny")
+    names = [j.name for j in calibrate.jobs(kit)]
     click_in(world, job=8)
     before = folder(world)
+    world.painted = []
 
     with pytest.raises(SimInFront):
         capture_run(world, ws)
 
     assert folder(world) == before
     assert calibrate.current(ws, "tiny") is None
-    assert jobs() == names[:9]
-    shot.clear()
+    assert shown(world, kit) == names[:9]
+    world.painted = []
     world.front, world.on_grab = False, lambda n: None
 
     run = capture_run(world, ws, resume=True)
 
     assert calibrate.current(ws, "tiny") == run
-    assert jobs() == names[8:]  # the paint it stopped in, and the rest
+    assert shown(world, kit) == names[8:]  # the paint it stopped in, and the rest
 
 
 def test_a_capture_stops_when_the_window_changes_size_between_paints(world, ws, monkeypatch):
     before = folder(world)
     real = calibrate.SimSession
+    paints = itertools.count(1)
 
-    def session(cfg, what, **kw):
-        if what.endswith(f": {graycode.names()[3]}"):
-            world.wider = 10
-        return real(cfg, what, **kw)
+    def session(*args, **kw):
+        if next(paints) == 6:
+            world.wider = 10  # the owner widens the window before the sixth paint
+        return real(*args, **kw)
 
     monkeypatch.setattr(calibrate, "SimSession", session)
 
@@ -216,7 +227,8 @@ def test_a_capture_only_resumes_on_the_same_shots(world, ws):
     with pytest.raises(SimInFront):
         capture_run(world, ws)
     world.front, world.on_grab = False, lambda n: None
-    kits.write_profile(ws.kits / "tiny", Profile(REPLAY, 200, VIEWS, {}))
+    prof = kits.profile(kits.load(ws, "tiny"))
+    kits.write_profile(ws.kits / "tiny", replace(prof, frame=(prof.frame or 0) + 1))
 
     with pytest.raises(LiveryError):
         capture_run(world, ws, resume=True)

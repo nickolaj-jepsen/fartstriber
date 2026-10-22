@@ -8,7 +8,7 @@ from dataclasses import replace
 from livery import check, hashing, sponsors
 from livery.config import REPO
 from livery.hashing import strip_source
-from tests.conftest import write_design
+from tests.conftest import checked, write_design
 
 CODE = '''
 def f(x):
@@ -69,8 +69,7 @@ def test_a_lint_threshold_change_sends_a_design_back_to_check(ws, tmp_path):
     policy = tmp_path / "policy.toml"
     shutil.copy(REPO / "policy.toml", policy)
     ws = replace(ws, policy_file=policy)
-    write_design(ws, "d", PLAIN)
-    assert check.run_check(ws, "d")[0]["passed"]
+    checked(ws, "d", PLAIN)
     assert check.current(ws, "d")
 
     text = policy.read_text()
@@ -79,11 +78,10 @@ def test_a_lint_threshold_change_sends_a_design_back_to_check(ws, tmp_path):
 
 
 def test_a_designs_own_brand_is_a_build_input_and_its_drawing_script_is_not(ws):
-    write_design(ws, "d", PLAIN)
     brand = ws.design_dir("d") / "sponsors" / "acme"
     sponsors.save(brand, {"mark": sponsors.path_svg("M0,0 h100 v100 h-100 Z", (0, 0, 100, 100))})
     (brand / "draw.py").write_text("# draws acme\n")
-    assert check.run_check(ws, "d")[0]["passed"]
+    checked(ws, "d", PLAIN)
 
     (brand / "draw.py").write_text("# draws acme, rounder\n")
     assert check.current(ws, "d")

@@ -9,12 +9,13 @@ from PIL import Image
 
 from livery import carspace
 from livery.config import REPO, Workspace
-from livery.designs import render_outputs
+from livery.designs import build_livery
 from livery.errors import LiveryError
 from livery.kit import load
 from livery.lint.run import lint_design, thresholds
 from livery.lint.source import lint_source, source_warnings
 from livery.primitives import svg, waive
+from livery.raster import rasterise
 from tests.conftest import FIXTURES
 
 KIT = "mclaren-720s-gt3-evo"
@@ -105,22 +106,23 @@ def seeded(seeded_report) -> dict[str, set[str]]:
     return found
 
 
-@pytest.mark.parametrize(
-    ("element", "check"),
-    [
-        ("mirrored", "orientation"),
-        ("on-number", "keep_clear"),
-        ("on-light", "keep_clear"),
-        ("off-car", "off_car"),
-        ("cut", "seam"),
-        ("hugs-shut-line", "near_tangent"),
-        ("see-through", "forbidden_svg"),
-        ("blurred", "forbidden_svg"),
-        ("image", "forbidden_svg"),
-    ],
-)
-def test_output_lint_catches_seeded_error(seeded, element, check):
-    assert check in seeded.get(element, set()), seeded
+SEEDED = [
+    ("mirrored", "orientation"),
+    ("on-number", "keep_clear"),
+    ("on-light", "keep_clear"),
+    ("off-car", "off_car"),
+    ("cut", "seam"),
+    ("hugs-shut-line", "near_tangent"),
+    ("see-through", "forbidden_svg"),
+    ("blurred", "forbidden_svg"),
+    ("image", "forbidden_svg"),
+]
+
+
+def test_output_lint_catches_each_seeded_error(seeded):
+    # One test, not one per row: under xdist every worker that takes a row re-lints the seeded design.
+    missed = [(element, check) for element, check in SEEDED if check not in seeded.get(element, set())]
+    assert missed == [], seeded
 
 
 def test_a_waiver_keeps_its_check_out_of_the_report_and_lists_what_it_hid(seeded, seeded_report):
@@ -143,7 +145,7 @@ def test_a_waiver_needs_a_reason_and_a_real_check():
 def test_design_lint_catches_import_random(tmp_path):
     p = tmp_path / "design.py"
     p.write_text('import random\nKIT = "x"\n\ndef build(kit, p):\n    return random.random()\n')
-    assert lint_source(p)
+    assert 1 in {e["line"] for e in lint_source(p)}
 
 
 def test_design_lint_warns_on_reading_back_a_primitives_svg(tmp_path):
@@ -181,8 +183,9 @@ def test_a_clean_design_passes_the_design_lint():
 
 
 def test_every_primitive_builds_and_lints_on_the_real_kit(real_ws):
-    outputs = render_outputs(real_ws, "primitives-demo")
+    built = build_livery(real_ws, "primitives-demo")
+    outputs = rasterise(*built, real_ws)
     assert {"car.tga", "car_spec.tga"} <= outputs.keys()
-    report = lint_design(real_ws, "primitives-demo", outputs=outputs)
+    report = lint_design(real_ws, "primitives-demo", outputs=outputs, built=built)
     assert report["errors"] == []
     assert report["waivers"] == []

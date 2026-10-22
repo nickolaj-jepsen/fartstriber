@@ -5,7 +5,7 @@ description: Drawing a Fartstriber sponsor brand with livery.sponsors - a roster
 
 # Drawing a brand
 
-A brand is a folder: its `draw.py`, the one-colour SVG variants it writes (`wordmark`, `mark`, `lockup`) and `brand.toml`. How builds place them is in `docs/architecture.md` (Sponsors).
+What a brand folder holds, its measures and how builds place it: `docs/architecture.md` (Sponsors).
 
 ## Where it goes
 
@@ -15,7 +15,7 @@ A brand is a folder: its `draw.py`, the one-colour SVG variants it writes (`word
 ## Draw
 
 1. **Voice first.** The row's lettering voice and its OFL font in `assets/fonts`: the letters are the voice, the mark carries one idea.
-2. **The font's own outlines, or exact geometry.** `sponsors.outline(text, font, size, tracking, slant)` sets the font's glyphs as one path; kern pairs by hand in draw.py. Drawn letters are built in shapely from true circles, rectangles and level or plumb cuts.
+2. **The font's own outlines, or exact geometry.** `typeset.text_shape` sets a line in a font's own glyphs as one outline (`typeset.glyphs` letter by letter) and `sponsors.shape_svg` writes it; kern pairs and any slant by hand in draw.py. Drawn letters are built in shapely from true circles, rectangles and level or plumb cuts.
 3. **Never buffer, erode, open or round-fill letters, bridge joins or redraw them at odd widths to pass a size check.** That is what made Altmere and Ostrand read as an "ai generated/diffusion model" vibe (`prefs/log.md`, 19 Oct 2026). A mark that can't hold at sill size keeps its shape and the larger minimum height its measures give; say in roster.md where it goes (roof, bonnet, doors).
 4. **Two stroke weights**, the same on every letter.
 5. **One colour, paths only, a tight viewBox** (`sponsors.path_svg`, `svg_doc`). `sponsors.lockup_svg(mark, word)` sets the two as drawn. One hand-made touch per brand.
@@ -24,5 +24,5 @@ A brand is a folder: its `draw.py`, the one-colour SVG variants it writes (`word
 ## Check
 
 - **The word reads.** Render each variant 120 px tall (`sponsors.render(svg, 120)`), save it and read it letter by letter: no case flips (telVio, aLtmere), no doubled letters (Z zentiq), no stray diacritic (ØSTRAND), no lumps.
-- **The measures.** `brand.toml` gives each variant's aspect, ink share, thinnest stroke and narrowest counter, as shares of its height. Its minimum height is `min_stroke_px` (`policy.toml` `[lint]`) over the smaller of stroke and counter, and `sponsor` refuses it lower.
+- **The measures.** `brand.toml` records each variant's measures and the sheet prints its minimum height, which `sponsor` refuses to go below.
 - **The sheet.** `sponsors.sheet(brand, out, min_stroke_px)` draws what `livery review --sponsors --brand <brand>` shows the owner: each variant dark on light and light on dark, large and at sill size, with its minimum height. Write it from draw.py and look at it before the review.

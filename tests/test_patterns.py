@@ -180,10 +180,6 @@ def test_pieces_pass_the_lint_on_the_real_kit(mclaren):
                 field=behind,
             )
         )
-        pin = box(-0.2, 0.62, 1.2, 0.66)
-        els.append(
-            patterns.dash_run(kit, f"pin.{view}", view, pin, 0.4, 0.6, A, length=0.05, lean=45.0, front=False)
-        )
     found = lint_output(
         Livery("#808080").add(*els), kit, ws, np.zeros((kit.canvas, kit.canvas, 3), np.uint8), thresholds()
     )

@@ -21,12 +21,20 @@ def arrow(point_right: bool) -> str:
     return sponsors.path_svg(d, (0, 0, 120, 100))
 
 
-@pytest.fixture
-def root(tmp_path, monkeypatch):
-    r = tmp_path / "marks"
-    monkeypatch.setattr(marks, "MARKS", r)
+@pytest.fixture(scope="module")
+def drawn(tmp_path_factory):
+    """The stand-in markings, drawn and measured once; each test gets its own unapproved copy."""
+    r = tmp_path_factory.mktemp("marks")
     marks.save(r / "tow", {"right": arrow(True), "left": arrow(False)})
     marks.save(r / "e", {"mark": sponsors.path_svg("M0,0 h100 v100 h-100 Z", (0, 0, 100, 100))})
+    return r
+
+
+@pytest.fixture
+def root(drawn, tmp_path, monkeypatch):
+    r = tmp_path / "marks"
+    shutil.copytree(drawn, r)
+    monkeypatch.setattr(marks, "MARKS", r)
     return r
 
 

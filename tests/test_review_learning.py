@@ -9,8 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from livery import approvals, hashing, preview_flat
-from livery.check import run_build
+from livery import approvals, hashing
 from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
@@ -89,8 +88,7 @@ def test_edit_and_mix_need_a_note_and_a_note_alone_keeps_the_decision(ws):
 
 
 def test_a_parked_final_is_neither_approved_nor_installable(ws, private_metrics):
-    write_design(ws, "d", BLUE)
-    built = run_build(ws, "d")
+    built = checked(ws, "d", BLUE)
 
     written = review_apply.apply(ws, [_final(ws, "d")], {"final:d": {"decision": "park", "rating": 1}})
 
@@ -107,9 +105,8 @@ def _verdicts(ws: Workspace, name: str, rounds: list[dict]) -> None:
 
 
 def test_the_ledger_keeps_old_lines_the_note_verbatim_and_the_critic_on_the_same_design(ws):
-    write_design(ws, "d", BLUE)
+    checked(ws, "d", BLUE)
     write_design(ws, "e", BLUE.replace("3060c0", "c03030"))
-    run_build(ws, "d")
     h = hashing.design_hash(ws, "d")
     _verdicts(
         ws,
@@ -207,9 +204,8 @@ def repo(ws):
     return ws.root
 
 
-def test_apply_commits_what_it_wrote_and_the_design_folder_and_nothing_else(ws, repo, cheap_flat):
-    run_build(ws, "d")
-    preview_flat.flat(ws, "d")
+def test_apply_commits_what_it_wrote_and_the_design_folder_and_nothing_else(ws, repo):
+    checked(ws, "d", BLUE)
     (ws.design_dir("d") / "notes.md").write_text("round 3\n")
     (repo / "other.txt").write_text("someone else's\n")
     _git(repo, "add", "other.txt")

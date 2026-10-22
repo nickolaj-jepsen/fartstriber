@@ -151,8 +151,8 @@ def test_a_new_car_on_an_open_replay_of_its_own_is_framed_there(setup):
 def test_a_car_not_framed_yet_follows_the_replay_now_open_and_its_track(setup):
     ws, world, psd = setup
     world.fences += [("Top", range(1500)), ("Side", range(1500, 3000))]
-    first = kit_add.add(world.cfg, ws, psd, CAR, FOLDER, log=world.logs.append)
-    assert "no candidate frame" in first["next"]
+    kit_add.add(world.cfg, ws, psd, CAR, FOLDER, log=world.logs.append)
+    assert kits.profile(kits.load(ws, CAR)).frame is None  # no frame shows the car clear of the fences
     world.fences.clear()
     world.info["WeekendInfo"].update(SubSessionID=888, TrackName="other track")
     saved_set(world.cfg.documents, "other\\track")

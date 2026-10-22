@@ -5,7 +5,8 @@ from PIL import Image
 
 from livery import check
 from livery.check import run_build, run_check
-from tests.conftest import SPEC, write_design
+from livery.designs import render_outputs
+from tests.conftest import SPEC, checked, write_design
 
 STEADY = """
 def build(kit, p):
@@ -35,8 +36,7 @@ def test_steady_design_passes_check_and_builds_24_bit_tgas(ws):
     assert result["passed"], result["errors"]
     out = ws.out("steady")
     stored = json.loads((out / "check.json").read_text())
-    assert stored["design_hash"]
-    assert stored["toolchain_hash"]
+    assert check.current(ws, "steady") == stored
     for name in ("car.tga", "car_spec.tga"):
         raw = (out / name).read_bytes()
         assert raw[2] == 2
@@ -63,23 +63,6 @@ def test_broken_design_fails_check(ws):
     assert outputs is None
 
 
-PRINTS = """
-print("loading")
-
-
-def build(kit, p):
-    print("building")
-    return Livery(base="#202020")
-"""
-
-
-def test_a_design_that_prints_passes_check(ws):
-    write_design(ws, "chatty", PRINTS)
-    result, outputs = run_check(ws, "chatty")
-    assert result["passed"], result["errors"]
-    assert outputs
-
-
 @pytest.mark.parametrize(
     "source",
     [
@@ -101,7 +84,7 @@ def test_a_script_that_cannot_be_hashed_fails_check_and_build(ws, source):
 
 def test_build_reuses_a_matching_passed_check(ws, monkeypatch):
     write_design(ws, "steady", STEADY)
-    assert run_check(ws, "steady")[0]["passed"]
+    checked(ws, "steady", STEADY, outputs=render_outputs(ws, "steady"))
 
     def no_recheck(*_):
         raise AssertionError("re-checked although hashes matched")

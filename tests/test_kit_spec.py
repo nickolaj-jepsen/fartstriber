@@ -20,7 +20,15 @@ def test_a_finish_half_as_bright_as_gloss_needs_twice_the_paint_until_its_white_
 
 
 def test_only_presets_with_metal_in_them_are_brightened(ws):
-    assert set(kit_spec.compensated(load(ws, "tiny"))) == {Material.metallic, Material.chrome}
+    spec = {
+        Material.gloss: (0, 30, 255),
+        Material.matte: (0, 220, 0),
+        Material.metallic: (255, 60, 255),
+        Material.chrome: (128, 0, 255),
+    }
+    kit = replace(load(ws, "tiny"), spec=spec)
+
+    assert set(kit_spec.compensated(kit)) == {Material.metallic, Material.chrome}
 
 
 def test_a_colour_brighter_than_a_finish_shows_is_flagged(ws):

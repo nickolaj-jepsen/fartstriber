@@ -2,6 +2,7 @@
 
 import itertools
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from livery.config import Workspace
 from livery.review import apply as review_apply
 from livery.review import items as review_items
 from tests.conftest import OWNER, checked, sim_run, write_design
-from tests.test_review_critic import verdict
+from tests.test_review_critic import TASTE_ROW, verdict
 
 FIX = {"text": "the bonnet is one plain field", "optional": False}
 
@@ -30,15 +31,13 @@ def _run(ws: Workspace, name: str, stamp: str, colour: str = "purple") -> Path:
 
 
 def _files(manifest: dict | list | str | bool) -> list[str]:
-    """Every path a manifest names: all its strings but the mode, the owner's name and the fix texts."""
+    """Every path a manifest names: each of its strings that is a file name, extension and all."""
     if isinstance(manifest, str):
-        return [manifest]
+        return [manifest] if re.fullmatch(r"[\w./-]+\.\w+", manifest) else []
     if isinstance(manifest, list):
         return [p for v in manifest for p in _files(v)]
     if isinstance(manifest, dict):
-        return [
-            p for k, v in manifest.items() if k not in ("mode", "owner", "previous_fixes") for p in _files(v)
-        ]
+        return [p for v in manifest.values() for p in _files(v)]
     return []  # a flag, like baked
 
 
@@ -94,17 +93,17 @@ def test_a_pack_says_what_the_sim_draws_over_the_car_and_what_hides_its_paint(ws
 
 
 def test_only_shots_of_the_checked_build_are_packed(ws):
-    checked(ws, "d")
+    digests = checked(ws, "d")["digests"]
     sim_run(ws, "d", "20260101-000000", None)  # from before runs recorded their build
     with pytest.raises(critic.StaleShots):
         critic.pack(ws, ["d"])
-    shot = sim_run(ws, "d", "20260102-000000", _digests(ws, "d"))
+    shot = sim_run(ws, "d", "20260102-000000", digests)
     sim_run(ws, "d", "20260103-000000", {"car.tga": "older", "car_spec.tga": "older"})
 
     folder = critic.pack(ws, ["d"])
 
     assert critic.records(ws, "d") == []
-    assert json.loads((ws.out("d") / "critic.json").read_text())["round"]["shots"].endswith(shot.name)
+    assert critic.record(ws, "d", verdict(fixes=[]))["shots"].endswith(shot.name)
     assert (folder / "d" / "squint.png").exists()
     write_design(ws, "d", 'def build(kit, p):\n    return Livery(base="#c03030")\n')
     with pytest.raises(check.NotChecked):  # edited since the build: build it, then shoot it
@@ -201,7 +200,7 @@ RESOLVED = [{"status": "resolved", "evidence": "front34.png"}]
         {"second": verdict(previous=RESOLVED, fixes=[FIX])},  # an open fix that matters
         {"second": verdict(previous=[{"status": "partly", "evidence": "front34.png"}], fixes=[])},
         {"second": verdict(previous=RESOLVED, fixes=[], blocked=["the beltline steps at the door"])},
-        {"second": verdict(previous=RESOLVED, fixes=[], taste=_failing("front-as-back"))},
+        {"second": verdict(previous=RESOLVED, fixes=[], taste=_failing(TASTE_ROW))},
         {"compare": ("B", "A")},  # worse than the last round
         {"top_optional": False},
     ],

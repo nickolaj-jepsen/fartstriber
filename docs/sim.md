@@ -1,6 +1,6 @@
 # The sim, as measured
 
-Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: Daytona road course, a team event, Lone Qualify). How the tools use these facts is in `docs/architecture.md`; the camera set formats are in `livery/cameras.py`.
+Measured on the McLaren 720S GT3 EVO and the preview replay (Daytona road course, a team event, Lone Qualify). How the tools use these facts is in `docs/architecture.md`; the camera set formats are in `livery/cameras.py`.
 
 ## Paint files
 
@@ -38,12 +38,7 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
 - Windows Graphics Capture finds the sim by its process, `iRacingSim64DX11.exe`. A title match also finds other apps' windows, such as SimHub's "Overlay control : iRacing".
 - It captures the sim behind other windows without bringing it forward: 0.5–1.0 s per frame from a new capture session.
 - A windowed capture includes the title bar and a 1 px border. At 100% scaling the client area starts 31 px down and 1 px in.
-- A run must stop when:
-  - the window is minimised (restoring it would take focus)
-  - a frame comes back blank
-  - the sim comes to the front, most likely from a click into it
-
-  The owner switching between other windows is fine.
+- Shooting a minimised window would mean restoring it, which takes focus. A frame can come back blank. A click into the sim brings it to the front; the owner switching between other windows doesn't disturb a capture.
 
 ## Camera sets
 
@@ -67,7 +62,7 @@ Measured on the McLaren 720S GT3 EVO and the preview replay (`fartstriper.rpy`: 
   - At 25 m and 0.2 rad the McLaren's paint spans 1507 × 360 px of a 1782 × 992 px window in a side view.
   - The three-quarter views, at 0.24 rad, show the car about 1100 px wide.
   - In every preview view the car's paint sits within 60 px of the centre.
-  - A shot takes about 0.9 s from a running capture session, including the seek and a 0.6 s settle.
+  - A shot takes about 0.9 s from a running capture session, including the seek and the settle.
 
 ## Rendering
 
@@ -141,8 +136,7 @@ The McLaren's PSD is 2048×2048, RGB, 8-bit, with 51 layers. The top view sits i
 
 ## The offline bake
 
-- A capture of the five preview views (`kit capture`: 18 geometry and 35 ladder paints, each a sim run with its own reload) takes about 12 minutes, 11–18 s a paint. It keeps 114 MB once decoded.
-- A bake renders the five views in about 5 s (3.5 s with one isotropic sample), after 5 s to load the capture.
+- A capture shoots each paint at the preview views as a sim run with its own reload: 11–18 s a paint.
 - Baked against one preview sim run of the same build, outside a 2 px silhouette band, p95 per view (R/G/B):
 
   | View | calibration fixture | fireproof-v2 | fireproof-v2, isotropic |
@@ -159,12 +153,12 @@ The McLaren's PSD is 2048×2048, RGB, 8-bit, with 51 layers. The top view sits i
 
 ## Fitting from the preview views
 
-From a fit of the McLaren's capture (`kit fit`, 20261020-100748):
+From fits of the McLaren's capture; the last fit's figures are in the kit's `fit-report.json`:
 
-- From the right side view the side panels span 1378 × 260 px. The left side view's, matched texel for mirrored texel, span 1379 × 258 px, to a median 0.9 and p90 2.3 px on 2-texel cells.
+- From the right side view the side panels span 1378 × 260 px, and the left side view's match them texel for mirrored texel to within a few px.
 - At frame 2917 a grass bank hides the left side below about 0.2 of its height (y 660 of 992) from the left side view. The front three-quarter view sees it.
-- The top view's screen gives the side panels' u to a p90 of 0.0025 of the car's length, through an affine map on texture cells both see (4% dropped as outliers).
-  - Parts further from the side camera than its panels (the roof's edge) sit at another scale in the side view's perspective: p90 0.007 and more.
+- The top view's screen gives the side panels' u through an affine map on texture cells both see.
+  - Parts further from the side camera than its panels (the roof's edge) sit at another scale in the side view's perspective, and miss that map by a p90 of 0.007 of the car's length and more.
 - Where the top islands curve down, their texture y isn't one smooth function of the tilted top view's screen. A quadratic misses the roof's edges by up to 0.1 of w (p90 0.045).
 - Maps fitted on the capture put paint a p90 of 1.5–1.6 px from where the preview side views show its car point on the doors. Maps fitted from car-set cameras at the same pose, which frame the car about 40 px higher, miss by 7.5–8.4 px.
 
@@ -174,9 +168,7 @@ From a fit of the McLaren's capture (`kit fit`, 20261020-100748):
 |---|---|
 | Decrypting the car's own `.dat` (376 MB for the McLaren) | about 22% is plain zstd (textures, sound, animation, window meshes); the rest, body mesh included, is encrypted, and decrypting it would be circumvention |
 | TV cameras | a camera's aim depends on the view before, even on the exact frame, so shots don't repeat |
-| Session-time seeks | they drift by up to 12 frames |
 | One colour model for the whole car (output = B + A·h(albedo), A and B from white and black paints per material) | p95 about 20 overall and 36–41 on metallic |
-| Extra camera names in the car set | rejected, and the pointer cleared |
 | Levelling car-locked side shots on the sill | the sill is already level to within its own noise (about 0.5°); a fitted line adds that noise as a tilt, so the two sides disagree by 6–14 px instead of 0.6–1.5 |
 | The customer ID in the replay file's header | it has no fixed offset |
 

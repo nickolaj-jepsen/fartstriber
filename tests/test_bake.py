@@ -1,6 +1,7 @@
 """The bake: rendering a build from a calibration capture, refusing a stale capture, bake check against a
 sim run, and the critic's baked middle rounds."""
 
+import dataclasses
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -13,7 +14,6 @@ from PIL import Image
 from livery import bake, calibrate, config, critic, graycode, state
 from livery import kit as kits
 from livery.config import Workspace
-from livery.kit import Profile
 from livery.raster import tga_bytes
 from tests.conftest import CANVAS, SPEC, checked
 from tests.test_review_critic import verdict
@@ -111,14 +111,17 @@ def test_each_pixel_shows_the_texel_its_uv_names_under_that_texels_material(ws):
     assert (shown[~left] == light[~left]).all()
 
 
-def test_a_footprint_long_along_u_is_averaged_along_u_and_keeps_its_detail_across(ws):
+def test_a_footprint_long_along_u_is_averaged_along_u_and_keeps_its_detail_across(tmp_path):
     rows = np.zeros((CANVAS, CANVAS, 1), np.float32)
     rows[1::2] = 1  # alternate texture rows dark and light
     uv = np.array([[20.5, 10.5], [20.5, 11.5]], np.float32)  # one pixel on a dark row, one on a light
     jac = np.tile(np.array([[4, 0], [0, 1]], np.float32), (2, 1, 1))  # 4 texels along u per pixel, 1 along v
     car = np.ones((1, 2), bool)
-    frame, levels = np.zeros((1, 2, 3), np.uint8), np.array(calibrate.LEVELS, np.float32)
-    view = bake.View("v", car, car, uv, *bake.footprint(jac), frame, levels, {}, bake._fill(car, car))
+    level, conf = np.zeros((2, 2), np.int8), np.ones(2, np.float16)
+    graycode.ViewMap(car, car, uv, jac, level, conf, np.ones(2, bool)).save(tmp_path / "v" / "geometry.npz")
+    np.savez_compressed(tmp_path / "v" / "ladder.npz", levels=np.array(calibrate.LEVELS))
+    Image.new("RGB", (2, 1)).save(tmp_path / "v" / "background.png")
+    view = bake.View.load(tmp_path, "v", {})
     pyr = bake.Pyramid(rows)
 
     assert bake.filtered(view, pyr, aniso=True)[:, 0].tolist() == [0, 1]
@@ -129,7 +132,7 @@ def _moved_frame(ws: Workspace) -> None:
     kit = kits.load(ws, "tiny")
     p = kits.profile(kit)
     assert p.frame is not None
-    kits.write_profile(kit.dir, Profile(p.replay, p.frame + 1, p.preview, p.crops))
+    kits.write_profile(kit.dir, dataclasses.replace(p, frame=p.frame + 1))
 
 
 def _new_spec(ws: Workspace) -> None:
@@ -278,9 +281,9 @@ def test_baked_previews_are_stamped_with_the_build_and_the_capture(ws, cheap_fla
 # The critic's middle rounds.
 
 
-def _baked_design(ws: Workspace) -> None:
+def _baked_design(ws: Workspace) -> dict:
     capture(ws, PASSED)
-    _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
+    return _built(ws, "d", halves((40, 40, 40), (200, 200, 200)), halves(SPEC["gloss"], SPEC["matte"]))
 
 
 def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
@@ -295,7 +298,7 @@ def test_a_baked_round_pack_shows_baked_renders_and_says_so(ws):
     assert sorted(Path(p).stem for p in entry["shots"]) == sorted(ws.policy.preview)
     recorded = critic.record(ws, "d", verdict())
     assert recorded["baked"] is True
-    assert "baked-runs" in recorded["shots"]
+    assert ws.root / recorded["shots"] in bake.runs(ws, "d")
 
 
 def test_baked_renders_are_refused_before_the_capture_passed_bake_check(ws):
@@ -305,11 +308,10 @@ def test_baked_renders_are_refused_before_the_capture_passed_bake_check(ws):
         critic.pack(ws, ["d"], baked=True)
 
 
-def _round_two(ws: Workspace, baked: bool) -> None:
+def _round_two(ws: Workspace, digests: dict, baked: bool) -> None:
     """Round one on sim shots, answered; round two, everything passing, judged on sim shots or baked."""
     from tests.conftest import sim_run
 
-    digests = json.loads((ws.out("d") / "check.json").read_text(encoding="utf-8"))["digests"]
     sim_run(ws, "d", "20260101-000000", digests)
     critic.record(ws, "d", verdict())
     critic.answer(ws, "d", [{"status": "done", "note": "done"}])
@@ -326,9 +328,9 @@ def _round_two(ws: Workspace, baked: bool) -> None:
 
 @pytest.mark.parametrize("baked", [False, True])
 def test_a_round_judged_on_baked_renders_never_ships(ws, baked):
-    _baked_design(ws)
+    digests = _baked_design(ws)["digests"]
 
-    _round_two(ws, baked)
+    _round_two(ws, digests, baked)
 
     got = critic.status(ws, "d")
     assert got["ship"] is not baked

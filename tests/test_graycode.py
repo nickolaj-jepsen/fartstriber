@@ -28,26 +28,30 @@ def field() -> tuple[np.ndarray, np.ndarray]:
     return np.stack([u, v], axis=2), jac
 
 
-def _bilinear(tex: np.ndarray, m: int, u: np.ndarray, v: np.ndarray) -> np.ndarray:
-    n = tex.shape[0]
+def _bilinear(tex: np.ndarray, m: int, u: np.ndarray, v: np.ndarray, corner: np.ndarray) -> np.ndarray:
+    """`tex` is mip m's texels from mip 0's texel `corner` (u, v) on."""
     x, y = u / 2**m - 0.5, v / 2**m - 0.5
     x0, y0 = np.floor(x), np.floor(y)
     fx, fy = (x - x0)[..., None], (y - y0)[..., None]
-    xa, xb = np.clip(x0, 0, n - 1).astype(int), np.clip(x0 + 1, 0, n - 1).astype(int)
-    ya, yb = np.clip(y0, 0, n - 1).astype(int), np.clip(y0 + 1, 0, n - 1).astype(int)
+    x0, y0 = x0 - corner[0] // 2**m, y0 - corner[1] // 2**m
+    xa, xb = np.clip(x0, 0, tex.shape[1] - 1).astype(int), np.clip(x0 + 1, 0, tex.shape[1] - 1).astype(int)
+    ya, yb = np.clip(y0, 0, tex.shape[0] - 1).astype(int), np.clip(y0 + 1, 0, tex.shape[0] - 1).astype(int)
     top = tex[ya, xa] * (1 - fx) + tex[ya, xb] * fx
     return top * (1 - fy) + (tex[yb, xa] * (1 - fx) + tex[yb, xb] * fx) * fy
 
 
 def sample(paint: np.ndarray, uv: np.ndarray, jac: np.ndarray) -> np.ndarray:
     """What a GPU shows: trilinear between mip 0 and mip 1 at the footprint's level of detail."""
-    t0 = paint.astype(np.float32) / 255
+    # Only the texels the field reaches, between even corners so that mip 1 lines up.
+    lo = np.clip((np.floor(uv.min(axis=(0, 1))).astype(int) - 4) // 2 * 2, 0, None)
+    hi = np.clip((np.ceil(uv.max(axis=(0, 1))).astype(int) + 5) // 2 * 2, None, paint.shape[0])
+    t0 = paint[lo[1] : hi[1], lo[0] : hi[0]].astype(np.float32) / 255
     t1 = (t0[0::2, 0::2] + t0[1::2, 0::2] + t0[0::2, 1::2] + t0[1::2, 1::2]) / 4
     lod = np.log2(np.linalg.norm(jac, axis=2).max(axis=2))
     assert ((lod >= 0) & (lod < 1)).all()
     u, v = uv[..., 0], uv[..., 1]
     f = lod[..., None]
-    return _bilinear(t0, 0, u, v) * (1 - f) + _bilinear(t1, 1, u, v) * f
+    return _bilinear(t0, 0, u, v, lo) * (1 - f) + _bilinear(t1, 1, u, v, lo) * f
 
 
 def renderer(seed: int = 0):

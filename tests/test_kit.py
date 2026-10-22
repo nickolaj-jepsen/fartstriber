@@ -97,7 +97,7 @@ def test_residual_grid_takes_out_a_bend_the_quadratic_misses():
     u, v = rng.uniform(0.3, 0.95, 20000), rng.uniform(0, 1, 20000)
     bend = 6 * np.sin(3 * np.pi * u)  # a door-to-haunch body curve, in texture pixels
     target = np.stack([600 + 1500 * u, 1900 - 400 * v + bend], 1)
-    coef, _, _ = _fit_map(u, v, target)
+    coef = _fit_map(u, v, target)[0]
     resid = target - _design(u, v) @ coef
 
     grid = _residual_grid(u, v, resid)

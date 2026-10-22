@@ -7,6 +7,7 @@ from livery.config import Workspace
 from tests.conftest import checked, sim_run
 
 FIX = "the orange band stops short of the tail light"
+TASTE_ROW = critic.taste_ids()[0]  # any row of the owner's taste table
 
 
 def verdict(**change) -> dict:
@@ -39,8 +40,8 @@ def _taste(fail: str, where: str = "") -> list[dict]:
         {"scores": dict.fromkeys(critic.RUBRIC[:-1], 3)},
         {"fixes": [{"text": "a", "optional": False}] * 4},
         {"fixes": ["a plain string"]},
-        {"taste": _taste("boring")[1:]},  # a row left out
-        {"taste": _taste("boring")},  # failing without saying where
+        {"taste": _taste(TASTE_ROW)[1:]},  # a row left out
+        {"taste": _taste(TASTE_ROW)},  # failing without saying where
         {"previous": [{"status": "resolved", "evidence": "side_l.png"}]},  # there was no last round
         {"owner_note": {"status": "resolved", "evidence": "side_l.png"}},  # and no note from the owner
     ],
@@ -51,7 +52,7 @@ def test_malformed_verdicts_are_refused(change):
 
 
 def test_a_failing_taste_row_says_where():
-    critic.validate(verdict(taste=_taste("boring", where="front34: the bumper is one plain field")))
+    critic.validate(verdict(taste=_taste(TASTE_ROW, where="front34: the bumper is one plain field")))
 
 
 @pytest.mark.parametrize(
@@ -77,9 +78,11 @@ def test_concept_ranking_must_cover_every_concept():
         critic.validate_ranking({"ranking": ["a"], "reasons": {"a": "x"}}, ["a", "b"])
 
 
-def _shot(ws: Workspace, name: str) -> None:
-    """A sim run of a checked build."""
-    sim_run(ws, name, "20260101-000000", checked(ws, name)["digests"])
+def _shot(ws: Workspace, name: str) -> dict:
+    """A sim run of a checked build, and that build's check."""
+    check = checked(ws, name)
+    sim_run(ws, name, "20260101-000000", check["digests"])
+    return check
 
 
 def test_the_next_round_sees_earlier_verdicts_and_the_builders_answers(ws):
@@ -97,12 +100,12 @@ def test_the_next_round_sees_earlier_verdicts_and_the_builders_answers(ws):
 
 
 def test_a_verdict_records_what_it_judged(ws):
-    _shot(ws, "d")
+    check = _shot(ws, "d")
     critic.pack(ws, ["d"])
     recorded = critic.record(ws, "d", verdict())
 
     assert recorded["shots"] == ".cache/designs/d/sim/20260101-000000"
-    assert recorded["design_hash"] == json.loads((ws.out("d") / "check.json").read_text())["design_hash"]
+    assert recorded["design_hash"] == check["design_hash"]
     assert recorded["round"] == 1
     assert recorded["rubric"] == critic.rubric_version()
     assert recorded["model"] == critic.critic_model()
@@ -113,7 +116,9 @@ def test_a_verdict_records_what_it_judged(ws):
 def test_verdicts_from_before_v2_are_still_read(ws):
     _shot(ws, "d")
     old = {"at": "2026-10-19 21:45", "scores": {}, "overall": 8, "verdict": "ship", "fixes": ["polish"]}
-    critic._path(ws, "d").write_text(json.dumps(old | {"answers": None}) + "\n", encoding="utf-8")
+    (ws.design_dir("d") / "verdicts.jsonl").write_text(
+        json.dumps(old | {"answers": None}) + "\n", encoding="utf-8"
+    )
 
     assert critic.history(ws, "d")[0]["overall"] == 8
     assert critic.fixes(critic.history(ws, "d")[0]) == [{"text": "polish", "optional": True}]

@@ -20,7 +20,7 @@ Claude Code designs iRacing liveries as Python code. You describe a livery. Agen
 ## Setup
 
 1. Run `uv sync` in the repo.
-2. Copy `livery.example.toml` to `%LOCALAPPDATA%\fartstriber\config.toml`, and fill in your IDs, iRacing folders and preview replay.
+2. Copy `livery.example.toml` to `%LOCALAPPDATA%\fartstriber\config.toml` and put in your values; its comments explain each key, and `uv run livery config show` prints what was read.
 3. In iRacing, open the replay, open the camera tool (Ctrl+F12), and save the track's camera set once.
 4. Run `uv run livery preview cameras <kit> --arm`, then reopen the replay so the sim loads the cameras. On a replay other than the one the kit was framed on, also run `uv run livery sim pick-frame <kit>`.
 5. Run `uv tool install prek`, then `prek install`.
@@ -44,11 +44,11 @@ The repo is one person's studio as well as the tool. Fork it, then replace what 
 
 | What | Do |
 |---|---|
-| Taste | Empty `prefs/log.md` and `prefs/decisions.jsonl` (and `prefs/retro.json` once a retro has run). Replace the yes rows of `references.md`; `livery references fetch` caches their pictures. Start `.claude/skills/livery-design/taste.md` again, or let the retro propose rows |
-| Liveries | Delete `designs/` except the fixtures `calibration` and `sponsor-roster` |
+| Taste | Empty `prefs/`. Replace the yes rows of `references.md`; `livery references fetch` caches their pictures. Start `.claude/skills/livery-design/taste.md` again, or let the retro propose rows |
+| Liveries | Delete the designs in `designs/` except the fixtures, whose `design.py` sets `ROLE = "fixture"` |
 | Brand | Remove `assets/sponsors/fireproof/` and its row in `assets/sponsors/roster.md` (it isn't licensed to you, see NOTICE). Draw your own with the `sponsor-draw` skill. The other sponsors are invented and yours to use |
-| Settings | Your own `config.toml` (setup step 2), with your name as the owner |
-| Cars | The McLaren kit works once its frame is picked on your replay. For another car, `livery kit add` runs from its paint template to your kit review |
+| Settings | Your own `config.toml` (see Setup), with your name as `owner` |
+| Cars | The kits in `kits/` work once Setup is done. For another car, `livery kit add` runs from its paint template to your kit review |
 
 ## Licence
 

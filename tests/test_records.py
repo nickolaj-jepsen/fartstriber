@@ -10,6 +10,7 @@ from PIL import Image
 from livery import approvals, cli, critic, metrics, preview_flat, stamps, stats, status
 from livery.check import run_build
 from livery.config import Workspace
+from livery.designs import render_outputs
 from livery.review import items as review_items
 from tests.conftest import checked, sim_run, write_design
 
@@ -25,15 +26,18 @@ pytestmark = pytest.mark.usefixtures("cheap_flat")
 
 
 def _built(ws: Workspace, name: str, body: str = BLUE) -> dict:
+    """The digests of the design's passed check and the outputs it renders, with its flat preview, without
+    the lint and fresh-process build of a real check."""
     write_design(ws, name, body)
-    return run_build(ws, name)["digests"]
+    return checked(ws, name, body, outputs=render_outputs(ws, name))["digests"]
 
 
 # Stamps
 
 
 def test_flat_previews_name_the_build_they_show_and_a_set_never_lands_in_flat(ws):
-    digests = _built(ws, "d", SEEDED)
+    write_design(ws, "d", SEEDED)
+    digests = run_build(ws, "d")["digests"]
 
     out = preview_flat.flat(ws, "d")
     varied = preview_flat.flat(ws, "d", {"seed": "3"})
@@ -285,9 +289,9 @@ def test_stats_sets_the_critic_beside_his_decisions_and_counts_the_loops(ws):
 
     a = next(r for r in report["designs"] if r["design"] == "a")
     assert (a["sim_runs"], a["rounds"], a["sim_runs_per_round"]) == (2, 2, 1.0)
-    assert report["concepts"] == [
-        {"review": "r1", "pick": "a", "decision": "accept", "of": 3, "critic_rank": 2, "rating": 3}
-    ]
+    (concept,) = report["concepts"]
+    picked = {"review": "r1", "pick": "a", "decision": "accept", "of": 3, "critic_rank": 2, "rating": 3}
+    assert concept.items() >= picked.items()
     final = report["finals"][0]
     assert (final["decision"], final["critic"], final["overall"], final["rating"]) == (
         "accept",

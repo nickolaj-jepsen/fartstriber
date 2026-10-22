@@ -1,6 +1,7 @@
 """A `livery review` waiting in a thread, and the owner's page talking to it."""
 
 import json
+import re
 import socket
 import threading
 import time
@@ -14,6 +15,13 @@ from livery.review import server
 def item(item_id: str, **extra) -> dict:
     kind, _, title = item_id.partition(":")
     return {"id": item_id, "kind": kind, "title": title, "body": "", "images": [], "mix": False, **extra}
+
+
+def announced(message: str) -> str:
+    """The page's address in what a review says once it waits."""
+    found = re.search(r"http://\S+", message)
+    assert found, message
+    return found.group()
 
 
 def free_port() -> int:
@@ -54,7 +62,7 @@ class Review:
         ready = threading.Event()
 
         def told(message: str) -> None:
-            self.url = message.split()[1]
+            self.url = announced(message)
             ready.set()
 
         def run() -> None:

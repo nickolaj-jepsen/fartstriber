@@ -1,5 +1,6 @@
 import math
 import struct
+import tomllib
 from dataclasses import replace
 
 import pytest
@@ -8,7 +9,7 @@ from livery import cameras, config
 from livery import kit as kits
 from livery.config import REPO, Workspace
 from livery.kit import CarSize, Profile, View
-from tests.conftest import write_kit
+from tests.conftest import REPLAY, write_kit
 
 TRACK = "daytona\\2011\\road"
 ORIGIN = (0.0, 0.0, 0.0)
@@ -25,10 +26,11 @@ def test_a_profile_without_poses_is_filled_with_the_defaults(ws):
 
     assert all(v.pose for v in views.values())
     assert {n: kits.profile(kit).preview[n] for n in views} == views
-    moved = View("Side", (0.0, 20.0, 0.5, *views["side_l"].pose[3:]), views["side_l"].aim)
+    name, view = next(iter(views.items()))
+    moved = View(view.group, (0.0, 20.0, 0.5, *view.pose[3:]), view.aim)
     prof = kits.profile(kit)
-    kits.write_profile(kit.dir, replace(prof, preview=prof.preview | {"side_l": moved}))
-    assert cameras.preview_views(kit, ws.policy.preview)["side_l"] == moved  # a pose the profile has is used
+    kits.write_profile(kit.dir, replace(prof, preview=prof.preview | {name: moved}))
+    assert cameras.preview_views(kit, ws.policy.preview)[name] == moved  # a pose the profile has is used
 
 
 def track_camera_set(groups: dict[str, list[tuple[str, int]]]) -> bytes:
@@ -108,11 +110,12 @@ def test_preview_install_and_restore_round_trip_and_never_keep_a_preview_set_as_
 # Poses sized to the car.
 
 
-def test_a_car_as_big_as_the_mclaren_gets_the_mclarens_cameras():
-    mclaren = kits.profile(kits.load(Workspace(), "mclaren-720s-gt3-evo"))
-    size = cameras.car_size(mclaren)
+def test_a_car_nobody_measured_gets_the_cameras_sized_for_the_mclaren(ws):
+    kit = kits.load(ws, "tiny")  # its profile has neither poses nor the car's size
 
-    assert {v: (view.pose, view.aim) for v, view in mclaren.preview.items()} == cameras.preview_poses(size)
+    views = cameras.preview_views(kit, ws.policy.preview)
+
+    assert {v: (view.pose, view.aim) for v, view in views.items()} == {v: cameras.PREVIEW[v] for v in views}
 
 
 def _spans(car: CarSize, pose: tuple[float, ...]) -> tuple[float, float]:
@@ -157,7 +160,7 @@ def test_a_kits_group_names_fit_the_camera_set_and_change_with_the_pose():
 def _kit(ws: Workspace, name: str, views: dict[str, View], track_name: str | None = None) -> kits.Kit:
     d = ws.kits / name
     write_kit(d, {"canvas": 64, "paint_folder": name, "bleed_px": 0})
-    kits.write_profile(d, Profile(4242, 100, views, {}, track_name=track_name))
+    kits.write_profile(d, Profile(replay=REPLAY, frame=100, preview=views, crops={}, track_name=track_name))
     return kits.load(ws, name)
 
 
@@ -182,7 +185,7 @@ def test_adding_a_kits_cameras_keeps_every_other_kits_on_the_track(tmp_path):
     views = cameras.track_views(ws, cfg, cfg.replay.track, names)
     cameras.install_previews(tmp_path, cfg.replay.track, views, sim_running=False)
 
-    assert {k.split()[0] for k in views} == {"a", "b"}
+    assert {v.group for v in views.values()} == {v.group for kit in mine.values() for v in kit.values()}
     for views in mine.values():
         assert cameras.previews_missing(tmp_path, cfg.replay.track, views) == []
     moved = _views("a", names, CarSize(4.0, 1.0))
@@ -221,17 +224,17 @@ def test_arming_waits_for_the_sim_to_close_only_while_camera_ini_must_change(tmp
 
 
 def test_the_kit_commands_write_back_a_profile_as_they_read_it(tmp_path):
-    src = REPO / "kits" / "mclaren-720s-gt3-evo" / kits.PROFILE
-    d = tmp_path / "k"
-    d.mkdir()
-    (d / kits.PROFILE).write_bytes(src.read_bytes())
-    kit = kits.Kit("k", d, 2048, "x", 16, {})
+    mclaren = kits.load(Workspace(), "mclaren-720s-gt3-evo")  # a real profile, with every view posed
+    kit = replace(mclaren, dir=tmp_path)
 
-    kits.write_profile(d, kits.profile(kit))
-    assert (d / kits.PROFILE).read_bytes() == src.read_bytes().replace(b"\r\n", b"\n")
+    kits.write_profile(kit.dir, kits.profile(mclaren))
+    written = (kit.dir / kits.PROFILE).read_bytes()
+    assert tomllib.loads(written.decode()) == tomllib.loads((mclaren.dir / kits.PROFILE).read_text("utf-8"))
+    kits.write_profile(kit.dir, kits.profile(kit))
+    assert (kit.dir / kits.PROFILE).read_bytes() == written
 
     new = replace(kits.profile(kit), frame=None, track_name="some track", car=CarSize(4.6, 1.3))
-    kits.write_profile(d, new)
+    kits.write_profile(kit.dir, new)
     assert kits.profile(kit) == new
     with pytest.raises(kits.KitError):  # a profile without a frame shoots nothing yet
-        new.shot("side_l")
+        new.shot(next(iter(new.preview)))
