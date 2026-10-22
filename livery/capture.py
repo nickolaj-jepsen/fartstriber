@@ -16,6 +16,14 @@ kernel32 = ctypes.windll.kernel32
 dwmapi = ctypes.windll.dwmapi
 EXTENDED_FRAME_BOUNDS = 9  # DWMWA_: the window as the capture sees it, without its invisible resize border
 FRAME_TIMEOUT_S = 5.0
+GWL_STYLE, WS_CAPTION = -16, 0x00C00000
+MONITOR_DEFAULTTONEAREST = 2
+# SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER: a resize in place, behind other windows.
+RESIZE_ONLY = 0x0002 | 0x0004 | 0x0010 | 0x0200
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = (("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT), ("dwFlags", wt.DWORD))
 
 
 class CaptureError(LiveryError, RuntimeError):
@@ -142,12 +150,50 @@ class Window:
         user32.GetClientRect(self.hwnd, ctypes.byref(c))
         return c.right, c.bottom
 
-    def client_box(self, frame_w: int, frame_h: int) -> tuple[int, int, int, int]:
-        """(x0, y0, x1, y1) of the client area in a captured frame, which also holds the title bar and the
-        window border."""
+    def _bounds(self) -> wt.RECT:
+        """The window as it shows on screen, without its invisible resize border."""
         e = wt.RECT()
         if dwmapi.DwmGetWindowAttribute(self.hwnd, EXTENDED_FRAME_BOUNDS, ctypes.byref(e), ctypes.sizeof(e)):
             user32.GetWindowRect(self.hwnd, ctypes.byref(e))
+        return e
+
+    def unsizable(self) -> str | None:
+        """Why the window can't be resized with a resize alone, or None. A maximised window would need a
+        restore, which takes focus; a fullscreen one has no frame to size. A window may grow past its monitor
+        and the desktop: the sim renders and the capture sees all of it (docs/sim.md)."""
+        if user32.IsIconic(self.hwnd):
+            return "it is minimised"
+        if user32.IsZoomed(self.hwnd):
+            return "it is maximised"
+        if not user32.GetWindowLongW(self.hwnd, GWL_STYLE) & WS_CAPTION:
+            return "it is fullscreen"
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        user32.GetMonitorInfoW(
+            user32.MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST), ctypes.byref(info)
+        )
+        m, e = info.rcMonitor, self._bounds()
+        if (e.left, e.top, e.right, e.bottom) == (m.left, m.top, m.right, m.bottom):
+            return "it is fullscreen"
+        return None
+
+    def set_client_size(self, width: int, height: int) -> None:
+        """Resize the window, where it is, to this client size: never moved, raised, activated or restored.
+        The frame's size is read from the window rather than worked out from its style."""
+        for _ in range(2):
+            w, h = self.client_size()
+            if (w, h) == (width, height):
+                return
+            r = wt.RECT()
+            user32.GetWindowRect(self.hwnd, ctypes.byref(r))
+            user32.SetWindowPos(
+                self.hwnd, 0, 0, 0, r.right - r.left + width - w, r.bottom - r.top + height - h, RESIZE_ONLY
+            )
+
+    def client_box(self, frame_w: int, frame_h: int) -> tuple[int, int, int, int]:
+        """(x0, y0, x1, y1) of the client area in a captured frame, which also holds the title bar and the
+        window border."""
+        e = self._bounds()
         w, h = self.client_size()
         p = wt.POINT(0, 0)
         user32.ClientToScreen(self.hwnd, ctypes.byref(p))

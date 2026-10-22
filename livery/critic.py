@@ -5,10 +5,12 @@ legacy concept ranking. `pack_compare` puts this round's shots beside the last r
 and `pack_pairs` puts concepts side by side two at a time in both orders, because a judge compares far
 more reliably than it scores and favours whichever comes first. A pack shows only shots of the checked
 build: sim shots, or with `baked` renders from the kit's calibration capture once it passed bake check
-(livery.bake), for the autonomous middle rounds; a round judged on baked renders never ships. The `record*`
+(livery.bake). A round judged on baked renders ships only where they stand in for sim shots: the check
+covered every finish the build uses, and the capture and renderer are still the checked ones. The `record*`
 functions validate the critic's JSON and append it to the design's verdicts.jsonl (a concept ranking to
-each concept's), the one verdict store; `status` computes ship from those records, so ship is never the
-critic's own word. `answer` stores the builder's reply to each fix, which the next round's pack shows the
+each concept's), the one verdict store; `status` computes from those records whether the owner's asks are met
+(`ready`, where a refinement goes back to them) and whether the critic's whole bar is (`ship`), so neither is
+the critic's own word. `answer` stores the builder's reply to each fix, which the next round's pack shows the
 next critic.
 """
 
@@ -24,7 +26,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from livery import config, hashing, references, stamps
+from livery import config, hashing, references, stamps, taste
 from livery import kit as kits
 from livery.config import Workspace
 from livery.designs import kit_name, script
@@ -54,6 +56,7 @@ ANCHOR_PICTURES = 4  # per favourite row: some showroom pages carry ten
 FLAT = ("views.png", "car.png", "squint.png")  # what concept pairs are judged on, before any sim run
 PAIR = "__"  # joins a pair's names, A first: the pack folder and its verdict file are A__B
 PROVENANCE = ("design_hash", "shots", "rubric", "model", "baked")
+TITLE_WORDS = 12  # a suggestion's title is a headline: about eight words, refused past this
 
 
 class BadVerdict(LiveryError, ValueError):
@@ -106,37 +109,46 @@ def _write(ws: Workspace, name: str, recs: list[dict]) -> None:
 
 
 def fixes(round_: dict) -> list[dict]:
-    """A round's fixes as {text, optional}. Before v2 they were plain strings, and only what a ship
-    verdict left was polish."""
-    return [
-        f if isinstance(f, dict) else {"text": f, "optional": round_.get("verdict") == "ship"}
-        for f in round_.get("fixes", [])
-    ]
+    """A round's fixes, each with `text`, the whole suggestion on one line. A suggestion is {title, detail,
+    where, optional}; before it, a fix was {text, optional}, and before v2 a plain string, when only what a
+    ship verdict left was polish."""
+    out = []
+    for f in round_.get("fixes", []):
+        if not isinstance(f, dict):
+            f = {"text": f, "optional": round_.get("verdict") == "ship"}
+        elif f.get("title"):
+            where = f" ({f['where']})" if f.get("where") else ""
+            f = f | {"text": f"{f['title']}{where}: {f['detail']}" if f.get("detail") else f["title"] + where}
+        out.append(f)
+    return out
+
+
+def fix_title(fix: dict) -> str:
+    """A fix as a status line names it: a suggestion's title, an older fix's text."""
+    return fix.get("title") or fix["text"]
 
 
 def owner_note(ws: Workspace, name: str) -> dict | None:
-    """The owner's latest note on the design in the decision ledger, which every round judges like a fix."""
+    """The owner's latest note on the design in the decision ledger, which every round judges like a fix,
+    with the critic suggestions they endorsed in it and their pins, which every round judges too."""
     from livery.review.apply import latest_note
 
     line = latest_note(ws, name)
-    return {k: line.get(k) for k in ("note", "decision", "at")} if line else None
+    if not line:
+        return None
+    note = {k: line.get(k) for k in ("note", "decision", "at")}
+    return note | {k: line[k] for k in ("endorsed", "pins") if line.get(k)}
 
 
-def _judged_by(ws: Workspace | None) -> tuple[Path, Path, Path]:
-    """The rubric, the taste table (which designers read too) and the critic's own definition."""
+def _judged_by(ws: Workspace | None) -> tuple[Path, Path]:
+    """The rubric (which designers read too) and the critic's own definition."""
     agents = (ws or Workspace()).agents
-    skill = agents / "skills" / "livery-design"
-    return skill / "rubric.md", skill / "taste.md", agents / "agents" / "livery-critic.md"
+    return agents / "skills" / "livery-design" / "rubric.md", agents / "agents" / "livery-critic.md"
 
 
 def taste_ids(ws: Workspace | None = None) -> list[str]:
-    """The id in the first cell of each row of the taste table."""
-    ids = []
-    for line in _judged_by(ws)[1].read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^\|\s*`?([a-z0-9][a-z0-9-]*)`?\s*\|", line)
-        if m and m[1] != "id":
-            ids.append(m[1])
-    return ids
+    """The live rows of the owner's taste table."""
+    return taste.ids(ws or Workspace())
 
 
 def rubric_version(ws: Workspace | None = None) -> str:
@@ -144,12 +156,13 @@ def rubric_version(ws: Workspace | None = None) -> str:
     h = hashlib.sha256()
     for p in _judged_by(ws):
         h.update(p.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    h.update(taste.markdown(ws or Workspace()).encode())
     return h.hexdigest()[:16]
 
 
 def critic_model(ws: Workspace | None = None) -> str | None:
     """The model the critic's definition pins, so verdicts from different judges are told apart."""
-    text = _judged_by(ws)[2].read_text(encoding="utf-8")
+    text = _judged_by(ws)[1].read_text(encoding="utf-8")
     m = re.search(r"^model:\s*(\S+)\s*$", text.split("---")[1], re.M)
     return m[1] if m else None
 
@@ -194,7 +207,21 @@ def _baked(ws: Workspace, name: str, built: Path, stored: dict) -> Path:
     if stamps.digests(outputs) != {k: stored["digests"].get(k) for k in stamps.SHOWN}:
         raise StaleShots(f"{name}'s TGAs aren't the checked build's; run livery build {name}")
     kit = kits.load(ws, kit_name(script(ws, name)))
-    return bake.critic_run(config.load(), ws, name, kit, outputs)
+    return bake.baked_run(config.load(), ws, name, kit, outputs)
+
+
+def _baked_why(ws: Workspace, name: str, shots: str | None) -> list[str]:
+    """Why the baked run a round judged can't stand in for sim shots; empty when it can."""
+    from livery import bake
+
+    run = ws.root / shots if shots else None
+    if run is None or not run.is_dir():
+        return [f"its baked run {shots} is gone"]
+    try:
+        kit = kits.load(ws, kit_name(script(ws, name)))
+    except LiveryError as e:
+        return [str(e)]
+    return bake.run_usable(config.load(), ws, kit, run)
 
 
 def _previous_run(ws: Workspace, name: str, current: Path) -> Path:
@@ -304,10 +331,11 @@ def _common(ws: Workspace, folder: Path, mode: str) -> dict:
     """The rubric, the taste table, the references and the owner's preference log, copied in, and the
     owner's name: a manifest points only at files inside its pack."""
     manifest: dict = {"mode": mode, "owner": config.owner()}
-    rubric, taste, _ = _judged_by(ws)
+    rubric, _ = _judged_by(ws)
+    (folder / "taste.md").write_text(taste.markdown(ws), encoding="utf-8", newline="\n")
+    manifest["taste"] = "taste.md"
     for key, src, dest in (
         ("rubric", rubric, "rubric.md"),
-        ("taste", taste, "taste.md"),
         ("references", ws.references, "references.md"),
         ("prefs", ws.prefs / "log.md", "prefs-log.md"),
     ):
@@ -397,7 +425,34 @@ def _favourites(ws: Workspace, name: str, folder: Path, d: Path, warn: Callable[
 
 def _images(entry: dict) -> list[str]:
     paths = [*entry["shots"], *entry["distance"], *entry["crops"].values(), entry.get("squint")]
+    paths += [p.get(k) for p in entry.get("pins", []) for k in ("then", "now")]
     return [Path(p).name for p in paths if p]
+
+
+def _pins(pins: list[dict], run: Path, flat: Path, folder: Path, d: Path) -> list[dict]:
+    """Each of the owner's pins as the pack shows it: its view, note and the elements under it, the crop
+    they pinned (`then`) and the same box on this round's picture of that view (`now`)."""
+    from livery import state
+    from livery.review import pins as review_pins
+
+    out = []
+    for n, pin in enumerate(pins, 1):
+        entry = {"view": pin["view"], "note": pin["note"], "over": pin.get("elements") or []}
+        then = state.root() / pin["crop"] if pin.get("crop") else None
+        if then is not None and then.is_file():
+            shutil.copy2(then, d / f"pin-{n}-then.png")
+            entry["then"] = f"{d.relative_to(folder).as_posix()}/pin-{n}-then.png"
+        view = pin["view"]
+        src = (
+            flat / view.removeprefix(review_pins.FLAT)
+            if view.startswith(review_pins.FLAT)
+            else run / f"{view}.png"
+        )
+        if src.is_file():
+            review_pins.crop(src, pin["box"]).save(d / f"pin-{n}-now.png")
+            entry["now"] = f"{d.relative_to(folder).as_posix()}/pin-{n}-now.png"
+        out.append(entry)
+    return out
 
 
 def pack(
@@ -444,10 +499,14 @@ def pack(
             entry["history"] = f"{name}/history.json"
             entry["previous_fixes"] = [f["text"] for f in fixes(rounds[name][-1])]
         note = owner_note(ws, name) if mode == "round" else None
+        flat = preview_flat.fresh(ws, name, shots[name][1])
         if note:
-            (d / "owner-note.json").write_text(json.dumps(note, indent=1), encoding="utf-8", newline="\n")
+            shown = dict(note)
+            if note.get("pins"):
+                shown["pins"] = entry["pins"] = _pins(note["pins"], runs[name], flat, folder, d)
+            (d / "owner-note.json").write_text(json.dumps(shown, indent=1), encoding="utf-8", newline="\n")
             entry["owner_note"] = f"{name}/owner-note.json"
-        squint = preview_flat.fresh(ws, name, shots[name][1]) / "squint.png"
+        squint = flat / "squint.png"
         shutil.copy2(squint, d / "squint.png")
         entry["squint"] = f"{name}/squint.png"
         if anchors := _favourites(ws, name, folder, d, warn):
@@ -561,9 +620,10 @@ def validate(
     note: dict | None = None,
 ) -> dict:
     """A round verdict. `previous` marks each fix of the `last` round resolved, partly or not, naming the
-    pack image that shows it, and `owner_note` the owner's `note` the same way; `taste` passes or fails
-    every taste row; scores 1-5 and overall 1-10 are logged only; at most three fixes, each optional or
-    not; the call is iterate or rework."""
+    pack image that shows it, `owner_note` the owner's `note` the same way, `endorsed` each critic
+    suggestion that note endorsed and `pins` each of its pins; `taste` passes or fails every taste row; scores 1-5 and overall 1-10 are
+    logged only; fixes are suggestions {title, detail, where, optional}, the most important first, as many
+    as it takes; the call is iterate or rework."""
     before = fixes(last) if last else []
     previous = verdict.get("previous", [])
     if not isinstance(previous, list) or len(previous) != len(before):
@@ -572,12 +632,27 @@ def validate(
         _resolution(p, "each previous entry", images)
         p["fix"] = f["text"]
     judged = verdict.get("owner_note")
-    if note is None and judged is not None:
+    said = note is not None and _text(note.get("note"))
+    if not said and judged is not None:
         raise BadVerdict("owner_note must be null: the pack carries no note from the owner")
-    if note is not None:
+    if note is not None and said:
         verdict["owner_note"] = (
             _resolution(judged, "owner_note, for the owner's note in the pack,", images) | note
         )
+    asked, at = (note.get("endorsed") or [], note.get("at")) if note else ([], None)
+    endorsed = verdict.get("endorsed", [])
+    if not isinstance(endorsed, list) or len(endorsed) != len(asked):
+        raise BadVerdict(
+            f"endorsed needs one entry per critic suggestion the owner endorsed, in order: {len(asked)}"
+        )
+    for e, s in zip(endorsed, asked, strict=True):
+        _resolution(e, "each endorsed entry", images).update(suggestion=s, at=at)
+    pinned = (note.get("pins") or []) if note else []
+    judged_pins = verdict.get("pins", [])
+    if not isinstance(judged_pins, list) or len(judged_pins) != len(pinned):
+        raise BadVerdict(f"pins needs one entry per pin of the owner's note, in order: {len(pinned)}")
+    for j, p in zip(judged_pins, pinned, strict=True):
+        _resolution(j, "each pins entry", images).update(view=p["view"], note=p["note"], at=at)
     ids = taste_ids() if taste is None else taste
     rows = verdict.get("taste")
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
@@ -601,12 +676,19 @@ def validate(
     if verdict.get("verdict") not in CALLS:
         raise BadVerdict(f"verdict is the critic's call, one of {CALLS}; ship is computed")
     fx = verdict.get("fixes", [])
-    if not isinstance(fx, list) or len(fx) > 3:
-        raise BadVerdict("fixes must be a list of up to 3")
-    if not all(
-        isinstance(f, dict) and _text(f.get("text")) and isinstance(f.get("optional"), bool) for f in fx
-    ):
-        raise BadVerdict("each fix is {text, optional}")
+    if not isinstance(fx, list):
+        raise BadVerdict("fixes must be a list, the most important first")
+    for f in fx:
+        if not (
+            isinstance(f, dict)
+            and _text(f.get("title"))
+            and isinstance(f.get("detail"), str)
+            and isinstance(f.get("where"), str)
+            and isinstance(f.get("optional"), bool)
+        ):
+            raise BadVerdict("each fix is {title, detail, where, optional}")
+        if len(f["title"].split()) > TITLE_WORDS:
+            raise BadVerdict(f"a fix's title is a headline of about eight words: {f['title']!r}")
     for key in ("lint_missed", "blocked"):
         _strings(verdict, key)
     return verdict
@@ -624,7 +706,7 @@ def record(ws: Workspace, name: str, verdict: dict) -> dict:
     key = _recall(ws, name, "round")
     images = set(key["images"]) if key else None
     note = key.get("owner_note") if key else owner_note(ws, name)
-    validate(verdict, rounds[-1] if rounds else None, key["taste"] if key else None, images, note)
+    validate(verdict, rounds[-1] if rounds else None, key["taste"] if key else taste_ids(ws), images, note)
     runs = _runs(ws, name)
     prov = {k: key.get(k) for k in PROVENANCE} if key else _provenance(ws, name, runs[-1] if runs else None)
     entry = {
@@ -714,52 +796,100 @@ def record_adversary(ws: Workspace, name: str, verdict: dict) -> dict:
     return entry
 
 
+def _owner_holds(ws: Workspace, name: str, last: dict) -> list[str]:
+    """What keeps the last round from going back to the owner: it was judged on baked renders that can't
+    stand in for sim shots, the design changed since, their latest note, a pin of it or a suggestion they
+    endorsed isn't judged resolved, something is blocked, or a taste row fails."""
+    holds = []
+    if last.get("baked"):
+        holds += [
+            f"judged on baked renders that can't stand in for sim shots ({w}): the round that ships is judged "
+            f"on sim shots (livery preview sim {name}, then livery critic pack {name})"
+            for w in _baked_why(ws, name, last.get("shots"))
+        ]
+    now = _hash_now(ws, name)
+    if now and last.get("design_hash") and now != last["design_hash"]:
+        holds.append("the design changed since the last round")
+    owner = config.owner()
+    if note := owner_note(ws, name):
+        judged = last.get("owner_note") or {}
+        if _text(note["note"]) and judged.get("at") != note["at"]:
+            holds.append(f"no round has judged {owner}'s latest note yet: {note['note']}")
+        elif _text(note["note"]) and judged.get("status") != "resolved":
+            holds.append(f"{owner}'s note is {judged['status']} resolved: {note['note']}")
+        asked = note.get("endorsed") or []
+        done = [e for e in last.get("endorsed") or [] if e.get("at") == note["at"]]
+        if asked and len(done) != len(asked):
+            holds.append(f"no round has judged the critic's suggestions {owner} endorsed yet")
+        holds += [
+            f"a suggestion {owner} endorsed is {e['status']} resolved: {e['suggestion']}"
+            for e in done
+            if len(done) == len(asked) and e["status"] != "resolved"
+        ]
+        pinned = note.get("pins") or []
+        seen = [p for p in last.get("pins") or [] if p.get("at") == note["at"]]
+        if pinned and len(seen) != len(pinned):
+            holds.append(f"no round has judged {owner}'s pins yet")
+        holds += [
+            f"{owner}'s pin on {p['view']} is {p['status']} resolved: {p['note']}"
+            for p in seen
+            if len(seen) == len(pinned) and p["status"] != "resolved"
+        ]
+    holds += [f"blocked, for {owner}: {b}" for b in last.get("blocked", [])]
+    passed = {t["id"] for t in last["taste"] if t["pass"]}
+    holds += [f"taste row fails or wasn't checked: {i}" for i in taste_ids(ws) if i not in passed]
+    return holds
+
+
 def status(ws: Workspace, name: str) -> dict:
-    """Ship, computed from the records: the last round was judged on sim shots, not baked renders; it
-    leaves no open fix that isn't optional (its own, or one of the round before it didn't resolve), nothing
-    blocked and no failing taste row; it judged the owner's latest note resolved; it is not worse than the
-    round before; and the adversary's top finding on the same shots is optional. Otherwise the critic's call
+    """Where the design stands, computed from the records.
+
+    `ready`: the last round goes back to the owner. It was judged on sim shots, or on baked renders that
+    stand in for them (`livery.bake.run_usable`); it judged their latest note, each of its pins and every
+    critic suggestion they endorsed resolved; nothing is blocked and every taste row passes. `holds` says what keeps it from
+    that. The critic's own fixes never hold it back.
+
+    `ship`: the critic's whole bar, on top of ready: no open fix that isn't optional (its own, or one of the
+    round before it didn't resolve), not worse than the round before, and the adversary's top finding on
+    the same shots optional. `why` lists every reason it doesn't, `holds` first. Otherwise the critic's call
     stands."""
     recs = records(ws, name)
     rounds = [r for r in recs if _kind(r) == "round"]
     results = [r["result"] for r in recs if _kind(r) == "compare"]
-    out: dict = {"design": name, "round": len(rounds), "ship": False, "call": None, "why": [], "baked": False}
+    out: dict = {
+        "design": name,
+        "round": len(rounds),
+        "ready": False,
+        "holds": [],
+        "ship": False,
+        "call": None,
+        "why": [],
+        "baked": False,
+    }
     out["plateau"] = results[-2:] == ["same", "same"]
     why: list[str] = out["why"]
     if not rounds:
+        out["holds"] = ["no round verdict yet"]
         why.append("no round verdict yet")
         return out
     last = rounds[-1]
     out["call"] = last.get("verdict")
     if last.get("version") != 2:
+        out["holds"] = ["the last round predates critic v2; run a round"]
         why.append("the last round predates critic v2; run a round")
         return out
-    if last.get("baked"):
-        out["baked"] = True
-        why.append(
-            f"judged on baked renders: the round that ships is judged on sim shots (livery preview sim {name},"
-            f" then livery critic pack {name})"
-        )
-    now = _hash_now(ws, name)
-    if now and last.get("design_hash") and now != last["design_hash"]:
-        why.append("the design changed since the last round")
-    why += [f"open fix: {f['text']}" for f in fixes(last) if not f["optional"]]
+    out["baked"] = bool(last.get("baked"))
+    out["holds"] = holds = _owner_holds(ws, name, last)
+    out["ready"] = not holds
+    why += holds
+    why += [f"open fix: {fix_title(f)}" for f in fixes(last) if not f["optional"]]
     if len(rounds) > 1:
         earlier = zip(last["previous"], fixes(rounds[-2]), strict=True)
         why += [
-            f"not resolved: {f['text']}"
+            f"not resolved: {fix_title(f)}"
             for p, f in earlier
             if p["status"] != "resolved" and not f["optional"]
         ]
-    if note := owner_note(ws, name):
-        judged = last.get("owner_note") or {}
-        if judged.get("at") != note["at"]:
-            why.append(f"no round has judged {config.owner()}'s latest note yet: {note['note']}")
-        elif judged.get("status") != "resolved":
-            why.append(f"{config.owner()}'s note is {judged['status']} resolved: {note['note']}")
-    why += [f"blocked, for {config.owner()}: {b}" for b in last.get("blocked", [])]
-    passed = {t["id"] for t in last["taste"] if t["pass"]}
-    why += [f"taste row fails or wasn't checked: {i}" for i in taste_ids(ws) if i not in passed]
     compares = [r for r in recs if _kind(r) == "compare" and r.get("shots") == last.get("shots")]
     if len(rounds) > 1 and not compares:
         why.append(f"no compare with the last round (livery critic pack {name} --compare)")

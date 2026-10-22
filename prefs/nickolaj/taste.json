@@ -1,0 +1,206 @@
+{
+ "rows": [
+  {
+   "id": "boring",
+   "words": [
+    {
+     "quote": "they are just too boring",
+     "at": "2026-10-18",
+     "design": "fireproof-sweep and -blocks"
+    },
+    {
+     "quote": "the design is a bit boring",
+     "at": "2026-10-18T21:16:18+02:00",
+     "design": "eva-unit01",
+     "of": "20261018-211718/concept:eva-unit01"
+    },
+    {
+     "quote": "Better, but still a bit boring",
+     "at": "2026-10-19T07:46:02+02:00",
+     "design": "eva-nerv",
+     "of": "20261019-074628/concept:eva-nerv"
+    }
+   ],
+   "look_for": "Every view has a second layer at 10 m (tones of a field's hue, pinlines, a dissolve, stripe bundles, linework), not only the big shape. No plain field larger than a door on a side, or than the bonnet on top. No view plainer than the brief's favourites, none as plain as the boring anchors.",
+   "where": "Every shot and its distance image, beside the favourite and boring anchors",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "front-as-back",
+   "words": [
+    {
+     "quote": "The back design is nice, but the front is a bit boring",
+     "at": "2026-10-19T17:22:37+02:00",
+     "design": "fireproof-v2",
+     "of": "20261019-172240/final:fireproof-v2"
+    },
+    {
+     "quote": "I like the pixel design a lot, but it's totally missing from the front",
+     "at": "2026-10-19T21:02:13+02:00",
+     "design": "fireproof-v2",
+     "of": "20261019-210219/final:fireproof-v2"
+    }
+   ],
+   "look_for": "The front carries the same system as the sides and tail, as layered: bonnet, bumper, splitter and front fenders, not a plain field or another idea.",
+   "where": "front34, top (bonnet), nose crop, against rear34",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "stroke-between-colours",
+   "words": [
+    {
+     "quote": "it would look a lot better if there where some kind of \"stroke\" between the colors?",
+     "at": "2026-10-19T07:45:42+02:00",
+     "design": "eva-unit01",
+     "of": "20261019-074628/concept:eva-unit01"
+    }
+   ],
+   "look_for": "Where two fields meet, the edge is an event (a pinline, a dissolve, a raked cut) all along it, even in width, and visible in the shots, not lost to thinness or low contrast.",
+   "where": "side_l, side_r, beltline and nose crops",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "type-designed",
+   "words": [
+    {
+     "quote": "The side text is a bit boring",
+     "at": "2026-10-19T21:00:37+02:00",
+     "design": "eva-unit01",
+     "of": "20261019-210040/final:eva-unit01"
+    },
+    {
+     "quote": "Here the alignment/spacing on the text is off",
+     "at": "2026-10-19T21:01:21+02:00",
+     "design": "eva-nerv",
+     "of": "20261019-210123/final:eva-nerv"
+    }
+   ],
+   "look_for": "One type system per field: a designation with small lines aligned to it, a shared left edge or baseline, even line gaps, padding and tracking, one display face used decisively. Not a stack of labels.",
+   "where": "Full side shots, top, every crop with text",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "ai-vibe-letters",
+   "words": [
+    {
+     "quote": "There's a weird \"ai generated/diffusion model\" vibe to these",
+     "at": "2026-10-19T19:36:42+02:00",
+     "design": "altmere",
+     "of": "20261019-193738/sponsor:altmere"
+    },
+    {
+     "quote": "again, a bit AI like",
+     "at": "2026-10-19T19:37:23+02:00",
+     "design": "ostrand",
+     "of": "20261019-193738/sponsor:ostrand"
+    }
+   ],
+   "look_for": "Letters and marks keep a font's own forms or clean geometry. Fails on soft or melted joins, rounded-off corners, filled counters, or letters that change width or weight from one to the next.",
+   "where": "Full shots and crops, every wordmark and line of text",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "brand-every-view",
+   "words": [
+    {
+     "quote": "just remove the wordmark (or keep it smaller/more descrete), it's not imporant for my own personal brand",
+     "at": "2026-10-19",
+     "design": "fireproof-v2"
+    }
+   ],
+   "look_for": "The brief decides. Where the brief asks for a lead brand, it reads from the side, from the front (bonnet or nose) and from behind (rear deck or bumper). A brief that asks for none, or for it small, passes when the car follows it.",
+   "where": "side_l, side_r, front34, rear34, top",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "nothing-cut",
+   "words": [
+    {
+     "quote": "reads as 'YO-3'",
+     "design": "eva-nerv"
+    },
+    {
+     "quote": "reads 'PE-01' under the sim's light panel",
+     "design": "eva-unit01"
+    },
+    {
+     "quote": "a sill sponsor shows as fragments under the side blade",
+     "design": "fireproof-v2"
+    }
+   ],
+   "look_for": "No text, mark or number is cut, bent or hidden by a wheel arch, the side blade, a crease, a shut line, the sim's light panel or its number. Every word reads whole wherever it shows.",
+   "where": "Full side shots, front34, rear34, crops",
+   "status": "live",
+   "by": "agent",
+   "source": "critic"
+  },
+  {
+   "id": "seam-slant-step",
+   "words": [
+    {
+     "quote": "Theres a wierd \"slant\" to the side-line",
+     "at": "2026-10-18T20:02:24+02:00",
+     "design": "fireproof-stripes",
+     "of": "20261018-200230/final:fireproof-stripes"
+    },
+    {
+     "quote": "the black horizontal line is still not perfectly algined",
+     "at": "2026-10-18T20:28:42+02:00",
+     "design": "the kit",
+     "of": "20261018-202845/kit:mclaren-720s-gt3-evo"
+    },
+    {
+     "quote": "see the differences on the wheel arches",
+     "at": "2026-10-18",
+     "design": "the kit"
+    }
+   ],
+   "look_for": "A line drawn straight runs straight and level: no slant, step or doubling at a seam or shut line, the same height either side of an arch and on both sides. A failure is a kit fault: it goes under `blocked`, for the owner, not into a fix.",
+   "where": "side_l, side_r, beltline crop, top",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "stray-lines",
+   "words": [
+    {
+     "quote": "there are more lines on the bonnet that then texture seems to apply",
+     "at": "2026-10-18T18:58:09+02:00",
+     "design": "fireproof-stripes",
+     "of": "20261018-185813/concept:fireproof-stripes"
+    }
+   ],
+   "look_for": "No line the design doesn't draw: no light hairlines along seams or panel edges, no base colour showing at a shut line or round lights and vents. A failure is a renderer or kit fault: under `blocked`.",
+   "where": "Nose crop, front34, top",
+   "status": "live",
+   "by": "agent"
+  },
+  {
+   "id": "shape-language",
+   "words": [
+    {
+     "quote": "The line across the top is a bit to straight compare to the more \"natural\" curves found elsewhere in the design",
+     "at": "2026-10-21T19:24:42+02:00",
+     "design": "zentiq-e",
+     "of": "20261021-192513/concept:zentiq-e"
+    },
+    {
+     "quote": "The side pod \"sponser square\" looks very rectangular/boxy when seen directly from the side",
+     "at": "2026-10-21T21:56:28+02:00",
+     "design": "zentiq-b",
+     "of": "20261021-215633/final:zentiq-b"
+    }
+   ],
+   "look_for": "Every element, sponsor plates and fields included, takes the proportions and edges of the design's own shapes. Fails on one element that reads as a bare primitive beside the rest: a ruler-straight run in a design of curves, or a plain hard-edged box where the shapes round it are stretched, stepped or interleaved. A rectangle on a car of rectangles still fails when it is the one plain box.",
+   "where": "side_l, side_r and top, square-on",
+   "status": "live",
+   "by": "agent"
+  }
+ ]
+}

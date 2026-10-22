@@ -123,16 +123,31 @@ def load(ws: Workspace, car: str) -> Layers | None:
     return layers
 
 
-def render(paint: np.ndarray, layers: Layers, background=BACKGROUND) -> Image.Image:
-    """The paint (top-left origin RGB) on the car under the preview light, over a flat background."""
+def _uv_px(layers: Layers, tw: int, th: int) -> tuple[np.ndarray, np.ndarray]:
+    """The texture pixel (x, y) each UV sub-pixel samples, (2h, 2w) each."""
     uvm = layers.uv.astype(np.int64)
     has = uvm.any(-1)
     # Body edges the UV map misses take the nearest mapped sub-pixel, not the red base.
     iy, ix = ndimage.distance_transform_edt(~has, return_distances=False, return_indices=True)
     uvm = uvm[iy, ix]
-    th, tw = paint.shape[:2]
     x = np.clip((((uvm[..., 1] << 8) | uvm[..., 2]) * tw) >> 16, 0, tw - 1)
     y = np.clip((((uvm[..., 3] << 8) | uvm[..., 0]) * th) >> 16, 0, th - 1)
+    return x, y
+
+
+def texels(layers: Layers, canvas: int) -> np.ndarray:
+    """Per pixel of `render`, the template pixel it shows as (x, y), from its first UV sub-pixel; -1 off the
+    body."""
+    x, y = _uv_px(layers, canvas, canvas)
+    out = np.stack([x[::2, ::2], y[::2, ::2]], -1).astype(np.int32)
+    out[~layers.body] = -1
+    return out
+
+
+def render(paint: np.ndarray, layers: Layers, background=BACKGROUND) -> Image.Image:
+    """The paint (top-left origin RGB) on the car under the preview light, over a flat background."""
+    th, tw = paint.shape[:2]
+    x, y = _uv_px(layers, tw, th)
     lin = (paint.astype(np.float32) / 255) ** 2.2
     h, w = layers.body.shape
     # Four UV sub-pixels per frame pixel: average in linear light.

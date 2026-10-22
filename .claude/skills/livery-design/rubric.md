@@ -1,6 +1,6 @@
 # Livery rubric
 
-Shared by designers and the livery-critic, with the taste table (`taste.md`). Judge what the sim shots show, not what the script intends.
+Shared by designers and the livery-critic, with the taste table (`livery taste show`). Judge what the sim shots show, not what the script intends.
 
 ## Items, each scored 1–5
 
@@ -22,7 +22,7 @@ Shared by designers and the livery-critic, with the taste table (`taste.md`). Ju
 
 The scores and the overall are logged to follow a design over time; they decide nothing. 8 or more reads instantly at distance, rewards a closer look and has only polish left; 6–7 is a good or competent concept with fixes left; 5 or less fails as a concept.
 
-Ship is computed by `livery critic status`, never chosen: no open fix that isn't optional, every row of `taste.md` passing, the round not worse than the last one in the pairwise compare, and an adversary critic whose top finding is optional. On a round that doesn't ship, the critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
+`livery critic status` computes, never chooses, both bars. **Ready**, where a refinement goes back to the owner: their note, each of its pins and every critic suggestion they endorsed judged resolved, every row of the taste table passing, nothing blocked. **Ship**, the critic's whole bar on top: no open fix that isn't optional, the round not worse than the last one in the pairwise compare, and an adversary critic whose top finding is optional. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
 
 ## Fixes
 

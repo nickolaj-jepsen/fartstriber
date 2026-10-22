@@ -1,9 +1,10 @@
 """One sim run. Every command that drives the sim or writes its paint folder goes through a `SimSession`.
 
 Entering takes the sim lock, puts back the paint of a run that died, waits until the sim is ready (the
-preview replay, the kit's car, the camera groups) and behind other windows, and notes the camera and replay
-state. Leaving, on errors too, puts the paint back, reloads so the sim shows it, puts the camera, UI and
-replay back as they were, writes the run's manifest and releases the lock. While it runs, every broadcast and
+preview replay, the kit's car, the camera groups) and behind other windows, gives its window the run's client
+size if it is a normal window that fits, and notes the camera and replay state. Leaving, on errors too, puts
+the paint back, reloads so the sim shows it, puts the camera, UI, replay and window size back as they were,
+writes the run's manifest and releases the lock. While it runs, every broadcast and
 every frame first checks that the sim is still behind other windows: once the owner brings it forward, the
 run stops rather than drive it under their hands.
 """
@@ -84,7 +85,8 @@ class SimSession:
     `sim` says what the run needs: "replay" waits for `replay` (the user's preview replay unless given) with
     the kit's car and `groups`; "any-replay" for any replay with them; "optional" uses any session with the
     kit's car if one is open and behind other windows (else `sim` is None and `unavailable` says why); "none"
-    only takes the lock and puts back a dead run's paint.
+    only takes the lock and puts back a dead run's paint. A run that shoots names `window`, the client size
+    every frame must have (policy.toml); one that only reloads leaves it None.
     """
 
     def __init__(
@@ -97,6 +99,7 @@ class SimSession:
         groups_fix: str = PREVIEW_GROUPS_FIX,
         sim: Literal["replay", "any-replay", "optional", "none"] = "replay",
         replay: Replay | None = None,
+        window: tuple[int, int] | None = None,
         log: Callable[[str], object] = print,
         lock_timeout: float = 1800,
         ready_timeout: float | None = None,
@@ -105,6 +108,7 @@ class SimSession:
         self.cfg, self.what, self.paint_folder, self.mode, self.log = cfg, what, paint_folder, sim, log
         self.replay = replay or cfg.replay
         self.groups, self.groups_fix = sorted(set(groups)), groups_fix
+        self.size = window
         self.lock_timeout = lock_timeout
         self.ready_timeout = READY_WAIT_S if ready_timeout is None else ready_timeout
         self.out: Path | None = None  # where the manifest goes; set it once the sim is ours
@@ -125,6 +129,7 @@ class SimSession:
         self._snapshot: dict | None = None
         self._groups: dict[str, int] = {}
         self._size: tuple[int, int] | None = None
+        self._resized: tuple[Any, tuple[int, int]] | None = None  # the window this run resized, and its size
         self._touched = False  # sent a camera, replay or UI broadcast
         self._differs = False  # wrote paint other than what the folder held
         self._pending = False  # paint written since the last reload differs from what the sim shows
@@ -165,7 +170,10 @@ class SimSession:
                 self._connect()
             self.timings["connect"] = time.perf_counter() - t
         except BaseException:
-            self._close()
+            problems: list[str] = []
+            self._close(problems)
+            for p in problems:
+                self.log(p)
             raise
         return self
 
@@ -201,6 +209,26 @@ class SimSession:
             return f"the agent-started sim is closing: {c[0]}"
         if self.window.in_front() and not self._front_ok():
             return "in front"
+        if self.size is not None and (now := self.window.client_size()) != self.size:
+            return self._resize(now, self.size)
+        return None
+
+    def _resize(self, now: tuple[int, int], size: tuple[int, int]) -> str | None:
+        """Give the sim window the run's client size, once a run, and only while it is a normal window behind
+        other windows; else what keeps it from that size."""
+        want = f"{size[0]}x{size[1]}"
+        wrong = f"the sim window is {now[0]}x{now[1]}; previews need {want}"
+        why = self.window.unsizable()
+        if why is not None:
+            return f"{wrong}, and it can't be resized: {why}"
+        if self._resized is not None:
+            return f"{wrong}, and it didn't take that size"
+        self._resized = (self.window, now)
+        self.window.set_client_size(*size)
+        if self.window.client_size() != size:
+            return f"{wrong}, and it didn't take that size"
+        self.log(f"set the sim window to {want} for the run; it goes back to {now[0]}x{now[1]} after it")
+        self.manifest["resized_from"] = list(now)
         return None
 
     def _rules(self) -> simrule.Launch | None:
@@ -342,6 +370,8 @@ class SimSession:
         self._guard()  # the sim may have come forward while the frame was on its way
         size = (img.shape[1], img.shape[0])
         if self._size is None:
+            if self.size is not None and size != self.size:
+                raise CaptureError(f"the sim's frames are {size}, not the run's {self.size}; stopping")
             self._size = size
             self.manifest["window"] = list(size)
         elif size != self._size:
@@ -555,9 +585,34 @@ class SimSession:
         if (now["speed"], now["slow"]) != (snap["speed"], snap["slow"]):
             sim.play(snap["speed"], snap["slow"])
 
-    def _close(self, problems: list[str] | None = None) -> None:
+    def _put_size_back(self, problems: list[str]) -> None:
+        """The window the size it had, unless the owner has it in front or resized it since."""
+        if self._resized is None:
+            return
+        win, size = self._resized
+        was = f"{size[0]}x{size[1]}"
         try:
-            self.manifest["problems"] = problems or []
+            if win.client_size() != self.size:
+                return
+            if win.in_front():
+                problems.append(
+                    f"the sim is in front, so its window was left at the run's size; it was {was}"
+                )
+                return
+            why = win.unsizable()
+            if why is not None:
+                problems.append(f"the sim window was left at the run's size, since {why}; it was {was}")
+                return
+            win.set_client_size(*size)
+            if win.client_size() != size:
+                problems.append(f"the sim window didn't go back to {was}")
+        except Exception as e:
+            problems.append(f"couldn't put the sim window back to {was}: {e}")
+
+    def _close(self, problems: list[str]) -> None:
+        try:
+            self._put_size_back(problems)
+            self.manifest["problems"] = problems
             self.manifest["timings"] = {
                 k: None if v is None else round(v, 3) for k, v in self.timings.items()
             }
@@ -649,7 +704,15 @@ def status(cfg: Config, ws: Workspace, preflight: bool = False) -> list[str]:
     else:
         where = "minimised" if w.minimised() else "in front" if w.in_front() else "behind other windows"
         cursor = ", the cursor over it (the sim draws its replay UI there)" if w.cursor_over() else ""
-        lines.append(f"window: {where}{cursor}")
+        (cw, ch), (pw, ph) = w.client_size(), ws.policy.window
+        if (cw, ch) == (pw, ph):
+            size = f"{cw}x{ch}"
+        else:
+            why = w.unsizable()
+            size = (
+                f"{cw}x{ch}, not the {pw}x{ph} runs shoot at ({why or 'a run resizes it and puts it back'})"
+            )
+        lines.append(f"window: {where}, {size}{cursor}")
     return lines + launch_status(cfg, preflight)
 
 

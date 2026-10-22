@@ -43,6 +43,16 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
 
     Sides are drawn as seen (left side nose left, right side nose right), the top from above, nose left.
     """
+    tx = view_texels(kit, view, width)
+    out = np.empty((*tx.shape[:2], 3), np.uint8)
+    out[:] = BACKGROUND
+    on = tx[..., 0] >= 0
+    out[on] = paint[tx[on][:, 1], tx[on][:, 0]]
+    return Image.fromarray(out)
+
+
+def view_texels(kit: Kit, view: str, width: int = VIEW_WIDTH) -> np.ndarray:
+    """Per pixel of `car_view`, the template pixel it shows as (x, y); -1 where it shows no paint."""
     islands = np.asarray(Image.open(kit.dir / "overlays" / "islands.png"))
     if view == "top":
         t = carspace.kit_data(kit)["top_transform"]
@@ -53,8 +63,7 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
         height = int(width * carspace.side_aspect(kit))
         u, v = np.meshgrid(np.linspace(0, 1, width), np.linspace(1, 0, height))
         pts = np.stack([u.ravel(), v.ravel()], 1)
-    out = np.zeros((len(pts), 3), np.uint8)
-    out[:] = BACKGROUND
+    out = np.full((len(pts), 2), -1, np.int32)
     done = np.zeros(len(pts), bool)
     for pc in carspace.pieces(kit, view):
         todo = ~done
@@ -67,22 +76,40 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
         y = np.clip(np.rint(xy[:, 1]).astype(int), 0, kit.canvas - 1)
         hit = shapely.contains_xy(pc.area, xy[:, 0], xy[:, 1]) & (islands[y, x] > 0)
         idx = np.nonzero(todo)[0][hit]
-        out[idx] = paint[y[hit], x[hit]]
+        out[idx] = np.stack([x[hit], y[hit]], 1)
         done[idx] = True
-    img = Image.fromarray(out.reshape(height, width, 3))
-    return img.transpose(Image.FLIP_LEFT_RIGHT) if view == "side_r" else img
+    out = out.reshape(height, width, 2)
+    return out[:, ::-1] if view == "side_r" else out
+
+
+FLAT_VIEWS = ("side_l", "top", "side_r")
+PAD = 12
+
+
+def _stacked(parts: list[np.ndarray], fill) -> np.ndarray:
+    """Views stacked as views.png lays them out, PAD apart and around."""
+    width = parts[0].shape[1]
+    sheet = np.empty(
+        (sum(p.shape[0] for p in parts) + PAD * 4, width + 2 * PAD, parts[0].shape[2]), parts[0].dtype
+    )
+    sheet[:] = fill
+    y = PAD
+    for p in parts:
+        sheet[y : y + p.shape[0], PAD : PAD + width] = p
+        y += p.shape[0] + PAD
+    return sheet
 
 
 def views(paint: np.ndarray, kit: Kit, width: int = VIEW_WIDTH) -> Image.Image:
     """Left side, top, right side, stacked."""
-    parts = [car_view(paint, kit, v, width) for v in ("side_l", "top", "side_r")]
-    pad = 12
-    sheet = Image.new("RGB", (width + 2 * pad, sum(p.height for p in parts) + pad * 4), BACKGROUND)
-    y = pad
-    for p in parts:
-        sheet.paste(p, (pad, y))
-        y += p.height + pad
-    return sheet
+    return Image.fromarray(
+        _stacked([np.asarray(car_view(paint, kit, v, width)) for v in FLAT_VIEWS], BACKGROUND)
+    )
+
+
+def views_texels(kit: Kit, width: int = VIEW_WIDTH) -> np.ndarray:
+    """Per pixel of `views` (views.png), the template pixel it shows as (x, y); -1 where it shows no paint."""
+    return _stacked([view_texels(kit, v, width) for v in FLAT_VIEWS], -1)
 
 
 def car(ws: Workspace, paint: np.ndarray, kit: Kit) -> Image.Image | None:
@@ -160,7 +187,7 @@ def baked(
     from livery import bake
 
     b = with_bake or _bake(ws, kit)
-    stamp = stamps.make(ws, name, outputs, sets) | bake.stamp(b)
+    stamp = stamps.make(ws, name, outputs, sets) | bake.stamp(b, outputs)
     return bake.write_views(b, b.render_tgas(outputs), stamps.baked_dir(ws, name, sets), stamp)
 
 

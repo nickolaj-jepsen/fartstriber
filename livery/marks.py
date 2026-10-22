@@ -48,18 +48,22 @@ def variant_for(view: str, toward: str | None) -> str:
     return "right" if toward == reads else "left"
 
 
-def review_items(root: Path | None = None, out: Path = CACHE / "marks") -> list[dict]:
+def review_items(
+    root: Path | None = None, out: Path = CACHE / "marks", only: list[str] | None = None
+) -> list[dict]:
     """Each drawn marking with a variant not yet approved, as a review sheet: what `livery review --marks`
-    shows."""
+    shows. With `only` (the Library's Review again), those markings as they stand."""
     from livery.lint.run import thresholds
 
     root = root or MARKS
     min_stroke = thresholds().min_stroke_px
     items = []
     for toml in sorted(root.glob("*/brand.toml")):
+        if only and toml.parent.name not in only:
+            continue
         mark = load(toml.parent.name, root)
         pending = [n for n, v in mark.variants.items() if not v.approved]
-        if not pending:
+        if not pending and not only:
             continue
         sheet = sponsors.sheet(mark, out / mark.id / "sheet.png", min_stroke)
         draw = mark.dir / "draw.py"
@@ -70,9 +74,10 @@ def review_items(root: Path | None = None, out: Path = CACHE / "marks") -> list[
                 "id": f"mark:{mark.id}",
                 "kind": "mark",
                 "title": f"Race marking: {mark.id}",
-                "body": f"{about}\n\nTo approve: {', '.join(pending)}. Reject leaves it unapproved.",
+                "body": f"{about}\n\n"
+                + (f"To approve: {', '.join(pending)}. " if pending else "Approved. ")
+                + "No leaves it unapproved, to be redrawn.",
                 "images": [_rel(sheet)],
-                "mix": False,
             }
         )
     return items
