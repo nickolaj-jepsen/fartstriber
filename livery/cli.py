@@ -694,7 +694,7 @@ def sim_pick_frame(
 
 @sim_app.command("login")
 def sim_login(as_json: AsJson = False) -> None:
-    """Sign in to iRacing in a throwaway browser profile and keep the session for `sim open`.
+    """Sign in to iRacing in a throwaway browser profile and keep the session, for the sims agents start.
 
     Opens your own Chrome or Edge (none is bundled) on the iRacing sign-in page, in a fresh profile that is
     removed afterwards: you type your password into iRacing's real page, never into the tool. When you are
@@ -831,6 +831,8 @@ def config_show(as_json: AsJson = False) -> None:
     for key, value in settings.items():
         if isinstance(value, dict):
             text += [f"{key}.{k}: {v}" for k, v in value.items()]
+        elif key == "launch" and value is None:
+            text.append("launch: off (no [sim] table: agents don't start the sim)")
         else:
             text.append(f"{key}: {value}")
     _emit(as_json, settings, text)
