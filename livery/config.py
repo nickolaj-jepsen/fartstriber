@@ -45,6 +45,13 @@ class Policy:
     preview: tuple[str, ...]  # the views `livery preview sim` shoots, in order; the kit's profile frames each
     window: tuple[int, int]  # the sim window's client size every sim run shoots at
     renderer: dict  # graphics settings every sim run needs, by section of the sim's renderer ini
+    calibrate: tuple[str, ...] = ()  # views the kit's calibration capture adds, which previews don't shoot
+
+    @property
+    def cameras(self) -> tuple[str, ...]:
+        """Every view a kit gets a camera for, framed, captured and fitted from: the previews', then the
+        calibration's."""
+        return (*self.preview, *(v for v in self.calibrate if v not in self.preview))
 
 
 @dataclass(frozen=True)
@@ -125,6 +132,7 @@ def _policy(path: Path, _mtime: int) -> Policy:
     return Policy(
         lint=dict(_get(raw, "lint", path)),
         preview=tuple(_get(raw, "preview.views", path)),
+        calibrate=tuple(raw.get("preview", {}).get("calibrate", ())),
         window=(int(w), int(h)),
         renderer={s: {k: str(v) for k, v in keys.items()} for s, keys in raw.get("renderer", {}).items()},
     )

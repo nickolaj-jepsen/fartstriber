@@ -271,7 +271,7 @@ def body_overlay(kit: Kit, ws: Workspace, width: int = 1800) -> list[Path]:
 def calibration_shots(ws: Workspace, kit: Kit) -> dict[str, Shot]:
     """The preview shots, which the designs are judged in; the side views see each side square-on, where a
     step across a seam shows best."""
-    return kits.profile(kit).shots(ws.policy.preview)
+    return kits.profile(kit).shots(ws.policy.cameras)
 
 
 def calibration_build(ws: Workspace, kit: Kit) -> dict[str, bytes]:

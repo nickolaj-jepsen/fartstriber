@@ -67,7 +67,7 @@ def skeleton(cfg: Config, ws: Workspace, kit: Kit, log=print) -> kits.Profile:
         sub, track = _identity(cfg, found)
         log(f"framing {kit.name} on the open replay (subsession {found[0]} at {found[1]})")
     poses = cameras.preview_poses()
-    names = list(ws.policy.preview)
+    names = list(ws.policy.cameras)
     missing = [n for n in names if n not in poses]
     if missing:
         raise kits.KitError(f"there is no default camera for the preview view {', '.join(missing)}")
@@ -95,10 +95,10 @@ def install_cameras(cfg: Config, ws: Workspace, kit: Kit, log=print) -> bool:
     """Every kit's preview cameras into the track set of this kit's replay, if it doesn't hold this kit's as
     posed. Returns whether it wrote them, so the replay needs reopening."""
     track = kits.track_of(kits.profile(kit), cfg)
-    mine = cameras.preview_views(kit, ws.policy.preview)
+    mine = cameras.preview_views(kit, ws.policy.cameras)
     if not cameras.previews_missing(cfg.documents, track, mine):
         return False
-    views = cameras.track_views(ws, cfg, track, ws.policy.preview)
+    views = cameras.track_views(ws, cfg, track, ws.policy.cameras)
     running = cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log)
     for note in cameras.install_previews(cfg.documents, track, views, running):
         log(note)

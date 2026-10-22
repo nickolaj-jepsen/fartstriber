@@ -2,6 +2,7 @@
 a fence in front of some cameras on some frames, and the car drawn at the size its cameras give it."""
 
 import math
+import re
 from dataclasses import replace
 
 import irsdk
@@ -129,7 +130,7 @@ def tiny(ws):
     """The tiny kit with a group per preview view, framed on no frame yet."""
     kit = load(ws, "tiny")
     prof = kits.profile(kit)
-    views = {v: kits.View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
+    views = {v: kits.View("Top" if v == "top" else "Side", ()) for v in ws.policy.cameras}
     kits.write_profile(kit.dir, replace(prof, frame=None, preview=views))
     return kit
 
@@ -165,7 +166,7 @@ def with_group(lap: Lap, tiny, view: str, group: str) -> None:
 
 
 def test_a_close_up_that_shows_part_of_the_car_still_gets_a_frame(lap, ws, tiny):
-    close = next(iter(kits.CLOSE_VIEWS & set(ws.policy.preview)))
+    close = next(iter(kits.CLOSE_VIEWS & set(ws.policy.cameras)))
     with_group(lap, tiny, close, "Close")
     lap.shares["Close"] = 1.4  # the car runs off every side
 
@@ -176,7 +177,7 @@ def test_a_close_up_that_shows_part_of_the_car_still_gets_a_frame(lap, ws, tiny)
 
 
 def test_a_view_in_another_light_gets_the_clear_frame_that_lights_it_most(lap, ws, tiny):
-    lit = next(iter(pick_frame.LIT & set(ws.policy.preview)))
+    lit = next(iter(pick_frame.LIT & set(ws.policy.cameras)))
     with_group(lap, tiny, lit, "Lit")
     lap.shade.append(("Lit", STRAIGHTS[0]))
 
@@ -223,7 +224,7 @@ def test_a_frame_on_another_replay_records_that_replay_and_its_track(lap, ws, ti
 
 def test_with_no_clear_frame_nothing_is_written(lap, ws, tiny):
     lap.fences += [("Top", range(TOTAL // 2)), ("Side", range(TOTAL // 2, TOTAL))]
-    cameras.preview_views(tiny, ws.policy.preview)  # the default poses, which any camera command fills in
+    cameras.preview_views(tiny, ws.policy.cameras)  # the default poses, which any camera command fills in
     before = (tiny.dir / kits.PROFILE).read_text()
 
     with pytest.raises(pick_frame.NoClearFrame):
@@ -235,7 +236,7 @@ def test_with_no_clear_frame_nothing_is_written(lap, ws, tiny):
 
 def test_a_smaller_car_gets_nearer_cameras_that_frame_it_as_the_mclarens_frame_it(lap, ws, tiny):
     lap.share = 0.6
-    was = cameras.preview_views(tiny, ws.policy.preview)
+    was = cameras.preview_views(tiny, ws.policy.cameras)
 
     report = pick_frame.pick(lap.cfg, ws, tiny, log=lap.logs.append)
 
@@ -252,7 +253,7 @@ def test_a_smaller_car_gets_nearer_cameras_that_frame_it_as_the_mclarens_frame_i
 
 def test_a_car_that_runs_off_the_frame_gets_cameras_farther_out(lap, ws, tiny):
     lap.share = 0.99
-    was = cameras.preview_views(tiny, ws.policy.preview)
+    was = cameras.preview_views(tiny, ws.policy.cameras)
 
     pick_frame.pick(lap.cfg, ws, tiny, log=lap.logs.append)
 
@@ -260,7 +261,7 @@ def test_a_car_that_runs_off_the_frame_gets_cameras_farther_out(lap, ws, tiny):
     assert prof.frame is None
     assert all(
         math.dist(prof.preview[v].pose[:3], ORIGIN) > math.dist(was[v].pose[:3], ORIGIN)
-        for v in ws.policy.preview
+        for v in ws.policy.cameras
     )
 
 
@@ -270,13 +271,17 @@ def test_the_check_passes_when_every_view_repeats_whatever_came_before(lap, ws, 
     report = pick_frame.check(lap.cfg, ws, tiny, log=lap.logs.append)
 
     assert report["passed"]
-    assert set(report["views"]) == set(ws.policy.preview)
+    assert set(report["views"]) == set(ws.policy.cameras)
     assert "reload_texture" not in {name for name, _ in lap.sent}  # it paints nothing
 
 
 def test_the_check_fails_when_a_view_depends_on_the_one_before(lap, ws, tiny):
     kits.write_profile(tiny.dir, replace(kits.profile(tiny), frame=700))
     lap.order_matters = True
+    # The previews alone, top last: shot first on the way back, it follows itself there.
+    text = ws.policy_file.read_text(encoding="utf-8")
+    ws.policy_file.write_text(re.sub(r"(?m)^calibrate = .*$", "calibrate = []", text), encoding="utf-8")
+    assert ws.policy.cameras[-1] == "top"
 
     report = pick_frame.check(lap.cfg, ws, tiny, log=lap.logs.append)
 

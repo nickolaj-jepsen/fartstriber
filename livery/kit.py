@@ -45,7 +45,7 @@ PROFILE = "profile.toml"
 APPROVAL = "approved.json"
 REVIEW = "review.yaml"
 # Preview views that show part of the car, close up: the frame pick judges them clear, not whole.
-CLOSE_VIEWS = frozenset({"door_close", "nose_close"})
+CLOSE_VIEWS = frozenset({"door_close", "nose_close", "front_low", "rear_low"})
 # Preview views whose car reaches into the replay UI's bands: their UI check watches the cursor instead.
 FILLED_VIEWS = CLOSE_VIEWS | {"front", "rear_chase"}
 FIT_REPORT = "fit-report.json"

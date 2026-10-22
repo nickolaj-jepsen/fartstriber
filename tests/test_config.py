@@ -119,3 +119,15 @@ def test_without_old_settings_the_first_run_says_where_they_go(tmp_path):
     with pytest.raises(config.ConfigError):
         config.migrate(tmp_path / "new" / "config.toml", tmp_path)
     assert not (tmp_path / "new" / "config.toml").exists()
+
+
+def test_calibration_views_get_cameras_but_previews_shoot_only_their_own(tmp_path):
+    p = tmp_path / "policy.toml"
+    p.write_text(
+        '[lint]\n[preview]\nviews = ["a", "b"]\ncalibrate = ["c", "b"]\nwindow = [16, 9]\n', encoding="utf-8"
+    )
+
+    policy = config.policy(p)
+
+    assert policy.preview == ("a", "b")
+    assert policy.cameras == ("a", "b", "c")  # each view once, the previews' first

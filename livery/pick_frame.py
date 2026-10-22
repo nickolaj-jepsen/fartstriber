@@ -375,7 +375,7 @@ def _half(img: np.ndarray) -> Image.Image:
 def pick(cfg: Config, ws: Workspace, kit: Kit, log=print, write: bool = True) -> dict:
     """Scan the open replay, shoot the candidates, and write the chosen frame (or resized cameras) into the
     kit's profile unless `write` is False. Returns the report, also saved as report.json in the run folder."""
-    names = list(ws.policy.preview)
+    names = list(ws.policy.cameras)
     views = cameras.preview_views(kit, names)
     prof = kits.profile(kit)
     groups = {v.group for v in views.values()}
@@ -516,7 +516,7 @@ def differing(a: np.ndarray, b: np.ndarray) -> float:
 def check(cfg: Config, ws: Workspace, kit: Kit, log=print) -> dict:
     """Shoot every preview group at the profile's frame in the policy's order and then the other way round,
     and compare each view's two shots. Paints nothing."""
-    names = list(ws.policy.preview)
+    names = list(ws.policy.cameras)
     views = cameras.preview_views(kit, names)
     prof = kits.profile(kit)
     replay = kits.require_replay(prof, cfg, kit)

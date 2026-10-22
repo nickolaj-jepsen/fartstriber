@@ -22,7 +22,7 @@ def two(tmp_path):
     """The two-island kit, framed on the fixture replay."""
     ws = two_islands(tmp_path)
     kit = kits.load(ws, "two")
-    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
+    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.cameras}
     kits.write_profile(kit.dir, Profile(REPLAY, 100, preview, {}))
     return ws, kit
 
@@ -60,7 +60,7 @@ def test_kit_review_shoots_the_calibration_built_for_the_kit(two, sim):
     out = shoot_calibration(sim.cfg, kit, ws, log=sim.logs.append)
 
     assert {p.name for p in out.glob("calibration_*.png")} == {
-        f"calibration_{v}.png" for v in ws.policy.preview
+        f"calibration_{v}.png" for v in ws.policy.cameras
     }
     built = calibration_build(ws, kit)
     manifest = json.loads((out / "manifest.json").read_text())

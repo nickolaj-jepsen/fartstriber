@@ -91,7 +91,7 @@ def ws(tmp_path) -> Workspace:
     policy = tmp_path / "policy.toml"
     write_policy(policy, SIM_WINDOW)
     ws = Workspace(root=tmp_path, assets=REPO / "assets", policy_file=policy)
-    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.preview}
+    preview = {v: View("Top" if v == "top" else "Side", ()) for v in ws.policy.cameras}
     kits.write_profile(kit, Profile(REPLAY, 100, preview, {}))
     kits.approve(kit, "Tester", "")
     write_taste(ws)

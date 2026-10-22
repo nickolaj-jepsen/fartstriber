@@ -17,6 +17,7 @@ The tables are cached per capture in the machine state dir, beside the captures 
 
 import hashlib
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,12 +146,13 @@ def islands(kit: Kit, scale: int) -> np.ndarray:
     return np.asarray(Image.fromarray(ids).resize((size, size), Image.Resampling.NEAREST)).astype(np.int32)
 
 
-def table(kit: Kit, scale: int) -> Visibility | None:
-    """The kit's tables from its current capture, cached in the state dir; None if it has no capture."""
+def table(kit: Kit, scale: int, shown: Sequence[str] | None = None) -> Visibility | None:
+    """The kit's tables from its current capture, cached in the state dir; None if it has no capture. With
+    `shown`, only those views count: what previews show, not what only calibrates the kit."""
     run = capture_dir(kit.name)
     if run is None:
         return None
-    views = capture_views(run)
+    views = [v for v in capture_views(run) if shown is None or v in shown]
     if not views:
         return None
     ids = islands(kit, scale)

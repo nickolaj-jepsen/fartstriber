@@ -488,7 +488,7 @@ def preview_cameras(
     else:
         if reset:
             cameras.reset_views(kit.load(ws, car), reset)
-        views = cameras.track_views(ws, cfg, track, ws.policy.preview)
+        views = cameras.track_views(ws, cfg, track, ws.policy.cameras)
         running = (
             cameras.armed(cfg.documents, track, lambda: sim_running(cfg), log) if arm else sim_running(cfg)
         )

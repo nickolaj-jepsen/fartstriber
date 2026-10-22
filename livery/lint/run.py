@@ -52,7 +52,7 @@ def lint_design(
         livery, kit = built or build_livery(ws, name, sets)
         outputs = outputs or rasterise(livery, kit, ws)
         paint = np.asarray(Image.open(io.BytesIO(outputs["paint.png"])).convert("RGB"))
-        vis = visibility.table(kit, LINT_SCALE)
+        vis = visibility.table(kit, LINT_SCALE, ws.policy.preview)
         found = lint_output(livery, kit, ws, paint, thresholds(ws.policy_file), vis)
         for f in found:
             if f.level != "waived":

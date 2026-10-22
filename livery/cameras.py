@@ -32,6 +32,7 @@ D = 25.0  # metres out: far enough that perspective is mild, near enough for the
 Z = 0.5  # metres above the car's origin: about the middle of its side
 AIM = 0.27  # field 9 that centres the side views
 FOV = 0.2
+FOV34 = 0.19  # the three-quarter views: at 0.24 the car spanned 1200 of 1920 px, the softest views
 TILT = math.radians(5)  # aimed straight down the roll is free, and the car turns with its heading on track
 GROUP_NAME = NAME_LEN - len("Cam") - 1  # its camera, "Cam<group>", ends inside the record's name block
 
@@ -68,7 +69,7 @@ def _around(az_deg: float, el_deg: float, fov: float, d: float, z: float) -> tup
 def preview_poses(size: CarSize = REF) -> dict[str, tuple[tuple[float, ...], float]]:
     """view: ((x, y, z, yaw, pitch, fov), aim). The sides look square-on at each side, aimed to centre the
     car. The top view leans to the right, so the car lies along the screen, nose right; front34 is low from the front
-    left, rear34 high from the rear right."""
+    left, rear34 high from the rear right, and front34_r and rear34_l mirror them."""
     d, z, aim = _rig(size)
     s, up = scale(size), size.height / REF.height
     return {
@@ -78,8 +79,10 @@ def preview_poses(size: CarSize = REF) -> dict[str, tuple[tuple[float, ...], flo
             (0.0, -d * math.sin(TILT), z + d * math.cos(TILT), math.pi / 2, math.pi / 2 - TILT, FOV),
             0.0,
         ),
-        "front34": (_around(40, 8, 0.24, d, z), 0.0),
-        "rear34": (_around(-140, 30, 0.24, d, z), 0.0),
+        "front34": (_around(40, 8, FOV34, d, z), 0.0),
+        "rear34": (_around(-140, 30, FOV34, d, z), 0.0),
+        "front34_r": (_around(-40, 8, FOV34, d, z), 0.0),
+        "rear34_l": (_around(140, 30, FOV34, d, z), 0.0),
         "side_high": (_around(90, 25, 0.188, d, z), 0.1227 * up),
         "side_r_lit": ((0.0, -d, z, math.pi / 2, 0.0, FOV), aim),
         **{name: (_scaled(pose, s), a * up) for name, (pose, a) in NEAR.items()},
@@ -98,6 +101,10 @@ NEAR = {
     # value (-1.4 and -2.49 framed alike), so the camera's place centres the bonnet; straight ahead it framed
     # the nose face as `front` does.
     "nose_close": ((4.0, 0.0, 1.9, -math.pi, 0.444, 0.75), -1.4),
+    # Low, straight at the faces: ahead at bumper height for the splitter and intakes, behind under the
+    # wing's line for the rear deck lip it hides from rear_chase (the aim lifts the view about 2°).
+    "front_low": ((6.3, 0.0, -0.05, -math.pi, 0.0, 0.50), 0.0),
+    "rear_low": ((-6.3, 0.0, 0.18, 0.0, 0.0, 0.46), 0.62),
 }
 
 
