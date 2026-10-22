@@ -99,69 +99,6 @@
       "severity": "error"
     },
     {
-      "column": 47,
-      "path": "livery/kit_fit.py",
-      "name": "bad-argument-count",
-      "concise_description": "Expected 3 positional arguments, got 4 in function `_residual_grid`",
-      "severity": "error"
-    },
-    {
-      "column": 22,
-      "path": "livery/kit_fit.py",
-      "name": "bad-assignment",
-      "concise_description": "`dict[str, dict[str, list[float] | Any]]` is not assignable to dict key `islands` with type `float`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "livery/kit_fit.py",
-      "name": "bad-assignment",
-      "concise_description": "`dict[Any | Unknown, dict[Unknown, Unknown]]` is not assignable to dict key `sides` with type `float`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "livery/kit_measure.py",
-      "name": "unsupported-operation",
-      "concise_description": "`&=` is not supported between `None` and `ndarray[tuple[Any, ...], dtype[numpy.bool]]`",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "livery/kit_measure.py",
-      "name": "unsupported-operation",
-      "concise_description": "`|=` is not supported between `None` and `ndarray[tuple[Any, ...], dtype[signedinteger]]`",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "livery/kit_measure.py",
-      "name": "no-matching-overload",
-      "concise_description": "No matching overload found for function `numpy._core.fromnumeric.nonzero` called with arguments: (ndarray | Unknown | None)",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "livery/kit_measure.py",
-      "name": "unsupported-operation",
-      "concise_description": "`None` is not subscriptable",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "livery/kit_measure.py",
-      "name": "unsupported-operation",
-      "concise_description": "`None` is not subscriptable",
-      "severity": "error"
-    },
-    {
-      "column": 71,
-      "path": "livery/kit_measure.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `shape`",
-      "severity": "error"
-    },
-    {
       "column": 49,
       "path": "livery/kit_review.py",
       "name": "no-matching-overload",
@@ -173,13 +110,6 @@
       "path": "livery/lint/output.py",
       "name": "missing-attribute",
       "concise_description": "No attribute `BOX` in module `PIL.Image`",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "livery/lint/output.py",
-      "name": "missing-attribute",
-      "concise_description": "No attribute `NEAREST` in module `PIL.Image`",
       "severity": "error"
     },
     {
@@ -264,20 +194,6 @@
       "path": "livery/raster.py",
       "name": "not-iterable",
       "concise_description": "Type `None` is not iterable",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "livery/review/items.py",
-      "name": "bad-assignment",
-      "concise_description": "`dict[Unknown, Unknown]` is not assignable to dict key `pin` with type `bool | list[str] | str`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "livery/review/server.py",
-      "name": "bad-override",
-      "concise_description": "Class member `Handler.log_message` overrides parent class `BaseHTTPRequestHandler` in an inconsistent manner",
       "severity": "error"
     },
     {
@@ -383,20 +299,6 @@
       "path": "tests/test_fonts.py",
       "name": "bad-specialization",
       "concise_description": "`str | None` is not assignable to upper bound `SupportsDunderGT[Any] | SupportsDunderLT[Any]` of type variable `SupportsRichComparisonT`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "tests/test_kit.py",
-      "name": "unsupported-operation",
-      "concise_description": "`+=` is not supported between `str` and `Literal[12]`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "tests/test_lint.py",
-      "name": "not-iterable",
-      "concise_description": "Type `None` is not iterable",
       "severity": "error"
     },
     {
@@ -684,13 +586,6 @@
       "path": "tests/test_ui_preview.py",
       "name": "bad-argument-type",
       "concise_description": "Argument `Layers | None` is not assignable to parameter `layers` with type `Layers` in function `livery.ui_preview.render`",
-      "severity": "error"
-    },
-    {
-      "column": 10,
-      "path": "tests/test_ui_preview.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `uv`",
       "severity": "error"
     },
     {

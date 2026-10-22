@@ -18,5 +18,5 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pyrefly check  # fails only on errors not in pyrefly-baseline.json
+      - run: uv run pyrefly check --error-stale-baseline  # new errors fail, and so do fixed ones still in the baseline: it only shrinks
       - run: uv run pytest -q
