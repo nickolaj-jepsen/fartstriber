@@ -390,16 +390,23 @@ def track_views(ws: Workspace, cfg: Config, track: str, names: Sequence[str]) ->
     return out
 
 
-def armed(docs: Path, track: str, running: Callable[[], bool], log=print, poll_s: float = 1.0) -> bool:
+def armed(
+    docs: Path,
+    track: str,
+    running: Callable[[], bool],
+    log=print,
+    poll_s: float = 1.0,
+    close: Callable[[], bool] = lambda: False,
+) -> bool:
     """Whether the sim runs, once it may: camera.ini changes only while the sim is closed (it rewrites the file
-    when it exits), so while it would have to, this waits until the owner closes the sim. One close and reopen
-    then loads the cameras."""
+    when it exits), so while it would have to, `close` closes the sim if an agent started it, else this waits
+    until the owner closes it. One close and reopen then loads the cameras."""
     cam, kept, _ = _track_files(docs, track)
     if not (cam.exists() or kept.exists()):
         raise CameraSetError(
             f"{cam} doesn't exist; save the track's camera set once from the sim's camera tool (Ctrl+F12)"
         )
-    if running() and not _track_pointed(docs, track):
+    if running() and not _track_pointed(docs, track) and not close():
         log("waiting for the sim to close: camera.ini can point at the track's set only while it is closed")
         while running():
             time.sleep(poll_s)

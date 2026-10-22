@@ -22,7 +22,7 @@ flowchart LR
 - A build comes only from its script, kit and assets, and `livery check` proves it repeats byte for byte. Nothing under `.cache/` is committed.
 - Hashes decide what is stale. Checks, previews, approvals and installs record the build they belong to, and a mismatch is rebuilt or refused, never trusted.
 - The owner decides and agents propose: two checkpoints per design (concept pick and final) on the review page. Accepting pins one exact build, and only that build installs.
-- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front. A run may resize a normal window behind other windows, and puts its size back.
+- The sim belongs to the owner. Runs never send input or focus, raise or restore its window, they queue for one lock, and they stop when the owner brings the sim to the front. A run may resize a normal window behind other windows, and puts its size back. Agents start it only when the owner's launch rule allows, and close only a sim they started.
 - The critic sees renders, never scripts, and compares rather than scores.
 
 ## Layout
@@ -37,7 +37,7 @@ flowchart LR
 | `livery/` | the library and the CLI | yes |
 | `.claude/` | agents, skills, workflows, hooks and permissions | yes |
 | `.cache/` | build output, previews, critic packs, reference pictures | no |
-| `%LOCALAPPDATA%\fartstriber` | machine state for every worktree: `config.toml`, the sim lock's holder, the paint journal, install backups, clean-shot references, the review queue, kit captures, telemetry (`FARTSTRIBER_STATE` moves it) | no |
+| `%LOCALAPPDATA%\fartstriber` | machine state for every worktree: `config.toml`, the sim lock's holder, the sim host's record and log, the iRacing sign-in, the paint journal, install backups, clean-shot references, the review queue, kit captures, telemetry (`FARTSTRIBER_STATE` moves it) | no |
 
 ## Designs
 
@@ -208,14 +208,44 @@ Every sim run is a `SimSession`: preview, capture, the spec reshoot, kit review,
 |---|---|
 | Lock | holds the named mutex `Local\fartstriber-sim`, so every worktree queues for the one sim; the kernel frees it if its holder dies |
 | Recover | replays the paint journal of any run that died |
-| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups, the graphics settings `policy.toml` `[renderer]` names, and its window open, behind other windows. A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
+| Wait | says once what it needs, then waits until the sim is on the kit's replay with its car, the camera groups, the graphics settings `policy.toml` `[renderer]` names, and its window open, behind other windows; on the preview replay, it has the sim host start the sim when the launch rule allows (Agents start and close the sim). A run that shoots then gives the window the client size `policy.toml` `[preview] window` names, once, and only a normal window (it may grow past its monitor); a maximised, fullscreen or minimised one at another size is waited for |
 | Run | notes the camera, UI, frame and speed, and uses one capture session. Before every broadcast and frame it checks that the sim is still behind other windows and not minimised, and stops if not, or if a frame isn't at the run's size |
 | Reload | old paint, then grey, then new paint; it waits for a steady frame |
 | Leave | puts back the paint files, camera, UI, replay and window size, on errors too, and leaves a sim in front alone; writes `manifest.json` |
 
 - `preview sim` refuses a build that doesn't match its `check.json`. It installs the build under the session's paint name and shoots into `sim-partial/<time>/`, renamed `sim/<time>/` once every shot is taken, then measures the bake against the shots (Previews).
 - A shot with the replay UI over the car (drawn while the cursor is over the sim) is taken again once, then refused.
-- `livery sim status` reports what the next run would find, without sending the sim anything.
+- `livery sim status` reports what the next run would find, without sending the sim anything, and checks everything an agent launch needs.
+
+### Agents start and close the sim
+
+With a `[sim]` table in `config.toml`, a run on the preview replay that finds no sim has the sim host start one, and the host closes it again. Without it, runs wait for the owner as before.
+
+```mermaid
+flowchart LR
+  run["a run: SimSession"] -- "no sim" --> rule{"launch rule"}
+  rule -- "not now" --> wait["waits, says why once"]
+  rule -- "now" --> host["sim host<br/>(detached)"]
+  host --> launch["sign-in → CPS credentials →<br/>start_protected_game → getTask"]
+  launch --> sim["sim on the replay"]
+  sim --> run
+  host -- "unwanted, a game, a hold" --> close["WM_CLOSE under the sim lock"]
+```
+
+| Piece | Does |
+|---|---|
+| `livery.simrule` | the launch rule: `launch = "idle"` waits until the owner has had `idle_minutes` without input; a full-screen app or game in front, battery, or the owner's `sim hold` stops a launch; `sim allow` starts it while they're here |
+| `livery.simhost` | one host at a time (a mutex), spawned detached so it outlives the run that asked. It records the sim it started in `sim-host.json`: only that sim is ever closed |
+| `livery.simlaunch` | the launch as the iRacing UI does it (`docs/sim.md`, Opening and closing the sim), and the close: WM_CLOSE to its windows, a kill if it stays |
+| `livery.members` | the `livery sim login` session, checked with a benign call before each launch |
+
+- Every run on a replay says it wants the sim while it queues and runs (`sim-demand/`). The host closes the sim once none has for `close_after_minutes` and the owner has been away `idle_minutes`: a sim's exit brings the iRacing UI to the front (`docs/sim.md`).
+- A hold, or the owner in the iRacing UI, closes it once the run under way ends; every close waits for the lock, and a run that holds the lock while the host waits closes the sim itself.
+- A full-screen app or game in front stops runs at once and starts nothing, but closes nothing: the UI would come up over the game.
+- An agent-started sim in front is driven while the owner is away: from `idle_minutes` without input until their next input.
+- A lock holder may close an agent-started sim: a run that needs another replay, and `preview cameras --arm` when `camera.ini` has to change. The next run starts it again.
+- A failed launch is recorded, and runs don't try again for 30 minutes; `livery sim up` does. A host that died leaves its record, and the next one adopts the sim.
+- `livery sim up`, `down`, `hold [--for]` and `allow [--for]` are the owner's.
 
 ## Paint folder
 
@@ -260,9 +290,9 @@ What reaches the owner, and what doesn't:
 | a kit | approve, change |
 | a grid tile | fine, change, no (a reference: yes or no) |
 
-- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note with the critic's judgement of it. Hovering a view, Then or a checkpoint previews it.
+- Focus shows the build's shots by view (without them, its baked views where they stand in), the flat pictures, Then/Now (what the owner saw at their last decision), the earlier checkpoints (their decisions, and the critic rounds between, dimmed), and their last note and pins with the critic's judgement of each. Hovering a view, Then or a checkpoint previews it.
 - The critic's call and its open suggestions reach the page only once the owner has answered the item (`items.HIDDEN`), so they can't anchor them. A ticked suggestion goes with a Change as `endorsed`: it counts for that round, never as the owner's taste.
-- A Change may be stored before its note; Send needs a note or a ticked suggestion. A grid sends only once every tile has an answer.
+- A Change may be stored before its note; Send needs a note, a pin with one or a ticked suggestion. A grid sends only once every tile has an answer.
 - Pictures are fetched at the size they are shown; a click opens them whole.
 
 Send runs Apply in the checkout that queued the screen:
@@ -272,6 +302,20 @@ Send runs Apply in the checkout that queued the screen:
 3. It commits exactly what it wrote, plus each decided design's folder, and never pushes.
 
 It prints the decisions as JSON, and the agent writes the owner's `log.md` from them in their words (lines starting `Context:` are the agent's).
+
+### Pins
+
+A pin is a box the owner drags on a Focus picture (a click makes a small one), with a note of its own: `{view, box, note}`, the box as fractions of the picture. Pins go with a Change, which pins alone may say; a final takes several, beside its note.
+
+| Pinned on | Resolves through (`livery.review.pins`) |
+|---|---|
+| a sim or baked shot | the kit's calibration capture: the texel the sim draws at each pixel of that view |
+| `flat/views.png`, `flat/squint.png` | the kit's maps, as the flat views draw them |
+| `flat/car.png` | the UI car's own UV map |
+
+- On Send each pin keeps its view, box and note, the template-pixel box under it (`template`), the elements of the build shown that cover at least 3% of it, the most first (`elements`, from `layers.svg`), and a crop with the box outlined (`crop`, `pin-<n>.png` beside the kept shots). A pin over no paint, or on a picture without a capture, keeps only view, box and crop.
+- The review JSON gives each pin a `line` for the builder, `on <view>, over <element ids>: <note>`, and its crop's `path`.
+- Every review starts with no pins. The owner's last decision's pins show dashed in place on the same views, and each earlier checkpoint shows its own.
 
 ### History
 
@@ -321,7 +365,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Pack | Holds |
 |---|---|
-| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed. It refuses a stale check, sim runs of another build and unanswered fixes |
+| Round (no flag) | the latest sim run of the checked build, with distance images (shrunk to 200 px, enlarged 3×) and close crops; the squint; the brief; the reference and boring-anchor pictures; earlier verdicts with the builder's answers; the owner's latest note with the critic suggestions it endorsed and its pins, each as their crop (`pin-<n>-then.png`) and the same box on this round's picture (`pin-<n>-now.png`). It refuses a stale check, sim runs of another build and unanswered fixes |
 | `--baked` | the same, from baked renders, for rounds judged without the sim |
 | `--compare` | this round and the last, as A/B and as B/A, unlabelled |
 | `--adversary` | a round without history or note, for a critic hunting the most boring part |
@@ -329,7 +373,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Command | Records in `verdicts.jsonl` |
 |---|---|
-| `critic record` | a round: each of the last round's fixes, the owner's note and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
+| `critic record` | a round: each of the last round's fixes, the owner's note, each of its pins and each critic suggestion they endorsed marked resolved, partly or not, with the image that shows it; every taste row; scores and a 1–10 (logged only); its suggestions, `{title, detail, where, optional}`, the most important first, as many as it takes (older fixes, `{text, optional}` or a string, still read); iterate or rework; `lint_missed` and `blocked` |
 | `critic compare` | better or worse where both orders agree, else same |
 | `critic adversary` | up to three findings, the most boring first |
 | `critic rank --pairs <dir>` | a Bradley-Terry ranking of concepts |
@@ -339,7 +383,7 @@ A fresh `livery-critic` subagent judges each pack: it has only the Read tool, it
 
 | Bar | Holds when | Means |
 |---|---|---|
-| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
+| `ready` (what fails: `holds`) | the last round was judged on sim shots, or on baked renders that stand in for them; the design hasn't changed since; the owner's latest note, each of its pins and every suggestion they endorsed are judged resolved; nothing is blocked; every taste row passes | the refinement goes back to the owner. The critic's own fixes never hold it back |
 | `ship` (what fails: `why`) | ready, and no fix that isn't optional is open, the compare with the round before isn't worse, and the adversary's top finding is optional | the critic's whole bar, reported beside the decision |
 
 Two compares in a row that come out the same are a plateau.
@@ -365,7 +409,7 @@ flowchart TD
 
   | Strategy | Runs | Stops |
   |---|---|---|
-  | quick | one builder round on exactly the owner's note and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
+  | quick | one builder round on exactly the owner's note, its pins and the suggestions they endorsed, one sim run, a round critic; no compare or adversary | after that round |
   | full | rounds of a fresh builder (the note first, then the critic's fixes), the sim and fresh critics, a compare from round 2 | at the first of: `critic status` ready, a plateau the fork doesn't break, the budget (4 rounds), a block |
 
   - Once the kit has passed bake check, rounds use baked renders. The budget's last round does too where they stand in for the build's sim shots, and uses sim shots where they don't.
@@ -389,7 +433,7 @@ flowchart TD
 - `prefs/<person>/` is the owner's by default (`owner` in `config.toml`, lower case); a contributor's PR brings their own. Every ledger line has a `uid` and `by`: the person, or `agent:<session>` (the SessionStart hook exports the session's id and transcript). Nothing is rewritten: an edit or undo is a later line naming the decision, and readers fold them in (`prefs.decisions`). Union merges keep appends from two branches (`.gitattributes`).
 - A taste row rests on quotes, each naming the decision it came from where there is one. `livery taste show` prints the live rows as the table builders read; `put` and `retire` change one, as this agent.
 - `livery status [design]` builds nothing. It reports the check, the TGAs, the approvals, whether the previews are fresh, and the critic's last round.
-- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage and waits for the sim lock.
+- `livery stats` reports sim runs, rounds, the critic against the owner's decisions, `lint_missed` by kind, time per stage, waits for the sim lock, and the sims agents started.
 - Every command takes `--json`.
 
 ## Settings
@@ -397,7 +441,7 @@ flowchart TD
 | File | Scope | Holds |
 |---|---|---|
 | `policy.toml` | the checkout, hashed | lint thresholds, preview views, the sim window's size |
-| `config.toml` in the state dir | the machine, shared by every worktree | the owner's name, customer and team IDs, the archive folder, the iRacing folders, the sim's process, the preview replay (file, sha256, SubSessionID, track, `camera.ini`) |
+| `config.toml` in the state dir | the machine, shared by every worktree | the owner's name, customer and team IDs, the archive folder, the iRacing folders, the sim's process, the preview replay (file, sha256, SubSessionID, track, `camera.ini`), and optionally when agents start and close the sim (`[sim]`) |
 | `kits/<kit>/profile.toml` | the kit | how the sim shows its car |
 
 - `livery.example.toml` documents every key, and `livery config show` prints them. A missing key is a `ConfigError` that names it.

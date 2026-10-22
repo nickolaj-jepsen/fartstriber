@@ -130,14 +130,14 @@ def fix_title(fix: dict) -> str:
 
 def owner_note(ws: Workspace, name: str) -> dict | None:
     """The owner's latest note on the design in the decision ledger, which every round judges like a fix,
-    with the critic suggestions they endorsed in it, which every round judges too."""
+    with the critic suggestions they endorsed in it and their pins, which every round judges too."""
     from livery.review.apply import latest_note
 
     line = latest_note(ws, name)
     if not line:
         return None
     note = {k: line.get(k) for k in ("note", "decision", "at")}
-    return note | {"endorsed": line["endorsed"]} if line.get("endorsed") else note
+    return note | {k: line[k] for k in ("endorsed", "pins") if line.get(k)}
 
 
 def _judged_by(ws: Workspace | None) -> tuple[Path, Path]:
@@ -426,7 +426,34 @@ def _favourites(ws: Workspace, name: str, folder: Path, d: Path, warn: Callable[
 
 def _images(entry: dict) -> list[str]:
     paths = [*entry["shots"], *entry["distance"], *entry["crops"].values(), entry.get("squint")]
+    paths += [p.get(k) for p in entry.get("pins", []) for k in ("then", "now")]
     return [Path(p).name for p in paths if p]
+
+
+def _pins(pins: list[dict], run: Path, flat: Path, folder: Path, d: Path) -> list[dict]:
+    """Each of the owner's pins as the pack shows it: its view, note and the elements under it, the crop
+    they pinned (`then`) and the same box on this round's picture of that view (`now`)."""
+    from livery import state
+    from livery.review import pins as review_pins
+
+    out = []
+    for n, pin in enumerate(pins, 1):
+        entry = {"view": pin["view"], "note": pin["note"], "over": pin.get("elements") or []}
+        then = state.root() / pin["crop"] if pin.get("crop") else None
+        if then is not None and then.is_file():
+            shutil.copy2(then, d / f"pin-{n}-then.png")
+            entry["then"] = f"{d.relative_to(folder).as_posix()}/pin-{n}-then.png"
+        view = pin["view"]
+        src = (
+            flat / view.removeprefix(review_pins.FLAT)
+            if view.startswith(review_pins.FLAT)
+            else run / f"{view}.png"
+        )
+        if src.is_file():
+            review_pins.crop(src, pin["box"]).save(d / f"pin-{n}-now.png")
+            entry["now"] = f"{d.relative_to(folder).as_posix()}/pin-{n}-now.png"
+        out.append(entry)
+    return out
 
 
 def pack(
@@ -473,10 +500,14 @@ def pack(
             entry["history"] = f"{name}/history.json"
             entry["previous_fixes"] = [f["text"] for f in fixes(rounds[name][-1])]
         note = owner_note(ws, name) if mode == "round" else None
+        flat = preview_flat.fresh(ws, name, shots[name][1])
         if note:
-            (d / "owner-note.json").write_text(json.dumps(note, indent=1), encoding="utf-8", newline="\n")
+            shown = dict(note)
+            if note.get("pins"):
+                shown["pins"] = entry["pins"] = _pins(note["pins"], runs[name], flat, folder, d)
+            (d / "owner-note.json").write_text(json.dumps(shown, indent=1), encoding="utf-8", newline="\n")
             entry["owner_note"] = f"{name}/owner-note.json"
-        squint = preview_flat.fresh(ws, name, shots[name][1]) / "squint.png"
+        squint = flat / "squint.png"
         shutil.copy2(squint, d / "squint.png")
         entry["squint"] = f"{name}/squint.png"
         if anchors := _favourites(ws, name, folder, d, warn):
@@ -590,8 +621,8 @@ def validate(
     note: dict | None = None,
 ) -> dict:
     """A round verdict. `previous` marks each fix of the `last` round resolved, partly or not, naming the
-    pack image that shows it, `owner_note` the owner's `note` the same way, and `endorsed` each critic
-    suggestion that note endorsed; `taste` passes or fails every taste row; scores 1-5 and overall 1-10 are
+    pack image that shows it, `owner_note` the owner's `note` the same way, `endorsed` each critic
+    suggestion that note endorsed and `pins` each of its pins; `taste` passes or fails every taste row; scores 1-5 and overall 1-10 are
     logged only; fixes are suggestions {title, detail, where, optional}, the most important first, as many
     as it takes; the call is iterate or rework."""
     before = fixes(last) if last else []
@@ -617,6 +648,12 @@ def validate(
         )
     for e, s in zip(endorsed, asked, strict=True):
         _resolution(e, "each endorsed entry", images).update(suggestion=s, at=at)
+    pinned = (note.get("pins") or []) if note else []
+    judged_pins = verdict.get("pins", [])
+    if not isinstance(judged_pins, list) or len(judged_pins) != len(pinned):
+        raise BadVerdict(f"pins needs one entry per pin of the owner's note, in order: {len(pinned)}")
+    for j, p in zip(judged_pins, pinned, strict=True):
+        _resolution(j, "each pins entry", images).update(view=p["view"], note=p["note"], at=at)
     ids = taste_ids() if taste is None else taste
     rows = verdict.get("taste")
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
@@ -762,8 +799,8 @@ def record_adversary(ws: Workspace, name: str, verdict: dict) -> dict:
 
 def _owner_holds(ws: Workspace, name: str, last: dict) -> list[str]:
     """What keeps the last round from going back to the owner: it was judged on baked renders that can't
-    stand in for sim shots, the design changed since, their latest note or a suggestion they endorsed isn't
-    judged resolved, something is blocked, or a taste row fails."""
+    stand in for sim shots, the design changed since, their latest note, a pin of it or a suggestion they
+    endorsed isn't judged resolved, something is blocked, or a taste row fails."""
     holds = []
     if last.get("baked"):
         holds += [
@@ -790,6 +827,15 @@ def _owner_holds(ws: Workspace, name: str, last: dict) -> list[str]:
             for e in done
             if len(done) == len(asked) and e["status"] != "resolved"
         ]
+        pinned = note.get("pins") or []
+        seen = [p for p in last.get("pins") or [] if p.get("at") == note["at"]]
+        if pinned and len(seen) != len(pinned):
+            holds.append(f"no round has judged {owner}'s pins yet")
+        holds += [
+            f"{owner}'s pin on {p['view']} is {p['status']} resolved: {p['note']}"
+            for p in seen
+            if len(seen) == len(pinned) and p["status"] != "resolved"
+        ]
     holds += [f"blocked, for {owner}: {b}" for b in last.get("blocked", [])]
     passed = {t["id"] for t in last["taste"] if t["pass"]}
     holds += [f"taste row fails or wasn't checked: {i}" for i in taste_ids(ws) if i not in passed]
@@ -800,8 +846,8 @@ def status(ws: Workspace, name: str) -> dict:
     """Where the design stands, computed from the records.
 
     `ready`: the last round goes back to the owner. It was judged on sim shots, or on baked renders that
-    stand in for them (`livery.bake.run_usable`); it judged their latest note and every critic suggestion
-    they endorsed resolved; nothing is blocked and every taste row passes. `holds` says what keeps it from
+    stand in for them (`livery.bake.run_usable`); it judged their latest note, each of its pins and every
+    critic suggestion they endorsed resolved; nothing is blocked and every taste row passes. `holds` says what keeps it from
     that. The critic's own fixes never hold it back.
 
     `ship`: the critic's whole bar, on top of ready: no open fix that isn't optional (its own, or one of the

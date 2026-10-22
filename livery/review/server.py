@@ -28,10 +28,10 @@ from urllib.parse import parse_qs, urlparse
 
 from PIL import Image
 
-from livery import config, notify, state
+from livery import config, notify, prefs, state
 from livery.config import Workspace
 from livery.errors import LiveryError
-from livery.review import history, library, queue
+from livery.review import history, library, pins, queue
 from livery.review.apply import SHOTS, apply, proposals
 from livery.review.items import ANSWERS, HIDDEN, STILL, STRATEGIES, layout
 from livery.review.queue import ReviewOpen
@@ -66,12 +66,13 @@ FIELDS = {
     "strategy": None,
     "endorsed": [],
     "revived": False,
+    "pins": [],
 }
 
 
 def _merged(old: dict, body: dict) -> dict:
     """A decide call's fields over the stored decision's, so a call that sends only the note keeps the rest.
-    A new answer keeps only the note: a favourite or a strategy belonged to the answer before."""
+    A new answer keeps only the note: a favourite, a strategy or pins belonged to the answer before."""
     if "decision" in body and body["decision"] != old.get("decision"):
         old = {"note": old.get("note", "")}
     return {k: body[k] if k in body else old.get(k, default) for k, default in FIELDS.items()}
@@ -96,6 +97,10 @@ def _refusal(item: dict | None, d: dict) -> str | None:
         return "bad strategy"
     if endorsed and choice != "edit":
         return "ticked suggestions go with a change"
+    if d["pins"] and (choice != "edit" or item["kind"] not in ("final", "kit")):
+        return "pins go with a change on a final or a kit"
+    if refused := pins.refusal(d["pins"], set(pins.views_of(item))):
+        return refused
     if d["revived"] and not (item.get("sketch") and choice == "accept"):
         return "only a sketch is revived"
     return None
@@ -113,11 +118,14 @@ def _thumb(path: Path, mtime: float, width: int) -> bytes:
 
 
 def _unsaid(group: dict) -> list[str]:
-    """Changes that don't yet say what to change: no note and no ticked critic suggestion."""
+    """Changes that don't yet say what to change: no note, no pin with one and no ticked critic suggestion."""
     return [
         k
         for k, d in group["decisions"].items()
-        if d.get("decision") == "edit" and not str(d.get("note", "")).strip() and not d.get("endorsed")
+        if d.get("decision") == "edit"
+        and not str(d.get("note", "")).strip()
+        and not d.get("endorsed")
+        and not any(str(p.get("note", "")).strip() for p in d.get("pins") or [])
     ]
 
 
@@ -422,9 +430,15 @@ def _apply(ws: Workspace, group: dict, commit: bool) -> dict:
     except Exception as e:
         queue.finish(group["id"], {"error": f"{type(e).__name__}: {e}"})
         raise
+    kept = {
+        line["id"]: line.get("pins") or [] for line in prefs.decisions(ws) if line.get("review") == review
+    }
     result = {
         "review": review,
-        "decisions": [{"id": k, **v} for k, v in decisions.items()],
+        "decisions": [
+            {"id": k, **v} | ({"pins": [pins.for_builder(p) for p in kept[k]]} if kept.get(k) else {})
+            for k, v in decisions.items()
+        ],
         "undecided": [i["id"] for i in items if i["id"] not in decisions],
         "written": written,
         "proposals": proposals(items, decisions),

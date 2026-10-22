@@ -44,6 +44,16 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
     Sides are drawn as seen (left side nose left, right side nose right), the top from above, nose left,
     and a face as seen from ahead or behind, at the scale of the others (`width` px per car length).
     """
+    tx = view_texels(kit, view, width)
+    out = np.empty((*tx.shape[:2], 3), np.uint8)
+    out[:] = BACKGROUND
+    on = tx[..., 0] >= 0
+    out[on] = paint[tx[on][:, 1], tx[on][:, 0]]
+    return Image.fromarray(out)
+
+
+def view_texels(kit: Kit, view: str, width: int = VIEW_WIDTH) -> np.ndarray:
+    """Per pixel of `car_view`, the template pixel it shows as (x, y); -1 where it shows no paint."""
     islands = np.asarray(Image.open(kit.dir / "overlays" / "islands.png"))
     if view_kind(view) == "face":
         a0, a1, b0, b1 = extent(kit, view)
@@ -61,8 +71,7 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
         height = int(width * carspace.side_aspect(kit))
         u, v = np.meshgrid(np.linspace(0, 1, width), np.linspace(1, 0, height))
         pts = np.stack([u.ravel(), v.ravel()], 1)
-    out = np.zeros((len(pts), 3), np.uint8)
-    out[:] = BACKGROUND
+    out = np.full((len(pts), 2), -1, np.int32)
     done = np.zeros(len(pts), bool)
     for pc in carspace.pieces(kit, view):
         todo = ~done
@@ -75,10 +84,10 @@ def car_view(paint: np.ndarray, kit: Kit, view: str, width: int = VIEW_WIDTH) ->
         y = np.clip(np.rint(xy[:, 1]).astype(int), 0, kit.canvas - 1)
         hit = shapely.contains_xy(pc.area, xy[:, 0], xy[:, 1]) & (islands[y, x] > 0)
         idx = np.nonzero(todo)[0][hit]
-        out[idx] = paint[y[hit], x[hit]]
+        out[idx] = np.stack([x[hit], y[hit]], 1)
         done[idx] = True
-    img = Image.fromarray(out.reshape(height, width, 3))
-    return img.transpose(Image.FLIP_LEFT_RIGHT) if view in ("side_r", "front") else img
+    out = out.reshape(height, width, 2)
+    return out[:, ::-1] if view in ("side_r", "front") else out
 
 
 def extent(kit: Kit, view: str) -> tuple[float, float, float, float]:
@@ -94,26 +103,48 @@ def extent(kit: Kit, view: str) -> tuple[float, float, float, float]:
     return a0, a1, b0, b1
 
 
+FLAT_VIEWS = ("side_l", "top", "side_r")
+PAD = 12
+
+
+def _shrunk(a: np.ndarray, s: float) -> np.ndarray:
+    h, w = a.shape[:2]
+    nh, nw = max(1, int(h * s)), max(1, int(w * s))
+    return a[(np.arange(nh) * h // nh)][:, (np.arange(nw) * w // nw)]
+
+
+def _stacked(parts: list[np.ndarray], faces: list[np.ndarray], fill) -> np.ndarray:
+    """Views as views.png lays them out, PAD apart and around: the stacked views, then the faces side by
+    side below them, smaller where side by side they'd be wider than the car."""
+    width = parts[0].shape[1]
+    across = sum(f.shape[1] for f in faces) + PAD * (len(faces) - 1)
+    if faces and across > width:
+        faces = [_shrunk(f, width / across) for f in faces]
+    rows = sum(p.shape[0] for p in parts) + (max(f.shape[0] for f in faces) + PAD if faces else 0)
+    sheet = np.empty((rows + PAD * 4, width + 2 * PAD, parts[0].shape[2]), parts[0].dtype)
+    sheet[:] = fill
+    y = PAD
+    for p in parts:
+        sheet[y : y + p.shape[0], PAD : PAD + width] = p
+        y += p.shape[0] + PAD
+    x = PAD
+    for f in faces:
+        sheet[y : y + f.shape[0], x : x + f.shape[1]] = f
+        x += f.shape[1] + PAD
+    return sheet
+
+
 def views(paint: np.ndarray, kit: Kit, width: int = VIEW_WIDTH) -> Image.Image:
     """Left side, top, right side, stacked, and below them the faces the kit maps side by side."""
-    parts = [car_view(paint, kit, v, width) for v in ("side_l", "top", "side_r")]
-    faces = [car_view(paint, kit, v, width) for v in kit.face_views]
-    pad = 12
-    across = sum(p.width for p in faces) + pad * (len(faces) - 1)
-    if faces and across > width:  # side by side they'd be wider than the car: smaller
-        s = width / across
-        faces = [p.resize((max(1, int(p.width * s)), max(1, int(p.height * s)))) for p in faces]
-    rows = sum(p.height for p in parts) + (max(p.height for p in faces) + pad if faces else 0)
-    sheet = Image.new("RGB", (width + 2 * pad, rows + pad * 4), BACKGROUND)
-    y = pad
-    for p in parts:
-        sheet.paste(p, (pad, y))
-        y += p.height + pad
-    x = pad
-    for p in faces:
-        sheet.paste(p, (x, y))
-        x += p.width + pad
-    return sheet
+    parts = [np.asarray(car_view(paint, kit, v, width)) for v in FLAT_VIEWS]
+    faces = [np.asarray(car_view(paint, kit, v, width)) for v in kit.face_views]
+    return Image.fromarray(_stacked(parts, faces, BACKGROUND))
+
+
+def views_texels(kit: Kit, width: int = VIEW_WIDTH) -> np.ndarray:
+    """Per pixel of `views` (views.png), the template pixel it shows as (x, y); -1 where it shows no paint."""
+    parts = [view_texels(kit, v, width) for v in FLAT_VIEWS]
+    return _stacked(parts, [view_texels(kit, v, width) for v in kit.face_views], -1)
 
 
 def car(ws: Workspace, paint: np.ndarray, kit: Kit) -> Image.Image | None:

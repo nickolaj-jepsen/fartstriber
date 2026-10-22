@@ -170,6 +170,7 @@ def _timeline(ws: Workspace, name: str, now_run: Path | None) -> list[dict]:
                 "who": "agents" if str(line.get("by", "")).startswith("agent") else "you",
                 "label": f"{'Concept' if kind == 'concept' else 'Final'} · {what}",
                 "note": line.get("note", ""),
+                "pins": [{k: p[k] for k in ("view", "box", "note")} for p in line.get("pins") or []],
                 "views": _shown(ws, name, line),
                 "uid": line.get("uid") or f"{line.get('review')}/{line['id']}",
             }
@@ -273,13 +274,17 @@ def _judgement(ws: Workspace, name: str, note: dict, design_hash: str | None) ->
 
     for r in reversed(critic.history(ws, name)):
         judged = r.get("owner_note") or {}
-        if judged.get("at") == note["at"]:
-            return {
-                "status": judged["status"],
-                "evidence": judged["evidence"],
+        pins = [p for p in r.get("pins") or [] if p.get("at") == note["at"]]
+        if judged.get("at") == note["at"] or pins:
+            out = {
+                "status": judged.get("status"),
+                "evidence": judged.get("evidence"),
                 "round": r.get("round"),
                 "this_build": design_hash is not None and r.get("design_hash") == design_hash,
             }
+            return out | (
+                {"pins": [{k: p.get(k) for k in ("status", "evidence")} for p in pins]} if pins else {}
+            )
     return None
 
 
@@ -300,7 +305,7 @@ def _last_time(
     text = f"{config.owner()}'s last decision, {_when(last['at'])}: {last['decision']}{said}\n\n"
     fields: dict = {
         "last_decision": {
-            k: last.get(k) for k in ("at", "decision", "note", "runs", "baked_run", "shots", "uid")
+            k: last.get(k) for k in ("at", "decision", "note", "runs", "baked_run", "shots", "uid", "pins")
         }
     }
     if note:
@@ -309,13 +314,18 @@ def _last_time(
         judged = _judgement(ws, name, note, design_hash)
         if judged:
             on = "this build" if judged["this_build"] else "an earlier build"
-            text += (
-                f"The critic judged that note {JUDGED[judged['status']]} in round {judged['round']}, on {on} "
-                f"({judged['evidence']}).\n\n"
-            )
+            if judged["status"]:
+                text += (
+                    f"The critic judged that note {JUDGED[judged['status']]} in round {judged['round']}, on "
+                    f"{on} ({judged['evidence']}).\n\n"
+                )
+            for p, j in zip(note.get("pins") or [], judged.get("pins", []), strict=False):
+                text += f"Their pin on {p['view']} ({p['note']}): {JUDGED[j['status']]}, round {judged['round']}.\n\n"
         else:
             text += "No critic round has judged that note yet.\n\n"
-        fields["owner_note"] = {k: note.get(k) for k in ("at", "decision", "note")} | {"judged": judged}
+        fields["owner_note"] = {k: note.get(k) for k in ("at", "decision", "note", "pins")} | {
+            "judged": judged
+        }
     then = next((ws.out(name) / "sim" / r for r in last.get("runs") or []), None)
     if then is None and last.get("baked_run"):
         then = ws.out(name) / "baked-runs" / last["baked_run"]

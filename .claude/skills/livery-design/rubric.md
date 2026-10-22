@@ -22,7 +22,7 @@ Shared by designers and the livery-critic, with the taste table (`livery taste s
 
 The scores and the overall are logged to follow a design over time; they decide nothing. 8 or more reads instantly at distance, rewards a closer look and has only polish left; 6–7 is a good or competent concept with fixes left; 5 or less fails as a concept.
 
-`livery critic status` computes, never chooses, both bars. **Ready**, where a refinement goes back to the owner: their note and every critic suggestion they endorsed judged resolved, every row of the taste table passing, nothing blocked. **Ship**, the critic's whole bar on top: no open fix that isn't optional, the round not worse than the last one in the pairwise compare, and an adversary critic whose top finding is optional. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
+`livery critic status` computes, never chooses, both bars. **Ready**, where a refinement goes back to the owner: their note, each of its pins and every critic suggestion they endorsed judged resolved, every row of the taste table passing, nothing blocked. **Ship**, the critic's whole bar on top: no open fix that isn't optional, the round not worse than the last one in the pairwise compare, and an adversary critic whose top finding is optional. The critic's call is **iterate** (the concept holds; fix it) or **rework** (the concept is what fails; go back to concepts, not to the parameters).
 
 ## Fixes
 
